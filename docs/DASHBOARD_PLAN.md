@@ -11,10 +11,12 @@ Dashboard працює в окремому worktree `codex/dashboard` від `fe
 | Бали C1–C7 | `frontend/src/dashboard/ComponentScores.tsx` | `components[].score` |
 | Порівняння категорій | `frontend/src/dashboard/CategoryComparison.tsx` | `categories`, `components[].by_category` |
 | Об’єктивні показники | `frontend/src/dashboard/ObjectiveIndicators.tsx` | `components[].objective_indicators` |
-| Клієнт результатів і типи | `frontend/src/dashboard/results.ts`, `types.ts` | `GET /api/assessments/{id}/results` |
+| Клієнт результатів і типи | `frontend/src/api/client.ts`, `frontend/src/dashboard/results.ts`, `types.ts` | `GET /api/assessments/{id}/results` |
 | Адаптивні стилі | `frontend/src/style.css`, `frontend/src/dashboard/dashboard.css` | Без нових залежностей |
 
 `/results` запитується лише для закритого циклу. `409` і відкритий цикл показують повідомлення про очікування закриття; `401`, `403`, `404` і мережеві помилки мають окремі повідомлення. Запити скасовуються при зміні циклу. Значення з `hidden: true` не відображаються, `null` не стає нулем. Загальний Integrity Index не обчислюється.
+
+Assessment Manager і Dashboard використовують спільний `frontend/src/api/client.ts` для URL, демозаголовка, JSON і HTTP-помилок. Для окремого backend задайте `VITE_API_BASE_URL`; для локального Vite proxy задайте `VITE_API_PROXY_TARGET` і залиште `VITE_API_BASE_URL` порожнім. Без цих змінних запити йдуть на той самий origin. Порти backend у клієнті не закріплені. Frontend-тести: `node --test tests/dashboard.test.mjs` у `frontend`; backend-тести: `python -m pytest` у `backend` (через окрему тимчасову базу з `tests/conftest.py`).
 
 ## Очікують API
 

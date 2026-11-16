@@ -9,7 +9,7 @@ import {
   PendingModules,
   type AssessmentResults,
 } from './dashboard'
-import { getAssessmentResults } from './dashboard/results'
+import { loadResults } from './dashboard/loadResults'
 import './style.css'
 
 function App() {
@@ -75,20 +75,8 @@ function App() {
 
     if (!selectedAssessment || selectedAssessment.id !== selectedId || selectedAssessment.status !== 'closed') return
 
-    const controller = new AbortController()
     setResultsLoading(true)
-    getAssessmentResults(selectedAssessment.id, controller.signal)
-      .then(setResults)
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          setResultsError(error instanceof Error ? error.message : 'Не вдалося завантажити результати.')
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setResultsLoading(false)
-      })
-
-    return () => controller.abort()
+    return loadResults(selectedAssessment.id, setResults, setResultsError, () => setResultsLoading(false))
   }, [selectedAssessment, selectedId, resultsRetry])
 
   function selectAssessment(value: string) {

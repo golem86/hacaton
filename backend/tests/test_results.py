@@ -146,6 +146,51 @@ def test_results_hidden_set_is_never_smaller_than_k():
     assert hidden_total == 0 or hidden_total >= data["min_group_size"]
 
 
+def test_secondary_suppression_prevents_count_reconstruction_across_api_slices():
+    """A total minus visible groups must not reveal the size of a primary-small group."""
+    results = client.get(f"/api/assessments/{CLOSED_ID}/results", headers=MANAGER).json()
+    participation = client.get(f"/api/assessments/{CLOSED_ID}/participation", headers=MANAGER).json()
+    by_unit = client.get(f"/api/assessments/{CLOSED_ID}/participation?by_unit=true", headers=MANAGER).json()
+    k = results["min_group_size"]
+
+    db = SessionLocal()
+    try:
+        actual = {}
+        for row in db.query(ResponseSet).filter_by(cycle_id=CLOSED_ID):
+            actual[row.respondent_category] = actual.get(row.respondent_category, 0) + 1
+    finally:
+        db.close()
+
+    primary_small = {category for category, size in actual.items() if size < k}
+    hidden = {row["category"] for row in results["categories"] if row["hidden"]}
+    assert primary_small  # the seed must exercise primary suppression
+    assert primary_small <= hidden
+    assert hidden == {row["category"] for row in participation["groups"] if row["hidden"]}
+    assert hidden == {"staff", "mgmt"}  # staff=4; mgmt=6 is secondary suppression
+
+    visible = {row["category"]: row["responses"] for row in results["categories"] if not row["hidden"]}
+    assert visible == {row["category"]: row["responses"] for row in participation["groups"] if not row["hidden"]}
+    assert results["responses_total"] == participation["responses_total"] == by_unit["responses_total"]
+    remainder = results["responses_total"] - sum(visible.values())
+    assert remainder == sum(actual[category] for category in hidden)
+    assert remainder >= k
+    assert all(remainder != actual[category] for category in primary_small)
+    assert all(row["responses"] is None for row in results["categories"] if row["hidden"])
+
+    for row in by_unit["groups"]:
+        if row["category"] in hidden:
+            assert row["hidden"] and row["responses"] is None
+    for category, category_total in visible.items():
+        cells = [row for row in by_unit["groups"] if row["category"] == category]
+        unit_remainder = category_total - sum(row["responses"] for row in cells if not row["hidden"])
+        assert unit_remainder == 0 or unit_remainder >= k
+
+    assert [component["code"] for component in results["components"]] == [f"C{i}" for i in range(1, 8)]
+    for component in results["components"]:
+        assert {cell["category"] for cell in component["by_category"] if cell["hidden"]} == hidden
+        assert all(cell["score"] is None for cell in component["by_category"] if cell["hidden"])
+
+
 def test_results_score_matches_manual_calculation():
     """Бал компонента C1 збігається з ручним розрахунком: (відповідь − 1) / 4 × 100."""
     from app.models import Component, Question

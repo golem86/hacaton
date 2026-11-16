@@ -1,6 +1,8 @@
+import type { Assessment } from '../api/assessments'
+
 /** Aggregate-only response proposed by PR #5. No individual answers belong here. */
 export interface AssessmentResults {
-  assessment: { id: number; name: string; status: 'closed' }
+  assessment: Pick<Assessment, 'id' | 'name'> & { status: 'closed' }
   min_group_size: number
   responses_total: number | null
   categories: ResultCategory[]
