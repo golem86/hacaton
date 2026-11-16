@@ -14,7 +14,7 @@ import secrets
 import sys
 from datetime import date
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 
 from .database import Base, SessionLocal, engine
 from .models import (AccessToken, Answer, Component, Cycle, ObjectiveIndicator,
@@ -87,14 +87,13 @@ def level_to_answer(level: float) -> int:
 
 
 def database_has_data() -> bool:
-    """Чи є в базі вже хоч одна заповнена анкета."""
-    if "response_sets" not in inspect(engine).get_table_names():
-        return False
-    db = SessionLocal()
-    try:
-        return db.query(ResponseSet).first() is not None
-    finally:
-        db.close()
+    """Чи є хоч один рядок у БУДЬ-ЯКІЙ таблиці бази (не лише в анкетах)."""
+    existing = set(inspect(engine).get_table_names())
+    with engine.connect() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name in existing and conn.execute(select(table).limit(1)).first() is not None:
+                return True
+    return False
 
 
 def run(reset: bool = False) -> bool:
@@ -109,8 +108,9 @@ def run(reset: bool = False) -> bool:
               "Щоб стерти все і створити демо-дані заново: python -m app.seed --reset")
         return False
 
-    # 1. Стираємо стару базу і створюємо порожні таблиці за описом з models.py
-    Base.metadata.drop_all(engine)
+    # 1. Стираємо таблиці ЛИШЕ за явного --reset; інакше база гарантовано порожня
+    if reset:
+        Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
     db = SessionLocal()

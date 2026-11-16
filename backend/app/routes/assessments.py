@@ -143,21 +143,47 @@ def issue_tokens(assessment_id: int, count: int = Query(default=10, ge=1, le=500
             dependencies=[Depends(require_role(*ANALYTICS_ROLES))])
 def participation(assessment_id: int, by_unit: bool = False, db: Session = Depends(get_db)):
     """
-    Скільки анкет заповнила кожна категорія (by_unit=true — категорія в кожному підрозділі)
-    і скільки кодів ще не використано. Групи, менші за min_group_size, приховуються.
+    Статистика участі.
+
+    Політика агрегації (захист від відновлення прихованих груп):
+    - поки оцінювання ВІДКРИТЕ, показується лише загальна кількість анкет — без розбивки,
+      інакше, порівнюючи дві відповіді до і після чиєїсь анкети, можна дізнатися її категорію;
+    - після закриття: розбивка по категоріях (by_unit=true — категорія × підрозділ)
+      з первинним і вторинним приховуванням, щоб «підсумок − видимі» не давав розмір малої групи;
+    - категорії, приховані в загальній розбивці, приховуються і в розбивці по підрозділах;
+    - загальна кількість показується, лише якщо вона ≥ k.
     """
     cycle = get_assessment(assessment_id, db)
+    k = cycle.min_group_size
 
-    columns = [ResponseSet.respondent_category] + ([ResponseSet.unit] if by_unit else [])
-    rows = (db.query(*columns, func.count(ResponseSet.id))
-            .filter(ResponseSet.cycle_id == assessment_id)
-            .group_by(*columns).all())
-    groups = [{"category": row[0], **({"unit": row[1]} if by_unit else {}), "responses": row[-1]}
-              for row in rows]
-
+    total = db.query(ResponseSet).filter(ResponseSet.cycle_id == assessment_id).count()
     issued = db.query(AccessToken).filter(AccessToken.cycle_id == assessment_id).count()
-    used = db.query(AccessToken).filter(AccessToken.cycle_id == assessment_id,
-                                        AccessToken.used.is_(True)).count()
-    return {"tokens_issued": issued, "tokens_used": used,
-            "groups": suppress_small_groups(groups, k=cycle.min_group_size,
-                                            keep_keys=("category", "unit"))}
+    result = {"status": cycle.status, "tokens_issued": issued,
+              "responses_total": total if total >= k else None, "groups": None}
+    if cycle.status == "open":
+        return result
+
+    # 1. Розбивка по категоріях — підсумок для неї: загальна кількість анкет
+    cat_rows = (db.query(ResponseSet.respondent_category, func.count(ResponseSet.id))
+                .filter(ResponseSet.cycle_id == assessment_id)
+                .group_by(ResponseSet.respondent_category)
+                .order_by(ResponseSet.respondent_category).all())
+    categories = suppress_small_groups([{"category": c, "responses": n} for c, n in cat_rows],
+                                       k, keep_keys=("category",))
+    if not by_unit:
+        result["groups"] = categories
+        return result
+
+    # 2. Категорія × підрозділ — для кожної категорії свій підсумок (її кількість)
+    category_hidden = {g["category"]: g["hidden"] for g in categories}
+    unit_rows = (db.query(ResponseSet.respondent_category, ResponseSet.unit, func.count(ResponseSet.id))
+                 .filter(ResponseSet.cycle_id == assessment_id)
+                 .group_by(ResponseSet.respondent_category, ResponseSet.unit)
+                 .order_by(ResponseSet.respondent_category, ResponseSet.unit).all())
+    groups = []
+    for category, hidden in category_hidden.items():
+        cells = [{"category": c, "unit": u, "responses": n} for c, u, n in unit_rows if c == category]
+        groups += suppress_small_groups(cells, k, keep_keys=("category", "unit"),
+                                        force_hidden=[hidden] * len(cells))
+    result["groups"] = groups
+    return result
