@@ -18,7 +18,7 @@ from sqlalchemy import inspect, select
 
 from .database import Base, SessionLocal, engine
 from .models import (AccessToken, Answer, Component, Cycle, ObjectiveIndicator,
-                     Question, Recommendation, ResponseSet)
+                     Question, Recommendation, ResponseSet, Unit)
 
 random.seed(2026)  # однакове «випадкове» щоразу, щоб у всієї команди були ті самі дані
 
@@ -115,7 +115,10 @@ def run(reset: bool = False) -> bool:
 
     db = SessionLocal()
 
-    # 2. Компоненти і питання
+    # 2. Довідник підрозділів (анкети можуть посилатися лише на них)
+    db.add_all(Unit(name=name) for name in UNITS)
+
+    # 3. Компоненти і питання
     components = {}
     for code, name, weight in COMPONENTS:
         comp = Component(code=code, name=name, weight=weight)

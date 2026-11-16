@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, engine
-from .routes import assessments
+from .routes import assessments, results
 
 # Створює таблиці, якщо їх ще немає (дані при цьому не стираються)
 Base.metadata.create_all(engine)
@@ -17,6 +17,7 @@ app.add_middleware(
 
 # Адреси модулів підключаються тут; самі адреси лежать у backend/app/routes/
 app.include_router(assessments.router)
+app.include_router(results.router)
 
 
 @app.get("/api/health")

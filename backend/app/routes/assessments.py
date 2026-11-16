@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..anonymity import suppress_small_groups
 from ..database import get_db
-from ..models import AccessToken, Answer, Component, Cycle, Question, ResponseSet
+from ..models import AccessToken, Answer, Component, Cycle, Question, ResponseSet, Unit
 from ..roles import ALL_ROLES, ANALYTICS_ROLES, require_role
 
 router = APIRouter(prefix="/api", tags=["Оцінювання"])
@@ -60,6 +60,12 @@ def read_questionnaire(assessment_id: int, db: Session = Depends(get_db)):
             for c in db.query(Component).order_by(Component.code).all()]
 
 
+@router.get("/units", dependencies=[Depends(require_role(*ALL_ROLES))])
+def list_units(db: Session = Depends(get_db)):
+    """Довідник підрозділів — для випадного списку в анкеті."""
+    return [u.name for u in db.query(Unit).order_by(Unit.name).all()]
+
+
 # ---------------------------------------------------------------------------
 # Анонімне надсилання анкети
 # ---------------------------------------------------------------------------
@@ -90,6 +96,10 @@ def submit_answers(assessment_id: int, body: AnonymousSubmission, db: Session = 
     cycle = get_assessment(assessment_id, db)
     if cycle.status != "open":
         raise HTTPException(status_code=409, detail="Оцінювання закрите")
+
+    # Підрозділ — лише з довідника: довільний текст (прізвище, кімната) у базу не потрапить
+    if db.query(Unit).filter_by(name=body.unit).first() is None:
+        raise HTTPException(status_code=422, detail="Підрозділ не з довідника (див. GET /api/units)")
 
     # Перевірка відповідей: на кожне питання анкети рівно одна відповідь у межах шкали
     questions = {q.id: q for q in db.query(Question).filter(Question.kind == "survey").all()}
@@ -137,6 +147,20 @@ def issue_tokens(assessment_id: int, count: int = Query(default=10, ge=1, le=500
     db.add_all(AccessToken(cycle_id=assessment_id, token=t, used=False) for t in tokens)
     db.commit()
     return {"tokens": tokens}
+
+
+@router.post("/assessments/{assessment_id}/close", dependencies=[Depends(require_role("admin"))])
+def close_assessment(assessment_id: int, db: Session = Depends(get_db)):
+    """
+    Завершує оцінювання: нові анкети більше не приймаються, а результати й розбивка
+    стають доступними (до закриття їх не показуємо — захист анонімності).
+    """
+    cycle = get_assessment(assessment_id, db)
+    if cycle.status != "open":
+        raise HTTPException(status_code=409, detail="Оцінювання вже закрите")
+    cycle.status = "closed"
+    db.commit()
+    return assessment_to_dict(cycle)
 
 
 @router.get("/assessments/{assessment_id}/participation",

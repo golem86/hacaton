@@ -17,7 +17,9 @@
 | --- | --- | --- | --- |
 | Технічна перевірка | `GET /api/health` | `Health` | Реалізовано |
 | Assessment Manager | `GET /api/assessments`; `GET /api/assessments/{assessment_id}`; `POST /api/assessments/{assessment_id}/tokens`; `GET /api/assessments/{assessment_id}/participation` | `Assessment`, `TokenBatch`, `Participation` | Реалізовано (PR #4) |
-| Assessment Manager | `POST /api/assessments`; `POST /api/assessments/{assessment_id}/close` | `AssessmentCreate` | Заплановано |
+| Assessment Manager | `POST /api/assessments/{assessment_id}/close`; `GET /api/units` | `Assessment`, довідник підрозділів | Реалізовано (backend-results) |
+| Assessment Manager | `POST /api/assessments` | `AssessmentCreate` | Заплановано |
+| Агреговані результати (вхід для Index Engine і Dashboard) | `GET /api/assessments/{assessment_id}/results` | `AssessmentResults` | Реалізовано (backend-results) |
 | Digital Questionnaire | `GET /api/assessments/{assessment_id}/questionnaires`; `POST /api/assessments/{assessment_id}/submissions` | `Questionnaire`, `AnonymousSubmission` | Реалізовано (PR #4) |
 | Integrity Index Engine | `GET /api/assessments/{assessment_id}/index`; `GET /api/index-methodologies/{version}` | `IndexResult`, `IndexMethodology` | Заплановано |
 | Executive Dashboard | `GET /api/assessments/{assessment_id}/dashboard` | `DashboardSummary` | Заплановано |
@@ -55,10 +57,10 @@
 
 | Маршрут | admin | respondent | expert | data_officer | manager | anticorruption | auditor |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/assessments`, `GET /api/assessments/{id}`, `GET /api/assessments/{id}/questionnaires` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `GET /api/assessments`, `GET /api/assessments/{id}`, `GET /api/assessments/{id}/questionnaires`, `GET /api/units` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `POST /api/assessments/{id}/submissions` | | ✓ | | | | | |
-| `POST /api/assessments/{id}/tokens` | ✓ | | | | | | |
-| `GET /api/assessments/{id}/participation` | ✓ | | | | ✓ | ✓ | ✓ |
+| `POST /api/assessments/{id}/tokens`, `POST /api/assessments/{id}/close` | ✓ | | | | | | |
+| `GET /api/assessments/{id}/participation`, `GET /api/assessments/{id}/results` | ✓ | | | | ✓ | ✓ | ✓ |
 
 Помилки доступу: `401` — роль не вказана або невідома; `403` — у ролі немає прав.
 
@@ -88,13 +90,39 @@
  "answers": [{"question_id": 1, "value": 4}]}
 ```
 
-Відповідь `201 {"status": "accepted"}` — без номера анкети, щоб її не можна було зіставити з кодом. Помилки: `403` — недійсний, чужий або вже використаний код (одне повідомлення для всіх випадків); `409` — оцінювання закрите; `422` — неповна анкета, значення поза шкалою або невідома категорія (код при цьому не витрачається).
+Відповідь `201 {"status": "accepted"}` — без номера анкети, щоб її не можна було зіставити з кодом. Помилки: `403` — недійсний, чужий або вже використаний код (одне повідомлення для всіх випадків); `409` — оцінювання закрите; `422` — неповна анкета, значення поза шкалою, невідома категорія або підрозділ не з довідника (код при цьому не витрачається).
+
+`unit` — лише назва з `GET /api/units` (`["Кафедра загальних дисциплін", "Факультет 1", "Факультет 2"]`). Довільний текст база відхиляє: так у неї не потрапляють прізвища чи інші ознаки особи.
 
 Код погашається атомарно разом зі збереженням анкети. Зв'язку код ↔ анкета в базі немає.
 
 ### `POST /api/assessments/{id}/tokens?count=10`
 
 `201 {"tokens": ["…", "…"]}`; `409` — оцінювання закрите. Коди роздаються учасникам анонімно.
+
+### `POST /api/assessments/{id}/close`
+
+Лише `admin`. Завершує оцінювання: `200` з оновленим `Assessment` (`"status": "closed"`); `409` — вже закрите. Після закриття анкети й нові коди не приймаються, а `results` і розбивка `participation` стають доступними.
+
+### `GET /api/assessments/{id}/results`
+
+Вхідні дані для Integrity Index і Dashboard. Доступно **лише для закритого** оцінювання (`409` для відкритого). Бал = середнє відповідей у шкалі 0–100: `(відповідь − min) / (max − min) × 100`.
+
+```json
+{"assessment": {"id": 1, "name": "2025-II", "status": "closed"},
+ "min_group_size": 5, "responses_total": 268,
+ "categories": [{"category": "cadets", "responses": 210, "hidden": false},
+                {"category": "mgmt", "responses": null, "hidden": true},
+                {"category": "npp", "responses": 48, "hidden": false},
+                {"category": "staff", "responses": null, "hidden": true}],
+ "components": [{"code": "C1", "name": "Лідерство й тон керівництва", "weight": 0.15, "score": 51.3,
+                 "by_category": [{"category": "cadets", "score": 47.0, "hidden": false},
+                                 {"category": "mgmt", "score": null, "hidden": true}],
+                 "objective_indicators": [{"name": "Виконання заходів, закріплених за керівництвом, %",
+                                           "value": 52.0, "confirmed": true}]}]}
+```
+
+Числа в прикладі умовні. Приховування категорій те саме, що в `participation`: первинне (< k) і вторинне (сума прихованих ≥ k), однакове для всіх компонентів. Окремі анкети й відповіді не повертаються. Розрахунок Integrity Index (ваги × бали, рівні зрілості) виконує Index Engine поверх цих даних.
 
 ### `GET /api/assessments/{id}/participation?by_unit=false`
 
