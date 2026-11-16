@@ -2,6 +2,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from .anonymity import suppress_small_groups
 from .database import Base, engine, get_db
 from .models import Component, Cycle, ResponseSet
 
@@ -34,20 +35,20 @@ def list_components(db: Session = Depends(get_db)):
 
 
 @app.get("/cycles/{cycle_id}/participation")
-def participation(cycle_id: int, db: Session = Depends(get_db)):
+def participation(cycle_id: int, by_unit: bool = False, db: Session = Depends(get_db)):
     """
-    Скільки анкет заповнила кожна категорія.
+    Скільки анкет заповнила кожна категорія (by_unit=true — категорія в кожному підрозділі).
     Групи, менші за min_group_size, приховуємо — це захист анонімності.
     """
     cycle = db.get(Cycle, cycle_id)
     if cycle is None:
         raise HTTPException(status_code=404, detail="Цикл не знайдено")
 
-    rows = (db.query(ResponseSet.respondent_category, func.count(ResponseSet.id))
+    columns = [ResponseSet.respondent_category] + ([ResponseSet.unit] if by_unit else [])
+    rows = (db.query(*columns, func.count(ResponseSet.id))
             .filter(ResponseSet.cycle_id == cycle_id)
-            .group_by(ResponseSet.respondent_category).all())
+            .group_by(*columns).all())
 
-    return [{"category": category,
-             "responses": count if count >= cycle.min_group_size else None,
-             "hidden": count < cycle.min_group_size}
-            for category, count in rows]
+    groups = [{"category": row[0], **({"unit": row[1]} if by_unit else {}), "responses": row[-1]}
+              for row in rows]
+    return suppress_small_groups(groups, k=cycle.min_group_size, keep_keys=("category", "unit"))

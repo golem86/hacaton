@@ -3,13 +3,18 @@
 Жодних реальних людей чи службової інформації — так вимагає умова хакатону.
 
 Запуск (з папки backend, у пісочниці .venv):
-    python -m app.seed
+    python -m app.seed            # створює базу, ЛИШЕ якщо вона порожня
+    python -m app.seed --reset    # стирає ВСЕ і створює демо-дані заново
 
-УВАГА: скрипт видаляє стару базу і створює нову з нуля.
+Без прапорця --reset скрипт відмовиться чіпати базу, у якій уже є дані.
 """
+import argparse
 import random
 import secrets
+import sys
 from datetime import date
+
+from sqlalchemy import inspect
 
 from .database import Base, SessionLocal, engine
 from .models import (AccessToken, Answer, Component, Cycle, ObjectiveIndicator,
@@ -81,7 +86,29 @@ def level_to_answer(level: float) -> int:
     return max(1, min(5, round(1 + noisy / 25)))
 
 
-def run():
+def database_has_data() -> bool:
+    """Чи є в базі вже хоч одна заповнена анкета."""
+    if "response_sets" not in inspect(engine).get_table_names():
+        return False
+    db = SessionLocal()
+    try:
+        return db.query(ResponseSet).first() is not None
+    finally:
+        db.close()
+
+
+def run(reset: bool = False) -> bool:
+    """
+    Заповнює базу демо-даними. Повертає True, якщо дані створено.
+    Без reset=True НЕ чіпає базу, у якій уже є дані — захист від випадкового стирання.
+    """
+    random.seed(2026)  # щоразу однакові дані
+
+    if database_has_data() and not reset:
+        print("У базі вже є дані — нічого не змінюю.\n"
+              "Щоб стерти все і створити демо-дані заново: python -m app.seed --reset")
+        return False
+
     # 1. Стираємо стару базу і створюємо порожні таблиці за описом з models.py
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
@@ -148,7 +175,12 @@ def run():
           "| відповідей:", db.query(Answer).count(),
           "| циклів:", db.query(Cycle).count())
     db.close()
+    return True
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="Заповнити базу синтетичними демо-даними")
+    parser.add_argument("--reset", action="store_true",
+                        help="стерти ВСІ наявні дані і створити демо-дані заново")
+    args = parser.parse_args()
+    sys.exit(0 if run(reset=args.reset) or not args.reset else 1)

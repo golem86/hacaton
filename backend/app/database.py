@@ -5,14 +5,18 @@
 Усі інші файли беруть звідси `engine` (з'єднання з базою) і `SessionLocal`
 («сесія» — розмова з базою: відкрили, щось прочитали/записали, закрили).
 """
+import os
 from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-# Шлях до файлу бази: E:\hacaton\backend\integrity.db
-# (Path(__file__) — це цей файл, .parent.parent — піднімаємось з app/ до backend/)
-DB_PATH = Path(__file__).resolve().parent.parent / "integrity.db"
+# Шлях до файлу бази: за замовчуванням E:\hacaton\backend\integrity.db
+# (Path(__file__) — це цей файл, .parent.parent — піднімаємось з app/ до backend/).
+# Змінна середовища INTEGRITY_DB дозволяє вказати інший файл — так тести
+# працюють з окремою тимчасовою базою і не чіпають вашу.
+DB_PATH = Path(os.environ.get("INTEGRITY_DB",
+                              Path(__file__).resolve().parent.parent / "integrity.db"))
 
 # Рядок підключення. Щоб потім перейти на PostgreSQL, достатньо змінити лише його.
 DATABASE_URL = f"sqlite:///{DB_PATH}"
