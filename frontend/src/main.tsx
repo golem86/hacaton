@@ -7,8 +7,8 @@ function App() {
     <main className="page">
       <header>
         <p className="eyebrow">Building Integrity Hackathon 2026</p>
-        <h1>Симулятор етичних дилем</h1>
-        <p>Спільна стартова сторінка проєкту. Розділи з’являться після інтеграції модулів команди.</p>
+        <h1>Integrity Management Dashboard</h1>
+        <p>Цифрове оцінювання системи доброчесності та підтримка управлінських рішень.</p>
       </header>
       <nav aria-label="Основна навігація">
         <ul>
