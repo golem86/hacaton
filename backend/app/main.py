@@ -1,11 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import Base, engine
-from .routes import assessments
+from .database import engine
+from .migrations import migrate
+from .routes import assessments, results
 
-# Створює таблиці, якщо їх ще немає (дані при цьому не стираються)
-Base.metadata.create_all(engine)
+# Доводить базу до поточної схеми: створює нову або безпечно оновлює стару
+# (з резервною копією і перевірками; дані не стираються). Див. docs/DATABASE_UPGRADE.md
+_migration = migrate(engine)
+if _migration["action"] == "migrated":
+    print(f"База оновлена до нової схеми. Резервна копія: {_migration['backup']}")
 
 app = FastAPI(title="Integrity Dashboard API")
 app.add_middleware(
@@ -17,6 +21,7 @@ app.add_middleware(
 
 # Адреси модулів підключаються тут; самі адреси лежать у backend/app/routes/
 app.include_router(assessments.router)
+app.include_router(results.router)
 
 
 @app.get("/api/health")

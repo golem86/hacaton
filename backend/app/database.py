@@ -8,8 +8,24 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine
+import sqlite3
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, _record):
+    """
+    SQLite за замовчуванням НЕ перевіряє зв'язки між таблицями (зовнішні ключі).
+    Вмикаємо перевірку для кожного нового з'єднання — тоді, наприклад, відповідь
+    на неіснуюче питання база відхилить сама, навіть якщо в коді API буде помилка.
+    """
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 # Шлях до файлу бази: за замовчуванням E:\hacaton\backend\integrity.db
 # (Path(__file__) — це цей файл, .parent.parent — піднімаємось з app/ до backend/).

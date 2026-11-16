@@ -11,7 +11,7 @@
 """
 from datetime import date
 
-from sqlalchemy import Boolean, Date, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -69,6 +69,17 @@ class Cycle(Base):
 # 3. ВІДПОВІДІ: анонімно!
 # ---------------------------------------------------------------------------
 
+class Unit(Base):
+    """
+    Довідник підрозділів. Анкета може посилатися ЛИШЕ на підрозділ з цього списку —
+    так у базу не потрапить довільний текст (напр. прізвище чи номер кімнати).
+    """
+    __tablename__ = "units"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+
+
 class ResponseSet(Base):
     """
     Одна заповнена анкета. Зберігаємо ЛИШЕ категорію і підрозділ —
@@ -79,7 +90,8 @@ class ResponseSet(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     cycle_id: Mapped[int] = mapped_column(ForeignKey("cycles.id"))
     respondent_category: Mapped[str] = mapped_column(String(30))  # mgmt / npp / cadets / staff / expert
-    unit: Mapped[str] = mapped_column(String(100))                # підрозділ, напр. «Факультет 1»
+    # підрозділ — лише назва з довідника units (база сама відхилить інший текст)
+    unit: Mapped[str] = mapped_column(ForeignKey("units.name"))
     # Навмисно НЕМАЄ: user_id, імені, email, точного часу відправки.
 
     answers: Mapped[list["Answer"]] = relationship(back_populates="response_set")
@@ -88,6 +100,8 @@ class ResponseSet(Base):
 class Answer(Base):
     """Відповідь на одне питання в межах однієї анкети."""
     __tablename__ = "answers"
+    # на одне питання в одній анкеті — лише одна відповідь (перевіряє сама база)
+    __table_args__ = (UniqueConstraint("response_set_id", "question_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     response_set_id: Mapped[int] = mapped_column(ForeignKey("response_sets.id"))
