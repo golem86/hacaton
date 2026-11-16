@@ -9,3 +9,13 @@ ul { list-style: none; padding: 0; display: grid; gap: 1rem; grid-template-colum
 li { background: white; border: 1px solid #d5ded8; border-radius: .6rem; padding: 1.5rem; display: grid; gap: .8rem; }
 li span { font-size: 1.2rem; font-weight: 700; }
 li small { color: #52675f; }
+.assessment { margin-top: 2.5rem; padding: 1.5rem; background: white; border: 1px solid #d5ded8; border-radius: .6rem; }
+.assessment h2 { margin-top: 0; }
+.demo-note { color: #52675f; font-size: .9rem; }
+.assessment label { display: block; margin: 1.5rem 0 .5rem; font-weight: 700; }
+.assessment select { width: 100%; max-width: 28rem; padding: .7rem; font: inherit; border: 1px solid #8b9f97; border-radius: .3rem; background: white; }
+.assessment button { padding: .65rem 1rem; font: inherit; cursor: pointer; }
+.details { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 1.5rem 0 0; }
+.details div { padding-top: 1rem; border-top: 1px solid #d5ded8; }
+.details dt { color: #52675f; font-size: .9rem; }
+.details dd { margin: .4rem 0 0; font-weight: 700; }
