@@ -7,6 +7,8 @@
     python -m app.seed --reset    # стирає ВСЕ і створює демо-дані заново
 
 Без прапорця --reset скрипт відмовиться чіпати базу, у якій уже є дані.
+--reset — лише для окремої синтетичної бази. Робочу базу оновлює migrations.py
+під час запуску сервера без втрати даних (див. docs/DATABASE_UPGRADE.md).
 """
 import argparse
 import random
@@ -17,6 +19,7 @@ from datetime import date
 from sqlalchemy import inspect, select
 
 from .database import Base, SessionLocal, engine
+from .migrations import migrate
 from .models import (AccessToken, Answer, Component, Cycle, ObjectiveIndicator,
                      Question, Recommendation, ResponseSet, Unit)
 
@@ -111,7 +114,7 @@ def run(reset: bool = False) -> bool:
     # 1. Стираємо таблиці ЛИШЕ за явного --reset; інакше база гарантовано порожня
     if reset:
         Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    migrate(engine)  # створює таблиці поточної схеми і записує її версію
 
     db = SessionLocal()
 
