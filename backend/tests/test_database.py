@@ -22,15 +22,17 @@ def test_all_tables_created():
 
 def test_demo_data_loaded():
     db = SessionLocal()
-    assert db.query(ResponseSet).count() == 804   # 268 анкет × 3 цикли
+    # закритий цикл 1 інші тести не змінюють: у ньому рівно 268 демо-анкет (6 + 48 + 210 + 4)
+    assert db.query(ResponseSet).filter_by(cycle_id=1).count() == 268
     db.close()
 
 
 def test_seed_does_not_wipe_without_reset():
     """seed без --reset не повинен чіпати базу, у якій уже є дані."""
-    assert seed.run(reset=False) is False
     db = SessionLocal()
-    assert db.query(ResponseSet).count() == 804
+    before = db.query(ResponseSet).count()
+    assert seed.run(reset=False) is False
+    assert db.query(ResponseSet).count() == before
     db.close()
 
 
@@ -54,16 +56,20 @@ def test_suppress_small_groups_hides_everything_but_label():
     assert result[1] == {"category": "staff", "responses": None, "avg": None, "hidden": True}
 
 
+MANAGER = {"X-Role": "manager"}
+
+
 def test_participation_hides_small_category():
-    response = client.get("/cycles/3/participation")
+    response = client.get("/api/assessments/1/participation", headers=MANAGER)
     assert response.status_code == 200
-    staff = next(g for g in response.json() if g["category"] == "staff")
+    staff = next(g for g in response.json()["groups"] if g["category"] == "staff")
     assert staff == {"category": "staff", "responses": None, "hidden": True}
 
 
 def test_participation_by_unit_never_shows_group_below_k():
     """Навіть при розбитті категорія + підрозділ жодна видима група не менша за 5."""
-    groups = client.get("/cycles/3/participation", params={"by_unit": True}).json()
+    groups = client.get("/api/assessments/1/participation", params={"by_unit": True},
+                        headers=MANAGER).json()["groups"]
     visible = [g for g in groups if not g["hidden"]]
     hidden = [g for g in groups if g["hidden"]]
     assert all(g["responses"] >= 5 for g in visible)
@@ -71,5 +77,5 @@ def test_participation_by_unit_never_shows_group_below_k():
     assert all(g["responses"] is None for g in hidden)
 
 
-def test_unknown_cycle_returns_404():
-    assert client.get("/cycles/999/participation").status_code == 404
+def test_unknown_assessment_returns_404():
+    assert client.get("/api/assessments/999/participation", headers=MANAGER).status_code == 404

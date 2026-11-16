@@ -1,0 +1,163 @@
+"""
+Адреси API для оцінювань (Assessment Manager + Digital Questionnaire).
+Шляхи відповідають docs/API_CONTRACT.md: префікс /api, «assessment» = цикл оцінювання.
+
+У базі цикл зберігається в таблиці `cycles` (модель Cycle); в API він називається assessment.
+"""
+import secrets
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import func, update
+from sqlalchemy.orm import Session
+
+from ..anonymity import suppress_small_groups
+from ..database import get_db
+from ..models import AccessToken, Answer, Component, Cycle, Question, ResponseSet
+from ..roles import ALL_ROLES, ANALYTICS_ROLES, require_role
+
+router = APIRouter(prefix="/api", tags=["Оцінювання"])
+
+RespondentCategory = Literal["mgmt", "npp", "cadets", "staff"]
+
+
+def get_assessment(assessment_id: int, db: Session) -> Cycle:
+    cycle = db.get(Cycle, assessment_id)
+    if cycle is None:
+        raise HTTPException(status_code=404, detail="Оцінювання не знайдено")
+    return cycle
+
+
+def assessment_to_dict(c: Cycle) -> dict:
+    return {"id": c.id, "name": c.name, "start_date": c.start_date,
+            "status": c.status, "min_group_size": c.min_group_size}
+
+
+# ---------------------------------------------------------------------------
+# Перегляд оцінювань і анкет
+# ---------------------------------------------------------------------------
+
+@router.get("/assessments", dependencies=[Depends(require_role(*ALL_ROLES))])
+def list_assessments(db: Session = Depends(get_db)):
+    """Усі цикли оцінювання (для вибору циклу і графіка динаміки)."""
+    return [assessment_to_dict(c) for c in db.query(Cycle).order_by(Cycle.start_date).all()]
+
+
+@router.get("/assessments/{assessment_id}", dependencies=[Depends(require_role(*ALL_ROLES))])
+def read_assessment(assessment_id: int, db: Session = Depends(get_db)):
+    return assessment_to_dict(get_assessment(assessment_id, db))
+
+
+@router.get("/assessments/{assessment_id}/questionnaires",
+            dependencies=[Depends(require_role(*ALL_ROLES))])
+def read_questionnaire(assessment_id: int, db: Session = Depends(get_db)):
+    """Анкета: компоненти з вагами та питаннями (методика прозора — ваги видно всім)."""
+    get_assessment(assessment_id, db)
+    return [{"code": c.code, "name": c.name, "weight": c.weight,
+             "questions": [{"id": q.id, "text": q.text, "scale": [q.scale_min, q.scale_max]}
+                           for q in c.questions if q.kind == "survey"]}
+            for c in db.query(Component).order_by(Component.code).all()]
+
+
+# ---------------------------------------------------------------------------
+# Анонімне надсилання анкети
+# ---------------------------------------------------------------------------
+
+class AnswerIn(BaseModel):
+    question_id: int
+    value: int
+
+
+class AnonymousSubmission(BaseModel):
+    token: str = Field(description="Одноразовий код доступу")
+    respondent_category: RespondentCategory
+    unit: str = Field(min_length=1, max_length=100)
+    answers: list[AnswerIn]
+
+
+@router.post("/assessments/{assessment_id}/submissions", status_code=201,
+             dependencies=[Depends(require_role("respondent"))])
+def submit_answers(assessment_id: int, body: AnonymousSubmission, db: Session = Depends(get_db)):
+    """
+    Приймає заповнену анкету.
+
+    Як захищено анонімність:
+    - код доступу лише позначається «використаним»; зв'язку код ↔ анкета ніде немає;
+    - в анкеті зберігаються тільки категорія й підрозділ;
+    - у відповідь НЕ повертається номер анкети, щоб його не можна було ні з чим зіставити.
+    """
+    cycle = get_assessment(assessment_id, db)
+    if cycle.status != "open":
+        raise HTTPException(status_code=409, detail="Оцінювання закрите")
+
+    # Перевірка відповідей: на кожне питання анкети рівно одна відповідь у межах шкали
+    questions = {q.id: q for q in db.query(Question).filter(Question.kind == "survey").all()}
+    given = [a.question_id for a in body.answers]
+    if sorted(given) != sorted(questions):
+        raise HTTPException(status_code=422, detail="Потрібна рівно одна відповідь на кожне питання анкети")
+    for a in body.answers:
+        q = questions[a.question_id]
+        if not q.scale_min <= a.value <= q.scale_max:
+            raise HTTPException(status_code=422,
+                                detail=f"Відповідь на питання {q.id} має бути від {q.scale_min} до {q.scale_max}")
+
+    # «Погасити» код атомарно: спрацює лише якщо код існує, належить цьому циклу і ще не використаний.
+    # Одне повідомлення для всіх випадків — щоб не можна було перебором дізнатися, які коди існують.
+    redeemed = db.execute(
+        update(AccessToken)
+        .where(AccessToken.token == body.token, AccessToken.cycle_id == assessment_id,
+               AccessToken.used.is_(False))
+        .values(used=True)
+    ).rowcount
+    if redeemed != 1:
+        db.rollback()
+        raise HTTPException(status_code=403, detail="Недійсний або вже використаний код доступу")
+
+    rs = ResponseSet(cycle_id=assessment_id, respondent_category=body.respondent_category, unit=body.unit)
+    rs.answers = [Answer(question_id=a.question_id, value=a.value) for a in body.answers]
+    db.add(rs)
+    db.commit()  # код і анкета зберігаються разом: або обидва, або нічого
+    return {"status": "accepted"}
+
+
+# ---------------------------------------------------------------------------
+# Керування оцінюванням
+# ---------------------------------------------------------------------------
+
+@router.post("/assessments/{assessment_id}/tokens", status_code=201,
+             dependencies=[Depends(require_role("admin"))])
+def issue_tokens(assessment_id: int, count: int = Query(default=10, ge=1, le=500),
+                 db: Session = Depends(get_db)):
+    """Видає одноразові коди доступу для учасників. Коди роздаються анонімно (напр. роздруківками)."""
+    cycle = get_assessment(assessment_id, db)
+    if cycle.status != "open":
+        raise HTTPException(status_code=409, detail="Оцінювання закрите")
+    tokens = [secrets.token_hex(16) for _ in range(count)]
+    db.add_all(AccessToken(cycle_id=assessment_id, token=t, used=False) for t in tokens)
+    db.commit()
+    return {"tokens": tokens}
+
+
+@router.get("/assessments/{assessment_id}/participation",
+            dependencies=[Depends(require_role(*ANALYTICS_ROLES))])
+def participation(assessment_id: int, by_unit: bool = False, db: Session = Depends(get_db)):
+    """
+    Скільки анкет заповнила кожна категорія (by_unit=true — категорія в кожному підрозділі)
+    і скільки кодів ще не використано. Групи, менші за min_group_size, приховуються.
+    """
+    cycle = get_assessment(assessment_id, db)
+
+    columns = [ResponseSet.respondent_category] + ([ResponseSet.unit] if by_unit else [])
+    rows = (db.query(*columns, func.count(ResponseSet.id))
+            .filter(ResponseSet.cycle_id == assessment_id)
+            .group_by(*columns).all())
+    groups = [{"category": row[0], **({"unit": row[1]} if by_unit else {}), "responses": row[-1]}
+              for row in rows]
+
+    issued = db.query(AccessToken).filter(AccessToken.cycle_id == assessment_id).count()
+    used = db.query(AccessToken).filter(AccessToken.cycle_id == assessment_id,
+                                        AccessToken.used.is_(True)).count()
+    return {"tokens_issued": issued, "tokens_used": used,
+            "groups": suppress_small_groups(groups, k=cycle.min_group_size,
+                                            keep_keys=("category", "unit"))}
