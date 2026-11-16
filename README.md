@@ -4,7 +4,7 @@
 
 ## Стан проєкту
 
-Зараз реалізовано лише стартову сторінку на React + TypeScript + Vite та FastAPI з `GET /api/health` і локальним CORS. Є мінімальний тест API. SQLite, функціональні модулі, рольовий доступ, опитування та розрахунок Integrity Index ще не реалізовані в цій гілці.
+Реалізовано Executive Dashboard на React + TypeScript + Vite з Assessment Manager API та агрегованими результатами закритих циклів. Dashboard показує KPI, C1–C7, категорії респондентів, об’єктивні показники й безпечні стани відкритих циклів. Integrity Index, Recommendations, Comparative Analytics і серверний Reporting API залишаються запланованими.
 
 ## Напрями розробки
 
@@ -27,15 +27,33 @@ python -m venv .venv
 
 Перевірка доступності API — `http://127.0.0.1:8000/api/health`. Схема поточного API — `http://127.0.0.1:8000/docs`.
 
-Frontend у другому вікні:
+Frontend у другому вікні (пряме підключення до backend):
 
 ```powershell
 cd frontend
 npm install
+$env:VITE_API_BASE_URL = "http://127.0.0.1:8000"
 npm run dev
 ```
 
 Відкрийте `http://127.0.0.1:5173`. Якщо PowerShell блокує `npm.ps1`, використайте `npm.cmd` без зміни політики виконання Windows.
+
+Для backend на іншому порту, наприклад `8001`, змініть лише значення змінної:
+
+```powershell
+$env:VITE_API_BASE_URL = "http://127.0.0.1:8001"
+```
+
+Альтернатива — Vite proxy. У цьому режимі Dashboard звертається до відносних `/api` маршрутів, а proxy пересилає їх на backend:
+
+```powershell
+cd frontend
+$env:VITE_API_BASE_URL = ""
+$env:VITE_API_PROXY_TARGET = "http://127.0.0.1:8001"
+npm run dev
+```
+
+`VITE_API_BASE_URL` має пріоритет над proxy. Після зміни змінних перезапустіть Vite. У запитах Dashboard використовуються `GET /api/assessments`, `GET /api/assessments/{id}` і `GET /api/assessments/{id}/results`; для деморежиму клієнт передає `X-Role: manager`.
 
 ## Перевірки
 
@@ -43,6 +61,7 @@ npm run dev
 cd backend
 .\.venv\Scripts\python.exe -m pytest
 cd ..\frontend
+npm run test
 npm run build
 cd ..
 git diff --check
