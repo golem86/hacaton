@@ -10,6 +10,7 @@ import {
   type AssessmentResults,
 } from './dashboard'
 import { loadResults } from './dashboard/loadResults'
+import { AnalyticsModules, canShowAnalytics } from './dashboard/AnalyticsModules'
 import Survey from './pages/Survey'
 import './style.css'
 
@@ -189,6 +190,9 @@ function App() {
             <CategoryComparison categories={results.categories} components={results.components} />
             <ObjectiveIndicators components={results.components} />
           </>
+        )}
+        {canShowAnalytics(selectedAssessment, selectedId, detailLoading, detailError) && (
+          <AnalyticsModules key={selectedAssessment.id} id={selectedAssessment.id} assessments={assessments} />
         )}
       </section>
       <PendingModules />

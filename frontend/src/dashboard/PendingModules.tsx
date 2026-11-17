@@ -1,9 +1,6 @@
 import './dashboard.css'
 
 const modules = [
-  { title: 'Integrity Index', description: 'Очікує затвердженої методики та API індексу.' },
-  { title: 'Recommendations', description: 'Очікує API рекомендацій.' },
-  { title: 'Comparative Analytics', description: 'Очікує API порівняння циклів.' },
   { title: 'Reporting / PDF / XLSX', description: 'Очікує серверного API звітів та експорту.' },
 ]
 

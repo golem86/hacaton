@@ -61,6 +61,10 @@
 .dashboard-pending strong { color: var(--ink); font-size: .87rem; line-height: 1.3; }
 .dashboard-pending span { color: var(--muted); font-size: .81rem; line-height: 1.35; }
 .dashboard-pending small { margin-top: auto; color: var(--teal); font-size: .77rem; font-weight: 700; }
+.analytics-notice { padding: .8rem 1rem; border-left: 3px solid #a36d1c; background: #fff7e9; color: #674813; line-height: 1.45; }
+.analytics-number { margin: .7rem 0; color: var(--green); font-size: 2rem; font-weight: 750; }
+.dashboard-panel > ul, .dashboard-panel details ul { padding-left: 1.3rem; line-height: 1.65; }
+.dashboard-panel > label { display: inline-block; margin-bottom: .6rem; font-weight: 650; }
 @media (max-width: 900px) {
   .dashboard-scroll-cue { display: block; margin: -.2rem 0 .85rem; color: var(--teal); font-size: .86rem; font-weight: 650; }
   .dashboard-indicator-groups { grid-template-columns: 1fr; }
