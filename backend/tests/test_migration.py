@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import get_db
 from app.main import app
-from app.migrations import MigrationError, migrate
+from app.migrations import SCHEMA_VERSION, MigrationError, migrate
 from app.models import AccessToken, Answer, ResponseSet
 
 # Схема таблиць так, як її створювала попередня версія бекенду (PR #4)
@@ -79,7 +79,8 @@ def test_legacy_database_is_migrated_without_data_loss(tmp_path, with_empty_unit
     assert after["answer_rows"] == before["answer_rows"]    # кожна відповідь на місці, без змін
     assert after["units"] == ["Кафедра історії", "Факультет 1"]  # підрозділи перенесено в довідник
     assert after["unit_fk"] is True
-    assert after["version"] == 1
+    assert after["version"] == SCHEMA_VERSION
+    assert "audit_events" in after["tables"]
     assert {"access_tokens", "objective_indicators", "recommendations"} <= after["tables"]
     assert not any(t.startswith("_legacy") for t in after["tables"])
 
@@ -161,3 +162,28 @@ def test_api_accepts_old_unit_after_migration(tmp_path):
     finally:
         app.dependency_overrides.clear()
     assert inspect_db(db)["sets"] == 4
+
+
+def test_v1_database_gets_audit_table_without_touching_data(tmp_path):
+    """База версії 1 (без журналу дій) → версія 2: додається лише audit_events, дані без змін."""
+    from app.database import Base
+    from app.models import AuditEvent
+
+    db = tmp_path / "integrity.db"
+    make_legacy_db(db)
+    engine = create_engine(f"sqlite:///{db}")
+    migrate(engine)
+    AuditEvent.__table__.drop(engine)             # імітуємо базу версії 1
+    with sqlite3.connect(db) as con:
+        con.execute("PRAGMA user_version = 1")
+    before = inspect_db(db)
+    assert "audit_events" not in before["tables"]
+
+    report = migrate(engine)
+
+    after = inspect_db(db)
+    assert report["action"] == "up_to_date" and report["backup"] is None
+    assert after["version"] == SCHEMA_VERSION == 2
+    assert "audit_events" in after["tables"]
+    assert after["set_rows"] == before["set_rows"] and after["answer_rows"] == before["answer_rows"]
+    assert set(Base.metadata.tables) <= after["tables"]

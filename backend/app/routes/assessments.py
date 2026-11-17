@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
+from .. import audit
 from ..anonymity import suppress_small_groups
 from ..database import get_db
 from ..models import AccessToken, Answer, Component, Cycle, Question, ResponseSet, Unit
@@ -135,22 +136,23 @@ def submit_answers(assessment_id: int, body: AnonymousSubmission, db: Session = 
 # Керування оцінюванням
 # ---------------------------------------------------------------------------
 
-@router.post("/assessments/{assessment_id}/tokens", status_code=201,
-             dependencies=[Depends(require_role("admin"))])
+@router.post("/assessments/{assessment_id}/tokens", status_code=201)
 def issue_tokens(assessment_id: int, count: int = Query(default=10, ge=1, le=500),
-                 db: Session = Depends(get_db)):
+                 role: str = Depends(require_role("admin")), db: Session = Depends(get_db)):
     """Видає одноразові коди доступу для учасників. Коди роздаються анонімно (напр. роздруківками)."""
     cycle = get_assessment(assessment_id, db)
     if cycle.status != "open":
         raise HTTPException(status_code=409, detail="Оцінювання закрите")
     tokens = [secrets.token_hex(16) for _ in range(count)]
     db.add_all(AccessToken(cycle_id=assessment_id, token=t, used=False) for t in tokens)
+    audit.record(db, role, "tokens.issue", assessment_id, count=count)  # лише кількість, не коди
     db.commit()
     return {"tokens": tokens}
 
 
-@router.post("/assessments/{assessment_id}/close", dependencies=[Depends(require_role("admin"))])
-def close_assessment(assessment_id: int, db: Session = Depends(get_db)):
+@router.post("/assessments/{assessment_id}/close")
+def close_assessment(assessment_id: int, role: str = Depends(require_role("admin")),
+                     db: Session = Depends(get_db)):
     """
     Завершує оцінювання: нові анкети більше не приймаються, а результати й розбивка
     стають доступними (до закриття їх не показуємо — захист анонімності).
@@ -159,6 +161,7 @@ def close_assessment(assessment_id: int, db: Session = Depends(get_db)):
     if cycle.status != "open":
         raise HTTPException(status_code=409, detail="Оцінювання вже закрите")
     cycle.status = "closed"
+    audit.record(db, role, "assessment.close", assessment_id)
     db.commit()
     return assessment_to_dict(cycle)
 

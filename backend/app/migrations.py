@@ -7,8 +7,10 @@
 
 Версія схеми зберігається в самій базі: `PRAGMA user_version`.
   0 — попередня версія (підрозділ — довільний текст, без унікальності відповідей);
-  1 — поточна: довідник units, response_sets.unit → units.name,
+  1 — довідник units, response_sets.unit → units.name,
       answers унікальні за (response_set_id, question_id).
+  2 — поточна: додано таблицю журналу дій audit_events. Зміна лише додає нову
+      таблицю (наявні не змінюються), тому виконується через create_all без перебудови.
 
 Що робить migrate() для старої бази:
   1. Робить резервну копію файлу бази (integrity.backup-<дата-час>.db).
@@ -28,7 +30,7 @@ from sqlalchemy.schema import CreateTable
 from .database import Base
 from .models import Answer, ResponseSet, Unit
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class MigrationError(RuntimeError):
