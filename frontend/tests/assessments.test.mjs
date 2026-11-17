@@ -11,7 +11,7 @@ const token = 'private-one-time-code'
 const body = { token, respondent_category: 'mgmt', unit: 'Факультет 1', answers: [{ question_id: 9, value: 3 }] }
 
 before(async () => {
-  server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom' })
+  server = await createServer({ server: { middlewareMode: true, hmr: false }, optimizeDeps: { noDiscovery: true }, cacheDir: 'node_modules/.vite-assessments-test', appType: 'custom' })
   api = await server.ssrLoadModule('/src/api/assessments.ts')
 })
 after(async () => { globalThis.fetch = originalFetch; await server?.close() })
@@ -39,7 +39,7 @@ test('GET methods preserve routes, roles, signal and valid responses', async () 
   assert.deepEqual(await api.getAssessment(3, controller.signal), assessment)
   assert.deepEqual(await api.getQuestionnaire(3, controller.signal), questionnaire)
   assert.deepEqual(await api.getUnits(controller.signal), ['Факультет 1'])
-  assert.deepEqual(calls.map(call => new URL(call.url).pathname), [
+  assert.deepEqual(calls.map(call => new URL(call.url, 'http://localhost').pathname), [
     '/api/assessments', '/api/assessments/3', '/api/assessments/3/questionnaires', '/api/units',
   ])
   assert.deepEqual(calls.map(call => call.options.headers['X-Role']), ['manager', 'manager', 'respondent', 'respondent'])
@@ -75,7 +75,7 @@ test('POST confirms only 201 accepted and keeps code in body', async () => {
   const calls = mockFetch(() => reply({ status: 'accepted' }, 201))
   assert.deepEqual(await api.submitQuestionnaire(3, body), { status: 'accepted' })
   assert.equal(calls.length, 1)
-  assert.equal(new URL(calls[0].url).pathname, '/api/assessments/3/submissions')
+  assert.equal(new URL(calls[0].url, 'http://localhost').pathname, '/api/assessments/3/submissions')
   assert.equal(calls[0].url.includes(token), false)
   assert.equal(calls[0].options.headers['X-Role'], 'respondent')
   assert.equal(calls[0].options.headers['Content-Type'], 'application/json')

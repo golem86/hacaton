@@ -3,6 +3,8 @@ import type {
   Questionnaire,
   SubmissionResponse,
 } from '../types/questionnaireApi'
+import { ApiError, getJson, request } from './client'
+import type { ApiRole } from './client'
 
 export interface Assessment {
   id: number
@@ -11,8 +13,6 @@ export interface Assessment {
   status: 'open' | 'closed'
   min_group_size: number
 }
-
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -54,54 +54,32 @@ function isUnitList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(unit => typeof unit === 'string')
 }
 
-async function getJson<T>(
+async function getValidatedJson<T>(
   path: string,
   validate: (value: unknown) => value is T,
   signal?: AbortSignal,
-  role = 'manager',
+  role: ApiRole = 'manager',
 ): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(`${apiBaseUrl}${path}`, {
-      headers: { 'X-Role': role },
-      signal,
-    })
-  } catch (error) {
-    if (signal?.aborted) throw error
-    throw new Error('Не вдалося з’єднатися з API. Перевірте запуск backend.')
-  }
-
-  if (!response.ok) {
-    throw new Error(`Помилка API (${response.status}). Спробуйте ще раз.`)
-  }
-
-  let result: unknown
-  try {
-    result = await response.json()
-  } catch (error) {
-    if (signal?.aborted) throw error
-    throw new Error('API повернув некоректну відповідь. Спробуйте пізніше.')
-  }
+  const result = await getJson<unknown>(path, signal, {}, role)
   if (!validate(result)) {
-    throw new Error('API повернув некоректну відповідь. Спробуйте пізніше.')
+    throw new ApiError(200, 'API повернув некоректну відповідь. Спробуйте пізніше.')
   }
   return result
 }
-
 export function getAssessments(signal?: AbortSignal): Promise<Assessment[]> {
-  return getJson('/api/assessments', isAssessmentList, signal)
+  return getValidatedJson('/api/assessments', isAssessmentList, signal)
 }
 
 export function getAssessment(id: number, signal?: AbortSignal): Promise<Assessment> {
-  return getJson(`/api/assessments/${id}`, isAssessment, signal)
+  return getValidatedJson(`/api/assessments/${id}`, isAssessment, signal)
 }
 
 export function getQuestionnaire(id: number, signal?: AbortSignal): Promise<Questionnaire> {
-  return getJson(`/api/assessments/${id}/questionnaires`, isQuestionnaire, signal, 'respondent')
+  return getValidatedJson(`/api/assessments/${id}/questionnaires`, isQuestionnaire, signal, 'respondent')
 }
 
 export function getUnits(signal?: AbortSignal): Promise<string[]> {
-  return getJson('/api/units', isUnitList, signal, 'respondent')
+  return getValidatedJson('/api/units', isUnitList, signal, 'respondent')
 }
 
 export class SubmissionOutcomeUnknownError extends Error {
@@ -174,15 +152,12 @@ export async function submitQuestionnaire(
 
   let response: Response
   try {
-    response = await fetch(`${apiBaseUrl}/api/assessments/${id}/submissions`, {
+    response = await request(`/api/assessments/${id}/submissions`, {
       method: 'POST',
-      headers: {
-        'X-Role': 'respondent',
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: requestBody,
       signal,
-    })
+    }, 'respondent')
   } catch {
     throw new SubmissionOutcomeUnknownError()
   }

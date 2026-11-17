@@ -16,7 +16,7 @@ const questionnaire = [
 ]
 
 before(async () => {
-  server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom' })
+  server = await createServer({ server: { middlewareMode: true, hmr: false }, optimizeDeps: { noDiscovery: true }, cacheDir: 'node_modules/.vite-survey-test', appType: 'custom' })
   logic = await server.ssrLoadModule('/src/components/surveyAnswers.ts')
   SurveyForm = (await server.ssrLoadModule('/src/components/SurveyForm.tsx')).default
   Survey = (await server.ssrLoadModule('/src/pages/Survey.tsx')).default
