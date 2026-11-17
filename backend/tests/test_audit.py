@@ -96,11 +96,35 @@ def test_survey_submission_is_not_logged():
     assert "cadets" not in audit_rows_text() and "Факультет" not in audit_rows_text()
 
 
-def test_record_refuses_sensitive_fields():
+@pytest.mark.parametrize("details", [
+    {"token": "abc"}, {"tokens": ["abc"]}, {"answers": [1]}, {"unit": "Факультет 1"},
+    {"respondent_category": "cadets"},
+    {"note": "будь-яке недозволене поле"},          # невідомий ключ
+    {"count": "abc123"},                            # код, «захований» у дозволеному полі
+    {"count": {"token": "abc"}},                    # вкладений об'єкт
+    {"count": ["abc"]},                             # список
+    {"count": True},                                # bool — не число
+])
+def test_record_accepts_only_allowlisted_scalar_fields(details):
     db = SessionLocal()
-    for key in ("token", "tokens", "answers", "unit", "respondent_category"):
-        with pytest.raises(ValueError):
-            audit.record(db, "admin", "test", None, **{key: "x"})
+    with pytest.raises(ValueError):
+        audit.record(db, "admin", "tokens.issue", None, **details)
+    db.rollback()
+    db.close()
+
+
+def test_record_refuses_unknown_action():
+    db = SessionLocal()
+    with pytest.raises(ValueError):
+        audit.record(db, "admin", "survey.submit", None)
+    db.rollback()
+    db.close()
+
+
+def test_record_accepts_allowed_fields():
+    db = SessionLocal()
+    audit.record(db, "admin", "tokens.issue", None, count=5)
+    audit.record(db, "admin", "assessment.close", None)
     db.rollback()
     db.close()
 

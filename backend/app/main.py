@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import audit
 from .database import engine
 from .migrations import migrate
-from .routes import assessments, results
+from .routes import assessments, results, analytics
 
 # Доводить базу до поточної схеми: створює нову або безпечно оновлює стару
 # (з резервною копією і перевірками; дані не стираються). Див. docs/DATABASE_UPGRADE.md
@@ -24,6 +24,7 @@ app.include_router(audit.router)  # журнал дій: GET /api/audit-events
 # Адреси модулів підключаються тут; самі адреси лежать у backend/app/routes/
 app.include_router(assessments.router)
 app.include_router(results.router)
+app.include_router(analytics.router)
 
 
 @app.get("/api/health")
