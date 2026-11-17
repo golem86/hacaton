@@ -70,6 +70,36 @@ test('GET rejects malformed JSON and invalid response shapes', async () => {
   }
 })
 
+test('questionnaire accepts standard and ten-value scales', async () => {
+  const valid = [{ ...questionnaire[0], questions: [
+    { id: 9, text: 'Стандартна шкала', scale: [1, 5] },
+    { id: 10, text: 'Десять значень', scale: [0, 9] },
+    { id: 11, text: 'Десять значень біля межі', scale: [Number.MAX_SAFE_INTEGER - 9, Number.MAX_SAFE_INTEGER] },
+    { id: 12, text: 'Одне значення', scale: [3, 3] },
+  ] }]
+  mockFetch(() => reply(valid))
+  assert.deepEqual(await api.getQuestionnaire(3), valid)
+})
+
+test('questionnaire rejects oversized, invalid and duplicate question scales', async () => {
+  const question = questionnaire[0].questions[0]
+  const withScale = scale => [{ ...questionnaire[0], questions: [{ ...question, scale }] }]
+  const invalid = [
+    withScale([0, 10]),
+    withScale([5, 1]),
+    withScale([1.5, 5]),
+    withScale([1, Number.MAX_SAFE_INTEGER + 1]),
+    withScale([Number.MIN_SAFE_INTEGER - 1, 1]),
+    withScale([Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]),
+    [{ ...questionnaire[0], questions: [question, { ...question }] }],
+    [questionnaire[0], { code: 'B', name: 'Другий компонент', weight: 0, questions: [{ ...question }] }],
+  ]
+  for (const data of invalid) {
+    mockFetch(() => reply(data))
+    await assert.rejects(api.getQuestionnaire(3), /API повернув некоректну відповідь/)
+  }
+})
+
 test('GET preserves network and abort handling', async () => {
   mockFetch(() => { throw new Error('offline') })
   await assert.rejects(api.getAssessments(), /Не вдалося з’єднатися з API/)

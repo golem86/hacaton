@@ -38,23 +38,33 @@ function isAssessmentList(value: unknown): value is Assessment[] {
 }
 
 function isQuestionnaire(value: unknown): value is Questionnaire {
-  return Array.isArray(value) && value.every(component =>
-    isRecord(component)
-    && typeof component.code === 'string'
-    && typeof component.name === 'string'
-    && typeof component.weight === 'number'
-    && Number.isFinite(component.weight)
-    && Array.isArray(component.questions)
-    && component.questions.every((question: unknown) =>
-      isRecord(question)
-      && Number.isInteger(question.id)
-      && typeof question.text === 'string'
-      && Array.isArray(question.scale)
-      && question.scale.length === 2
-      && question.scale.every((bound: unknown) => Number.isSafeInteger(bound))
-      && question.scale[0] <= question.scale[1]
-    )
-  )
+  if (!Array.isArray(value)) return false
+  const questionIds = new Set<number>()
+  return value.every(component => {
+    if (!isRecord(component)
+      || typeof component.code !== 'string'
+      || typeof component.name !== 'string'
+      || typeof component.weight !== 'number'
+      || !Number.isFinite(component.weight)
+      || !Array.isArray(component.questions)) return false
+
+    return component.questions.every((question: unknown) => {
+      if (!isRecord(question)
+        || !Number.isInteger(question.id)
+        || typeof question.text !== 'string'
+        || !Array.isArray(question.scale)
+        || question.scale.length !== 2) return false
+
+      const [min, max] = question.scale
+      if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min > max
+        || BigInt(max) - BigInt(min) >= 10n) return false
+
+      const id = question.id as number
+      if (questionIds.has(id)) return false
+      questionIds.add(id)
+      return true
+    })
+  })
 }
 
 function isUnitList(value: unknown): value is string[] {
