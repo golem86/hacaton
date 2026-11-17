@@ -27,7 +27,7 @@ function mockFetch(handler) {
 }
 function assertNoTokenLeak(error) { assert.equal(String(error).includes(token), false) }
 
-test('GET methods preserve routes, roles, signal and valid responses', async () => {
+test('public GET methods preserve routes, omit credentials and retain abort signals', async () => {
   const controller = new AbortController()
   const calls = mockFetch(url => {
     if (url.endsWith('/questionnaires')) return reply(questionnaire)
@@ -42,7 +42,8 @@ test('GET methods preserve routes, roles, signal and valid responses', async () 
   assert.deepEqual(calls.map(call => call.url), [
     '/api/assessments', '/api/assessments/3', '/api/assessments/3/questionnaires', '/api/units',
   ])
-  assert.deepEqual(calls.map(call => call.options.headers['X-Role']), ['manager', 'manager', 'respondent', 'respondent'])
+  assert.deepEqual(calls.map(call => call.options.credentials), ['omit', 'omit', 'omit', 'omit'])
+  assert.ok(calls.every(call => !new Headers(call.options.headers).has('X-Role')))
   assert.ok(calls.every(call => call.options.signal === controller.signal))
 })
 
@@ -109,12 +110,13 @@ test('GET preserves network and abort handling', async () => {
   await assert.rejects(api.getUnits(controller.signal), { name: 'AbortError' })
 })
 
-test('GET uses shared HTTP errors without changing manager and respondent roles', async () => {
+test('public GET uses safe shared HTTP errors without role headers', async () => {
   const calls = mockFetch(() => reply({ detail: 'ignored' }, 403))
   await assert.rejects(api.getAssessment(3), error => error.status === 403)
   await assert.rejects(api.getUnits(), error => error.status === 403)
   assert.deepEqual(calls.map(call => call.url), ['/api/assessments/3', '/api/units'])
-  assert.deepEqual(calls.map(call => call.options.headers['X-Role']), ['manager', 'respondent'])
+  assert.deepEqual(calls.map(call => call.options.credentials), ['omit', 'omit'])
+  assert.ok(calls.every(call => !new Headers(call.options.headers).has('X-Role')))
 })
 
 test('POST confirms only 201 accepted and keeps code in body', async () => {
@@ -123,8 +125,9 @@ test('POST confirms only 201 accepted and keeps code in body', async () => {
   assert.equal(calls.length, 1)
   assert.equal(calls[0].url, '/api/assessments/3/submissions')
   assert.equal(calls[0].url.includes(token), false)
-  assert.equal(calls[0].options.headers['X-Role'], 'respondent')
-  assert.equal(calls[0].options.headers['Content-Type'], 'application/json')
+  assert.equal(calls[0].options.credentials, 'omit')
+  assert.equal(new Headers(calls[0].options.headers).has('X-Role'), false)
+  assert.equal(new Headers(calls[0].options.headers).get('Content-Type'), 'application/json')
   assert.deepEqual(JSON.parse(calls[0].options.body), body)
 })
 

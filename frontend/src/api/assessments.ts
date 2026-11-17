@@ -3,8 +3,7 @@ import type {
   Questionnaire,
   SubmissionResponse,
 } from '../types/questionnaireApi'
-import { ApiError, getJson, request } from './client'
-import type { ApiRole } from './client'
+import { ApiError, getJson, getPublicJson, request } from './client'
 
 export interface Assessment {
   id: number
@@ -75,28 +74,28 @@ async function getValidatedJson<T>(
   path: string,
   validate: (value: unknown) => value is T,
   signal?: AbortSignal,
-  role: ApiRole = 'manager',
+  publicRequest = false,
 ): Promise<T> {
-  const result = await getJson<unknown>(path, signal, {}, role)
+  const result = publicRequest ? await getPublicJson<unknown>(path, signal) : await getJson<unknown>(path, signal)
   if (!validate(result)) {
     throw new ApiError(200, 'API повернув некоректну відповідь. Спробуйте пізніше.')
   }
   return result
 }
 export function getAssessments(signal?: AbortSignal): Promise<Assessment[]> {
-  return getValidatedJson('/api/assessments', isAssessmentList, signal)
+  return getValidatedJson('/api/assessments', isAssessmentList, signal, true)
 }
 
 export function getAssessment(id: number, signal?: AbortSignal): Promise<Assessment> {
-  return getValidatedJson(`/api/assessments/${id}`, isAssessment, signal)
+  return getValidatedJson(`/api/assessments/${id}`, isAssessment, signal, true)
 }
 
 export function getQuestionnaire(id: number, signal?: AbortSignal): Promise<Questionnaire> {
-  return getValidatedJson(`/api/assessments/${id}/questionnaires`, isQuestionnaire, signal, 'respondent')
+  return getValidatedJson(`/api/assessments/${id}/questionnaires`, isQuestionnaire, signal, true)
 }
 
 export function getUnits(signal?: AbortSignal): Promise<string[]> {
-  return getValidatedJson('/api/units', isUnitList, signal, 'respondent')
+  return getValidatedJson('/api/units', isUnitList, signal, true)
 }
 
 export class SubmissionOutcomeUnknownError extends Error {
@@ -132,7 +131,7 @@ function submissionError(status: number, detail: unknown): Error {
     case 400:
       return new Error('Некоректний запит. Перевірте дані анкети та спробуйте ще раз.')
     case 401:
-      return new Error('API не прийняв роль респондента. Зверніться до відповідального за систему.')
+      return new Error('Сесію не підтверджено. Перевірте код доступу або зверніться до відповідального.')
     case 403:
       return new Error(detail === 'Недійсний або вже використаний код доступу'
         ? 'Код доступу недійсний або вже використаний.'
@@ -174,7 +173,7 @@ export async function submitQuestionnaire(
       headers: { 'Content-Type': 'application/json' },
       body: requestBody,
       signal,
-    }, 'respondent')
+    }, 'omit')
   } catch {
     throw new SubmissionOutcomeUnknownError()
   }

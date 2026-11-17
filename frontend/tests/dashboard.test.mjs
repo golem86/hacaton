@@ -34,12 +34,13 @@ const result = (id) => ({
   }],
 })
 
-test('shared API client sends the demo role and parses assessment JSON', async () => {
+test('public assessment list omits cookies and parses assessment JSON', async () => {
   const oldFetch = globalThis.fetch
   try {
     globalThis.fetch = async (url, options) => {
       assert.equal(url, '/api/assessments')
-      assert.equal(options.headers['X-Role'], 'manager')
+      assert.equal(options.credentials, 'omit')
+      assert.equal(new Headers(options.headers).has('X-Role'), false)
       return response([{ id: 1, name: 'Cycle 1', start_date: '2026-11-16', status: 'closed', min_group_size: 5 }])
     }
     assert.equal((await getAssessments())[0].id, 1)
