@@ -17,6 +17,7 @@ import os
 import secrets
 import smtplib
 import sqlite3
+import ssl
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -30,6 +31,10 @@ SESSION_TTL_HOURS = 12
 
 class MailNotConfigured(RuntimeError):
     """У release немає SMTP — надіслати код неможливо (відкрите питання №5: провайдер)."""
+
+
+class MailDeliveryError(RuntimeError):
+    """SMTP недоступний або не пройшов перевірку TLS — лист не надіслано, код не збережено."""
 
 
 class AuthMigrationError(RuntimeError):
@@ -435,10 +440,25 @@ def deliver_mail(recipient: str, subject: str, body: str) -> None:
     message["To"] = recipient
     message["Subject"] = subject
     message.set_content(body)
-    with smtplib.SMTP(smtp_host, int(os.environ.get("V2_SMTP_PORT", "587")), timeout=10) as smtp:
-        smtp.starttls()
-        smtp.login(os.environ["V2_SMTP_USER"], os.environ["V2_SMTP_PASSWORD"])
-        smtp.send_message(message)
+    try:
+        with smtplib.SMTP(smtp_host, int(os.environ.get("V2_SMTP_PORT", "587")), timeout=10) as smtp:
+            # STARTTLS обов'язковий: без нього (або з помилкою TLS) облікові дані й код не надсилаються.
+            # Контекст перевіряє ланцюжок до довіреного CA і hostname V2_SMTP_HOST.
+            smtp.starttls(context=smtp_tls_context())
+            user = os.environ.get("V2_SMTP_USER")
+            if user:
+                smtp.login(user, os.environ.get("V2_SMTP_PASSWORD", ""))
+            smtp.send_message(message)
+    except (smtplib.SMTPException, ssl.SSLError, OSError) as error:
+        # Подробиці (зокрема адресу сервера) не віддаємо клієнту; маршрут відповідає 503.
+        raise MailDeliveryError("Не вдалося безпечно надіслати лист") from error
+
+
+def smtp_tls_context() -> ssl.SSLContext:
+    """TLS для SMTP: системні довірені CA, CERT_REQUIRED, check_hostname, мінімум TLS 1.2."""
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
 
 
 def latest_dev_mail(recipient: str | None = None) -> dict[str, Any] | None:

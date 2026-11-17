@@ -20,7 +20,7 @@ from ..database import SessionLocal
 from ..request_security import (client_ip, delete_cookie, ensure_preauth, require_preauth_csrf,
                                 require_session_csrf, session_csrf_token, set_cookie)
 from ..roles import session_user
-from ..v2_auth import (SESSION_TTL_HOURS, MailNotConfigured, authenticate, clear_rate_limit,
+from ..v2_auth import (SESSION_TTL_HOURS, MailDeliveryError, MailNotConfigured, authenticate, clear_rate_limit,
                        consume_rate_limit, create_session, create_user, delete_session, find_user_id,
                        is_rate_limited,
                        issue_challenge, latest_dev_mail, rotate_session_after_2fa, session_cookie_name,
@@ -99,7 +99,7 @@ def require_v2_role(role: str):
 def _send_challenge(user_id: int, purpose: str, email: str) -> None:
     try:
         issue_challenge(user_id, purpose, email)
-    except MailNotConfigured as error:
+    except (MailNotConfigured, MailDeliveryError) as error:
         raise HTTPException(status_code=503, detail="Надсилання кодів тимчасово недоступне") from error
 
 
@@ -186,7 +186,7 @@ def request_password_reset(body: ResetRequestBody, request: Request) -> dict[str
                                                   limit=3, window_minutes=15):
         try:
             issue_challenge(user_id, "password_reset", email)
-        except MailNotConfigured:
+        except (MailNotConfigured, MailDeliveryError):
             pass   # відповідь та сама — не розкриваємо стан пошти й акаунта
     return {"status": "sent_if_account_exists"}
 

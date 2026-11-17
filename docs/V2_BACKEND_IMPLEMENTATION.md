@@ -76,7 +76,7 @@ PASS тут означає: реалізовано і перевірено ав�
 | `TRUSTED_PROXIES` | порожньо | IP reverse proxy (Caddy) |
 | `INTEGRITY_DEMO_XROLE` | `0` (лише для регресійних тестів V1 — `1`) | заборонено |
 | `V2_AUTH_DEV_MAIL` | `0` (для локальної 2FA — `1`) | заборонено |
-| `V2_SMTP_*` | — | потрібні для 2FA (відкрите питання №5) |
+| `V2_SMTP_*` | — | потрібні для 2FA; лише STARTTLS із перевіркою сертифіката (системні CA) і hostname `V2_SMTP_HOST`, інакше лист не надсилається (503) |
 | `INTEGRITY_ANALYTICS_DEMO` | `1` лише на синтетичній БД | лише на синтетичній БД |
 
 Перший адміністратор: `python -m app.v2_bootstrap_admin --name "Admin" --email admin@example.test`.
