@@ -45,11 +45,19 @@ def responses_count() -> int:
 # --- Рольовий доступ --------------------------------------------------------
 
 def test_request_without_role_is_rejected():
-    assert client.get("/api/assessments").status_code == 401
+    # V2: список циклів публічний (розділ 2.1), тож перевіряємо захищений маршрут
+    assert client.get(f"/api/assessments/{OPEN_ID}/participation").status_code == 401
 
 
 def test_unknown_role_is_rejected():
-    assert client.get("/api/assessments", headers={"X-Role": "hacker"}).status_code == 401
+    assert client.get(f"/api/assessments/{OPEN_ID}/participation",
+                      headers={"X-Role": "hacker"}).status_code == 401
+
+
+def test_public_survey_reads_need_no_role():
+    for path in ("/api/assessments", f"/api/assessments/{OPEN_ID}",
+                 f"/api/assessments/{OPEN_ID}/questionnaires", "/api/units"):
+        assert client.get(path).status_code == 200, path
 
 
 def test_respondent_cannot_see_participation_statistics():
@@ -61,10 +69,14 @@ def test_only_admin_issues_tokens():
     assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=ADMIN).status_code == 201
 
 
-def test_only_respondent_submits_answers():
-    response = client.post(f"/api/assessments/{OPEN_ID}/submissions",
-                           json=submission(new_token()), headers=MANAGER)
-    assert response.status_code == 403
+def test_submission_depends_only_on_code_not_on_role():
+    """V2: анонімне подання доступне лише за кодом; X-Role нічого не змінює (розділ 2.1)."""
+    assert client.post(f"/api/assessments/{OPEN_ID}/submissions",
+                       json=submission(new_token()), headers=MANAGER).status_code == 201
+    assert client.post(f"/api/assessments/{OPEN_ID}/submissions",
+                       json=submission(new_token())).status_code == 201
+    assert client.post(f"/api/assessments/{OPEN_ID}/submissions",
+                       json=submission("no-such-code"), headers=ADMIN).status_code == 403
 
 
 def test_everyone_sees_questionnaire_with_weights():

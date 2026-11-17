@@ -1,18 +1,24 @@
 """
-Рольова модель доступу.
+Рольова модель доступу (V2 Integration Contract, розділ 2).
 
-Хто що може робити, перевіряє СЕРВЕР, а не лише інтерфейс: навіть якщо хтось
-надішле запит напряму, без потрібної ролі він отримає відмову (403).
+Роль визначає ЛИШЕ перевірена серверна сесія (verified principal): cookie сесії V2 після 2FA.
+Ролі V2: admin, user. Анонімний респондент акаунта не має — його маршрут доступний за одноразовим кодом.
 
-⚠️ ЛИШЕ ДЕМО-РЕЖИМ. Роль передається в заголовку запиту `X-Role`, напр. `X-Role: manager`.
-Це НЕ автентифікація: сервер вірить заголовку, тож будь-хто може назватися будь-якою роллю.
-Механізм потрібен лише для демонстрації матриці доступу на синтетичних даних.
-У реальному розгортанні роль надходить із відомчої системи автентифікації (єдиний вхід),
-змінюється лише функція `check` нижче; правила доступу на адресах лишаються ті самі.
+Заголовок X-Role НЕ є автентифікацією. Він обробляється лише в режимі development з явним
+прапорцем INTEGRITY_DEMO_XROLE=1 (для регресійних тестів V1); у release сервер з цим прапорцем
+не стартує (settings.validate_release_config). Якщо є сесія, X-Role ігнорується повністю.
+
+Для запитів зміни стану з cookie-сесією тут же перевіряється CSRF (розділ 3.0).
 """
-from fastapi import Header, HTTPException
+from typing import Any
 
-# Ролі з брифу продукту
+from fastapi import HTTPException, Request
+
+from . import settings
+from .request_security import WRITE_METHODS, require_session_csrf
+from .v2_auth import session_cookie_name, user_for_session
+
+# Ролі V1 — лише для демо-режиму X-Role (development + INTEGRITY_DEMO_XROLE=1)
 ROLES = {
     "admin": "Адміністратор оцінювання",
     "respondent": "Респондент",
@@ -22,28 +28,45 @@ ROLES = {
     "anticorruption": "Уповноважений з антикорупції",
     "auditor": "Аудитор / внутрішній контроль",
 }
-
 ALL_ROLES = tuple(ROLES)
-# Хто бачить агреговані результати й статистику участі
+# Сесійна роль admin входить у кожен набір; ролі V1 діють лише в демо-режимі
 ANALYTICS_ROLES = ("admin", "manager", "anticorruption", "auditor")
+
+
+def session_user(request: Request) -> dict[str, Any] | None:
+    """Користувач з cookie сесії (у т.ч. pending до 2FA) або None."""
+    return user_for_session(request.cookies.get(session_cookie_name()))
+
+
+def resolve_principal(request: Request) -> dict[str, Any] | None:
+    user = session_user(request)
+    if user is not None:
+        # Є сесія → лише вона визначає роль; X-Role ігнорується
+        if not user["two_factor_verified"]:
+            return None
+        return {"role": user["role"], "source": "session", "user": user}
+    if settings.demo_xrole_enabled():
+        role = request.headers.get("x-role")
+        if role in ROLES:
+            return {"role": role, "source": "demo-x-role", "user": None}
+    return None
 
 
 def require_role(*allowed: str):
     """
-    Створює перевірку для адреси API. Використання:
-        @router.get(..., dependencies=[Depends(require_role("admin", "manager"))])
+    Перевірка доступу для захищених маршрутів:
+        @router.get(..., dependencies=[Depends(require_role("admin"))])
+    401 — немає перевіреної сесії; 403 — немає прав або CSRF не пройдено.
     """
-    def check(x_role: str | None = Header(
-            default=None,
-            description="ЛИШЕ ДЕМО: роль користувача. Це НЕ автентифікація — будь-хто може "
-                        "вказати будь-яку роль. У реальному розгортанні роль береться з відомчої "
-                        "системи входу, а цей заголовок вимикається.")) -> str:
-        if x_role is None:
-            raise HTTPException(status_code=401, detail="Не вказано роль (заголовок X-Role)")
-        if x_role not in ROLES:
-            raise HTTPException(status_code=401, detail=f"Невідома роль: {x_role}")
-        if x_role not in allowed:
+    def check(request: Request) -> str:
+        principal = resolve_principal(request)
+        if principal is None:
+            raise HTTPException(status_code=401, detail="Потрібен вхід до системи")
+        if principal["role"] not in allowed:
             raise HTTPException(status_code=403, detail="Недостатньо прав для цієї дії")
-        return x_role
+        if principal["source"] == "session" and request.method in WRITE_METHODS:
+            require_session_csrf(request)
+        request.state.principal = principal
+        return principal["role"]
 
     return check
