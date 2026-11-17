@@ -8,7 +8,7 @@ import secrets
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt, ValidationError, model_validator
 from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from .. import audit
 from ..anonymity import suppress_small_groups
 from ..database import get_db
 from ..models import AccessToken, Answer, Component, Cycle, Question, ResponseSet, Unit
+from ..questionnaire_contract import SAFE_INTEGER, Questionnaire
 from ..roles import ALL_ROLES, ANALYTICS_ROLES, require_role
 
 router = APIRouter(prefix="/api", tags=["Оцінювання"])
@@ -53,12 +54,23 @@ def read_assessment(assessment_id: int, db: Session = Depends(get_db)):
 @router.get("/assessments/{assessment_id}/questionnaires",
             dependencies=[Depends(require_role(*ALL_ROLES))])
 def read_questionnaire(assessment_id: int, db: Session = Depends(get_db)):
-    """Анкета: компоненти з вагами та питаннями (методика прозора — ваги видно всім)."""
+    """
+    Анкета: компоненти з вагами та питаннями (методика прозора — ваги видно всім).
+    Перед видачею перевіряється контракт (questionnaire_contract.py): шкала 1–10 значень,
+    безпечні цілі межі, унікальні id питань. Якщо дані в БД його порушують — це помилка
+    налаштування сервера (500), а не клієнта: фронтенд некоректної анкети не отримає.
+    """
     get_assessment(assessment_id, db)
-    return [{"code": c.code, "name": c.name, "weight": c.weight,
+    data = [{"code": c.code, "name": c.name, "weight": c.weight,
              "questions": [{"id": q.id, "text": q.text, "scale": [q.scale_min, q.scale_max]}
                            for q in c.questions if q.kind == "survey"]}
             for c in db.query(Component).order_by(Component.code).all()]
+    try:
+        Questionnaire.model_validate(data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=500,
+                            detail="Анкета в базі порушує контракт шкали; зверніться до адміністратора") from exc
+    return data
 
 
 @router.get("/units", dependencies=[Depends(require_role(*ALL_ROLES))])
@@ -72,15 +84,23 @@ def list_units(db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 class AnswerIn(BaseModel):
-    question_id: int
-    value: int
+    # Строгі цілі: "4", 4.0, 4.5 чи true відхиляються з 422 (а не перетворюються мовчки)
+    question_id: StrictInt = Field(ge=1, le=SAFE_INTEGER)
+    value: StrictInt = Field(ge=-SAFE_INTEGER, le=SAFE_INTEGER)
 
 
 class AnonymousSubmission(BaseModel):
-    token: str = Field(description="Одноразовий код доступу")
+    token: str = Field(min_length=1, max_length=128, description="Одноразовий код доступу")
     respondent_category: RespondentCategory
     unit: str = Field(min_length=1, max_length=100)
-    answers: list[AnswerIn]
+    answers: list[AnswerIn] = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def unique_questions(self):
+        ids = [a.question_id for a in self.answers]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Кожне питання може мати лише одну відповідь")
+        return self
 
 
 @router.post("/assessments/{assessment_id}/submissions", status_code=201,
