@@ -45,12 +45,12 @@ const methodologyData = {
   weights: { C1: '0.15' }, limitations: ['Synthetic components only'],
 }
 
-test('analytics clients use exact routes, methodology and manager demo role', async () => {
+test('analytics clients use exact routes, methodology and authenticated session cookies', async () => {
   const oldFetch = globalThis.fetch
   const seen = []
   try {
     globalThis.fetch = async (url, options) => {
-      seen.push({ url, role: options.headers['X-Role'] })
+      seen.push({ url, credentials: options.credentials, roleHeader: new Headers(options.headers).has('X-Role') })
       if (url.includes('index-methodologies')) return response({
         version: api.DEMO_METHODOLOGY, approval_status: 'proposed',
         synthetic_only: true, official: false, formula: 'sum(component_score * component_weight)',
@@ -75,10 +75,10 @@ test('analytics clients use exact routes, methodology and manager demo role', as
     assert.deepEqual((await api.getRecommendations(1)).proposals, [])
     assert.deepEqual((await api.getComparisons(1)).category_comparisons, [])
     assert.deepEqual(seen, [
-      { url: '/api/index-methodologies/team-results-demo-0.1', role: 'manager' },
-      { url: '/api/assessments/1/index?methodology=team-results-demo-0.1', role: 'manager' },
-      { url: '/api/assessments/1/recommendations?methodology=team-results-demo-0.1', role: 'manager' },
-      { url: '/api/analytics/comparisons?assessment_id=1&methodology=team-results-demo-0.1', role: 'manager' },
+      { url: '/api/index-methodologies/team-results-demo-0.1', credentials: 'include', roleHeader: false },
+      { url: '/api/assessments/1/index?methodology=team-results-demo-0.1', credentials: 'include', roleHeader: false },
+      { url: '/api/assessments/1/recommendations?methodology=team-results-demo-0.1', credentials: 'include', roleHeader: false },
+      { url: '/api/analytics/comparisons?assessment_id=1&methodology=team-results-demo-0.1', credentials: 'include', roleHeader: false },
     ])
   } finally { globalThis.fetch = oldFetch }
 })
