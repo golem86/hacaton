@@ -8,7 +8,10 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       strictPort: true,
-      proxy: VITE_API_PROXY_TARGET ? { '/api': { target: VITE_API_PROXY_TARGET, changeOrigin: true } } : undefined,
+      proxy: VITE_API_PROXY_TARGET ? {
+        '/api': { target: VITE_API_PROXY_TARGET, changeOrigin: true },
+        '/v2': { target: VITE_API_PROXY_TARGET, changeOrigin: true },
+      } : undefined,
     },
   }
 })

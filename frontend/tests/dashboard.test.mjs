@@ -13,6 +13,7 @@ const { scoreText } = await server.ssrLoadModule('/src/dashboard/format.ts')
 const { DashboardSummary } = await server.ssrLoadModule('/src/dashboard/DashboardSummary.tsx')
 const { ComponentScores } = await server.ssrLoadModule('/src/dashboard/ComponentScores.tsx')
 const { CategoryComparison } = await server.ssrLoadModule('/src/dashboard/CategoryComparison.tsx')
+const { getAnonymousSurveys, submitAnonymousAnswers } = await server.ssrLoadModule('/src/api/v2Anonymous.ts')
 
 const response = (data, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => data })
 const tick = () => new Promise((resolve) => setImmediate(resolve))
@@ -122,5 +123,22 @@ test('Dashboard loader reports 409 and network failures without unhandled reject
     await tick()
     assert.match(errors[1], /з’єднатися/)
     assert.deepEqual(completed, [3, 1])
+  } finally { globalThis.fetch = oldFetch }
+})
+
+test('anonymous V2 API omits credentials and never uses account cookies', async () => {
+  const oldFetch = globalThis.fetch
+  try {
+    const seen = []
+    globalThis.fetch = async (url, options) => {
+      seen.push({ url, credentials: options.credentials, method: options.method })
+      return response(url.endsWith('/assessments') ? [{ id: 'anonymous-integrity-2026' }] : { status: 'submitted' }, url.endsWith('/assessments') ? 200 : 201)
+    }
+    await getAnonymousSurveys()
+    await submitAnonymousAnswers('anonymous-integrity-2026', 'submission-123', { a1: 3, a2: 4, a3: 5 })
+    assert.deepEqual(seen, [
+      { url: '/v2/anonymous/assessments', credentials: 'omit', method: undefined },
+      { url: '/v2/anonymous/assessments/anonymous-integrity-2026/responses', credentials: 'omit', method: 'POST' },
+    ])
   } finally { globalThis.fetch = oldFetch }
 })
