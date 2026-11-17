@@ -18,13 +18,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+function isCalendarDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
 function isAssessment(value: unknown): value is Assessment {
   return isRecord(value)
-    && Number.isInteger(value.id)
+    && Number.isSafeInteger(value.id) && (value.id as number) > 0
     && typeof value.name === 'string'
-    && typeof value.start_date === 'string'
+    && isCalendarDate(value.start_date)
     && (value.status === 'open' || value.status === 'closed')
-    && Number.isInteger(value.min_group_size)
+    && Number.isSafeInteger(value.min_group_size) && (value.min_group_size as number) > 0
 }
 
 function isAssessmentList(value: unknown): value is Assessment[] {
@@ -45,7 +51,8 @@ function isQuestionnaire(value: unknown): value is Questionnaire {
       && typeof question.text === 'string'
       && Array.isArray(question.scale)
       && question.scale.length === 2
-      && question.scale.every((bound: unknown) => Number.isInteger(bound))
+      && question.scale.every((bound: unknown) => Number.isSafeInteger(bound))
+      && question.scale[0] <= question.scale[1]
     )
   )
 }

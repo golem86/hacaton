@@ -39,7 +39,7 @@ test('GET methods preserve routes, roles, signal and valid responses', async () 
   assert.deepEqual(await api.getAssessment(3, controller.signal), assessment)
   assert.deepEqual(await api.getQuestionnaire(3, controller.signal), questionnaire)
   assert.deepEqual(await api.getUnits(controller.signal), ['Факультет 1'])
-  assert.deepEqual(calls.map(call => new URL(call.url, 'http://localhost').pathname), [
+  assert.deepEqual(calls.map(call => call.url), [
     '/api/assessments', '/api/assessments/3', '/api/assessments/3/questionnaires', '/api/units',
   ])
   assert.deepEqual(calls.map(call => call.options.headers['X-Role']), ['manager', 'manager', 'respondent', 'respondent'])
@@ -50,9 +50,17 @@ test('GET rejects malformed JSON and invalid response shapes', async () => {
   const cases = [
     [() => api.getAssessments(), reply([{}])],
     [() => api.getAssessment(3), reply({ ...assessment, id: '3' })],
+    [() => api.getAssessment(3), reply({ ...assessment, id: 0 })],
+    [() => api.getAssessment(3), reply({ ...assessment, id: Number.MAX_SAFE_INTEGER + 1 })],
+    [() => api.getAssessment(3), reply({ ...assessment, min_group_size: 0 })],
+    [() => api.getAssessment(3), reply({ ...assessment, start_date: '2026-02-30' })],
+    [() => api.getAssessment(3), reply({ ...assessment, start_date: '2026-11-16T00:00:00Z' })],
     [() => api.getQuestionnaire(3), reply([{ ...questionnaire[0], weight: '1' }])],
     [() => api.getQuestionnaire(3), reply([{ ...questionnaire[0], questions: [{ id: '9', text: 'Питання', scale: [1, 5] }] }])],
     [() => api.getQuestionnaire(3), reply([{ ...questionnaire[0], questions: [{ id: 9, text: 'Питання', scale: [1] }] }])],
+    [() => api.getQuestionnaire(3), reply([{ ...questionnaire[0], questions: [{ id: 9, text: 'Питання', scale: [5, 1] }] }])],
+    [() => api.getQuestionnaire(3), reply([{ ...questionnaire[0], questions: [{ id: 9, text: 'Питання', scale: [1.5, 5] }] }])],
+    [() => api.getQuestionnaire(3), reply([{ ...questionnaire[0], questions: [{ id: 9, text: 'Питання', scale: [1, Number.MAX_SAFE_INTEGER + 1] }] }])],
     [() => api.getUnits(), reply(['Факультет 1', 7])],
     [() => api.getAssessments(), new Response('{', { status: 200 })],
   ]
@@ -71,15 +79,40 @@ test('GET preserves network and abort handling', async () => {
   await assert.rejects(api.getUnits(controller.signal), { name: 'AbortError' })
 })
 
+test('GET uses shared HTTP errors without changing manager and respondent roles', async () => {
+  const calls = mockFetch(() => reply({ detail: 'ignored' }, 403))
+  await assert.rejects(api.getAssessment(3), error => error.status === 403)
+  await assert.rejects(api.getUnits(), error => error.status === 403)
+  assert.deepEqual(calls.map(call => call.url), ['/api/assessments/3', '/api/units'])
+  assert.deepEqual(calls.map(call => call.options.headers['X-Role']), ['manager', 'respondent'])
+})
+
 test('POST confirms only 201 accepted and keeps code in body', async () => {
   const calls = mockFetch(() => reply({ status: 'accepted' }, 201))
   assert.deepEqual(await api.submitQuestionnaire(3, body), { status: 'accepted' })
   assert.equal(calls.length, 1)
-  assert.equal(new URL(calls[0].url, 'http://localhost').pathname, '/api/assessments/3/submissions')
+  assert.equal(calls[0].url, '/api/assessments/3/submissions')
   assert.equal(calls[0].url.includes(token), false)
   assert.equal(calls[0].options.headers['X-Role'], 'respondent')
   assert.equal(calls[0].options.headers['Content-Type'], 'application/json')
   assert.deepEqual(JSON.parse(calls[0].options.body), body)
+})
+
+test('POST accepted by server with lost confirmation remains unknown and is not retried', async () => {
+  let serverAccepted = false
+  const calls = mockFetch(() => {
+    serverAccepted = true
+    throw new TypeError('connection closed after commit')
+  })
+  await assert.rejects(api.submitQuestionnaire(3, body), error => {
+    assert.ok(error instanceof api.SubmissionOutcomeUnknownError)
+    assert.match(error.message, /Анкету могли прийняти/)
+    assertNoTokenLeak(error)
+    return true
+  })
+  assert.equal(serverAccepted, true)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, '/api/assessments/3/submissions')
 })
 
 test('POST classifies 400, 401, 403, 409 and 422 as confirmed refusals without echoing detail', async () => {
