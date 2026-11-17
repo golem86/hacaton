@@ -12,7 +12,7 @@
 from datetime import date, datetime
 
 from sqlalchemy import (Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text,
-                        UniqueConstraint)
+                        UniqueConstraint, event)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -48,6 +48,16 @@ class Question(Base):
     kind: Mapped[str] = mapped_column(String(20), default="survey")
 
     component: Mapped[Component] = relationship(back_populates="questions")
+
+
+@event.listens_for(Question, "before_insert")
+@event.listens_for(Question, "before_update")
+def _check_question_scale(_mapper, _connection, question: Question) -> None:
+    """Некоректну шкалу (див. questionnaire_contract.py) не можна записати в БД."""
+    from .questionnaire_contract import DEFAULT_SCALE, validate_scale
+    scale_min = DEFAULT_SCALE[0] if question.scale_min is None else question.scale_min
+    scale_max = DEFAULT_SCALE[1] if question.scale_max is None else question.scale_max
+    validate_scale(scale_min, scale_max)
 
 
 # ---------------------------------------------------------------------------

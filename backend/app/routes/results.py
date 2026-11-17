@@ -52,7 +52,10 @@ def assessment_results(assessment_id: int, db: Session = Depends(get_db)):
     total = sum(sizes.values())
 
     # 2. Середній бал (0–100) по компоненту × категорії і по компоненту загалом
-    score = func.avg((Answer.value - Question.scale_min) * 100.0 / (Question.scale_max - Question.scale_min))
+    # NULLIF: шкала з одним значенням (min == max) дає NULL замість ділення на нуль,
+    # а AVG пропускає NULL — тож такі питання не впливають на бал компонента.
+    score = func.avg((Answer.value - Question.scale_min) * 100.0
+                     / func.nullif(Question.scale_max - Question.scale_min, 0))
     base = (db.query(Question.component_id).join(Answer, Answer.question_id == Question.id)
             .join(ResponseSet, ResponseSet.id == Answer.response_set_id)
             .filter(ResponseSet.cycle_id == assessment_id, Question.kind == "survey"))
