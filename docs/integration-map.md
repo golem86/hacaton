@@ -2,7 +2,7 @@
 
 Пункт здачі 9. Документ показує, з яких компонентів складається система, як між ними рухаються дані, які API-маршрути вже працюють і як систему можна підключити як модуль до наявних відомчих інформаційних систем.
 
-**Стан на 17.11.2026, гілка `feature/integration` (`cc66d1b`), backend-тести: 122 passed.** Усі дані синтетичні. Методика з 7 компонентів демонстраційна і не має статусу офіційно затвердженої.
+**Стан на 17.11.2026, гілка `feature/integration` (`2ad3641`, з PR #9), backend-тести: 122 passed.** Усі дані синтетичні. Методика з 7 компонентів демонстраційна і не має статусу офіційно затвердженої.
 
 Позначення статусу:
 
@@ -10,6 +10,7 @@
 | --- | --- |
 | ✅ Реалізовано | код у `feature/integration`, покритий тестами |
 | 🟡 Демо за прапорцем | працює лише з `INTEGRITY_ANALYTICS_DEMO=1` на синтетичній БД |
+| 🟠 Частково | є лише service-логіка (Python-функції), без HTTP API і без зберігання в БД |
 | 🔵 У гілці | код є в окремій гілці, ще не злитий |
 | ⚪ Заплановано | описано в контракті, коду немає |
 
@@ -30,6 +31,7 @@ flowchart LR
         AN["Анонімність: приховування груп<br/>anonymity.py · №2 · ✅"]
         AT["Audit Trail<br/>audit.py · №2 · ✅"]
         IX["Index · Recommendations · Comparisons<br/>routes/analytics.py + services/ · №4 · 🟡"]
+        TR["Recommendations Tracker<br/>services/tracker.py · №4 · 🟠 service-only,<br/>без HTTP API і зберігання"]
     end
 
     subgraph DB["SQLite · integrity.db"]
@@ -46,6 +48,7 @@ flowchart LR
     RS --> AN
     RS --> T
     IX -->|"лише через /results"| RS
+    IX -.->|"переходи статусів (без API)"| TR
     AT --> T
     MG --> T
 ```
@@ -66,7 +69,7 @@ flowchart LR
 | Audit Trail | №2 | `backend/app/audit.py` | ✅ |
 | Executive Dashboard (бали компонентів, порівняння категорій, об'єктивні показники) | №3 | `frontend/src/dashboard/`, `docs/DASHBOARD_PLAN.md` | ✅ |
 | Integrity Index Engine, Comparative Analytics, Recommendations Engine | №4 | `backend/app/routes/analytics.py`, `backend/app/services/` | 🟡 демо за прапорцем |
-| Recommendations Tracker (доменна логіка переходів статусів) | №4 | `backend/app/services/tracker.py` | 🟡 лише функція, без HTTP і зберігання |
+| Recommendations Tracker (доменна логіка переходів статусів) | №4 | `backend/app/services/tracker.py` | 🟠 частково: service-only логіка без HTTP API та зберігання; прийняття рекомендації, відповідальний і строк поки не доступні через API |
 | Інтеграція, QA, контракт API, демо-сервер | №5 | `feature/integration`, `docs/API_CONTRACT.md` | ✅ |
 
 ## 3. API-маршрути
@@ -161,7 +164,7 @@ sequenceDiagram
 | --- | --- | --- |
 | Анкета в `feature/integration` | злити `feature/survey-api` після рев'ю | №1, №5 |
 | Індекс, рекомендації, порівняння в Dashboard | підключити маршрути №4 в UI | №3, №4 |
-| Recommendations Tracker | зберігання, `PATCH`, історія, відповідальний і строк від автентифікованої особи | №2, №4 |
+| Recommendations Tracker (зараз 🟠 частково: service-only) | HTTP API (`GET`, `PATCH`), зберігання в БД, історія змін, відповідальний і строк від автентифікованої особи | №2, №4 |
 | Створення циклів через API | `POST /api/assessments` | №2 |
 | Звіти й експорт (PDF / XLSX) | Reporting Module | не призначено |
 | Офіційні питання додатків Б і В | нова версія каталогу й методики, міграція схеми | наступна версія (рішення №5) |
@@ -174,7 +177,10 @@ sequenceDiagram
 
 - **REST API з OpenAPI-описом** (`/docs`, `/openapi.json`): будь-яка система може викликати маршрути без нашого інтерфейсу;
 - **немає залежності від хмарних сервісів**: Python, FastAPI, SQLite, усе працює в закритому відомчому контурі;
-- **сховище замінне**: SQLAlchemy дозволяє перейти з SQLite на PostgreSQL зміною рядка підключення в `backend/app/database.py`;
+- **сховище можна замінити, але не одним рядком**: моделі описані через SQLAlchemy, тому таблиці й запити здебільшого не залежать від СУБД. Перехід із SQLite на PostgreSQL, крім зміни рядка підключення в `backend/app/database.py`, потребує адаптації SQLite-специфічних частин і перевірки сумісності:
+  - міграції в `backend/app/migrations.py` використовують `PRAGMA user_version`, `PRAGMA foreign_keys`, `legacy_alter_table`, `foreign_key_check`, `integrity_check` і SQLite backup API, тому для PostgreSQL їх треба переписати (наприклад, на Alembic);
+  - вмикання зовнішніх ключів у `database.py` специфічне для SQLite;
+  - потрібен повний прогін тестів і тестової міграції на PostgreSQL;
 - **межі модулів чіткі**: кожен модуль — окремий роутер FastAPI, його можна вимкнути або підключити до іншого застосунку.
 
 Типові точки інтеграції (конкретні системи визначає замовник):
