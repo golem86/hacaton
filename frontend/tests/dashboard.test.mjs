@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 
-const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
+const server = await createServer({ server: { middlewareMode: true, hmr: false }, optimizeDeps: { noDiscovery: true }, cacheDir: 'node_modules/.vite-dashboard-test', appType: 'custom', logLevel: 'error' })
 after(() => server.close())
 const { getAssessments } = await server.ssrLoadModule('/src/api/assessments.ts')
 const { getAssessmentResults } = await server.ssrLoadModule('/src/dashboard/results.ts')
@@ -40,7 +40,7 @@ test('shared API client sends the demo role and parses assessment JSON', async (
     globalThis.fetch = async (url, options) => {
       assert.equal(url, '/api/assessments')
       assert.equal(options.headers['X-Role'], 'manager')
-      return response([{ id: 1, status: 'closed' }])
+      return response([{ id: 1, name: 'Cycle 1', start_date: '2026-11-16', status: 'closed', min_group_size: 5 }])
     }
     assert.equal((await getAssessments())[0].id, 1)
   } finally { globalThis.fetch = oldFetch }

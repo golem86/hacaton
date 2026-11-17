@@ -1,0 +1,17 @@
+.survey-api-form { display: grid; gap: 1.5rem; }
+.survey-api-fields { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+.survey-api-fields label { display: block; margin-bottom: .4rem; font-weight: 700; }
+.survey-api-fields select, .survey-api-fields input { width: 100%; padding: .7rem; border: 1px solid #426c62; border-radius: .4rem; background: white; color: #18272a; font: inherit; }
+.survey-api-component { border-top: 2px solid #d5ded8; padding-top: 1rem; }
+.survey-api-component h3 { margin-top: 0; }
+.survey-api-question { border: 0; border-top: 1px solid #d5ded8; margin: 1.25rem 0 0; padding: 1rem 0 0; min-width: 0; }
+.survey-api-question legend { font-weight: 700; line-height: 1.5; }
+.survey-api-options { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .75rem; }
+.survey-api-options label { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid #b8c8bf; border-radius: .4rem; padding: .6rem .9rem; cursor: pointer; }
+.survey-api-options label:has(input:checked) { border-color: #284c42; background: #e6eee9; }
+.survey-api-options input { accent-color: #284c42; }
+.survey-api-button { width: fit-content; max-width: 100%; padding: .85rem 1.25rem; border: 1px solid #284c42; border-radius: .5rem; background: #284c42; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+.survey-api-button:disabled { cursor: not-allowed; opacity: .6; }
+.survey-api :focus-visible { outline: 3px solid #1468b3; outline-offset: 3px; }
+.survey-api-error { color: #a12622; font-weight: 700; }
+.survey-api-success { color: #284c42; font-weight: 700; }
