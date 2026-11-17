@@ -17,7 +17,7 @@ client = TestClient(app)
 def test_all_tables_created():
     tables = set(inspect(engine).get_table_names())
     assert tables == {"components", "questions", "cycles", "units", "response_sets", "answers",
-                      "access_tokens", "objective_indicators", "recommendations"}
+                      "access_tokens", "objective_indicators", "recommendations", "audit_events"}
 
 
 def test_demo_data_loaded():

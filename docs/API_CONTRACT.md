@@ -21,12 +21,12 @@
 | Assessment Manager | `POST /api/assessments` | `AssessmentCreate` | Заплановано |
 | Агреговані результати (вхід для Index Engine і Dashboard) | `GET /api/assessments/{assessment_id}/results` | `AssessmentResults` | Реалізовано (backend-results) |
 | Digital Questionnaire | `GET /api/assessments/{assessment_id}/questionnaires`; `POST /api/assessments/{assessment_id}/submissions` | `Questionnaire`, `AnonymousSubmission` | Реалізовано (PR #4) |
-| Integrity Index Engine | `GET /api/assessments/{assessment_id}/index`; `GET /api/index-methodologies/{version}` | `IndexResult`, `IndexMethodology` | Заплановано |
+| Integrity Index Engine | `GET /api/assessments/{assessment_id}/index`; `GET /api/index-methodologies/{version}` | `IndexResult`, `IndexMethodology` | Реалізовано у пропозиції №4, synthetic opt-in |
 | Executive Dashboard | `GET /api/assessments/{assessment_id}/dashboard` | `DashboardSummary` | Заплановано |
-| Comparative Analytics | `GET /api/analytics/comparisons` | `Comparison` | Заплановано |
-| Recommendations Engine | `GET /api/assessments/{assessment_id}/recommendations` | `RecommendationProposal` | Заплановано |
+| Comparative Analytics | `GET /api/analytics/comparisons` | `Comparison` | Реалізовано у пропозиції №4, synthetic opt-in |
+| Recommendations Engine | `GET /api/assessments/{assessment_id}/recommendations` | `RecommendationProposal` | Реалізовано у пропозиції №4, GET лише пропонує |
 | Recommendations Tracker | `GET /api/recommendations`; `PATCH /api/recommendations/{recommendation_id}` | `TrackedRecommendation` | Заплановано |
-| Audit Trail | `GET /api/audit-events` | `AuditEvent` | Заплановано |
+| Audit Trail | `GET /api/audit-events` | `AuditEvent` | Реалізовано (backend-audit) |
 | Reporting Module | `GET /api/assessments/{assessment_id}/reports`; `GET /api/reports/{report_id}/export` | `Report`, файл експорту | Заплановано |
 
 Шляхи зі статусом «Заплановано» є пропозицією для обговорення. Жоден з них зараз не повинен вважатися доступним API. Зовнішні інтеграції та формат експорту команда визначить окремо.
@@ -61,6 +61,7 @@
 | `POST /api/assessments/{id}/submissions` | | ✓ | | | | | |
 | `POST /api/assessments/{id}/tokens`, `POST /api/assessments/{id}/close` | ✓ | | | | | | |
 | `GET /api/assessments/{id}/participation`, `GET /api/assessments/{id}/results` | ✓ | | | | ✓ | ✓ | ✓ |
+| `GET /api/audit-events` | ✓ | | | | | | ✓ |
 
 Помилки доступу: `401` — роль не вказана або невідома; `403` — у ролі немає прав.
 
@@ -124,6 +125,19 @@
 
 Числа в прикладі умовні. Приховування категорій те саме, що в `participation`: первинне (< k) і вторинне (сума прихованих ≥ k), однакове для всіх компонентів. Окремі анкети й відповіді не повертаються. Розрахунок Integrity Index (ваги × бали, рівні зрілості) виконує Index Engine поверх цих даних.
 
+### `GET /api/audit-events?assessment_id=&limit=100`
+
+Лише `admin` і `auditor`. Записи адміністративних дій, найновіші першими; `limit` від 1 до 500 (інакше `422`); `assessment_id` необов'язковий фільтр.
+
+```json
+[{"id": 2, "created_at": "2026-11-17T08:15:02.123456Z", "actor_role": "admin",
+  "action": "assessment.close", "assessment_id": 3, "details": {}},
+ {"id": 1, "created_at": "2026-11-17T08:10:40.654321Z", "actor_role": "admin",
+  "action": "tokens.issue", "assessment_id": 3, "details": {"count": 20}}]
+```
+
+Журналюються: `tokens.issue` (лише кількість, без кодів) і `assessment.close`. Запис зберігається в одній транзакції з самою дією. Невдалі спроби (`401`, `403`, `409`, `422`) не журналюються. **Не журналюються ніколи:** коди доступу, відповіді, категорія й підрозділ респондента, подання анкет (час подання міг би розкрити автора). Див. `docs/anonymity.md`.
+
 ### `GET /api/assessments/{id}/participation?by_unit=false`
 
 ```json
@@ -141,3 +155,77 @@
 - Вторинне приховування: у межах кожного відомого підсумку сума прихованих груп має бути 0 або не менше k. Інакше додатково приховується найменша видима група. Тому «підсумок − сума видимих» не розкриває розмір малої групи (у прикладі `mgmt` приховано саме з цієї причини).
 - `by_unit=true` повертає клітинки «категорія × підрозділ» з тим самим правилом відносно підсумку категорії. Категорія, прихована в загальній розбивці, приховується і в усіх своїх клітинках.
 - `responses_total = null`, якщо загальна кількість менша за k. Кількість використаних кодів не повертається, бо вона дорівнює підсумку.
+
+## Аналітика №4: інтеграційна пропозиція поверх `/results`
+
+**Версія `team-results-demo-0.1`, авторська, неофіційна, `approval_status=proposed`.**
+Окрема методика для семи вигаданих компонентів чинного seed, не заміна `demo-0.2` з трьома компонентами та питаннями додатка В. До командного прийняття показувати статус і обмеження поруч із результатом.
+
+Оператор явно вмикає її змінною середовища `INTEGRITY_ANALYTICS_DEMO=1` **лише для синтетичної БД**. За замовчуванням обчислення вимкнені. `.env.example` сам не завантажується Python-застосунком. Оператор відповідає за походження бази: прапорець не перевіряє синтетичність кожного запису.
+
+`INTEGRITY_ANALYTICS_DEMO=1` — лише дозвіл на запуск обчислень: він **не перевіряє походження даних**. Запускайте модуль тільки з **окремим файлом синтетичної SQLite-БД**, заданим через `INTEGRITY_DB`, а не з типовою чи спільною БД. `synthetic_only=true` у відповіді позначає призначення демометодики, а не результат перевірки записів.
+
+Усі маршрути нижче мають ту саму матрицю доступу, що `/results`: admin, manager, anticorruption, auditor. Без ролі — 401, інші ролі — 403. `X-Role` залишається суто демонстраційним, не автентифікацією.
+
+| Метод | Шлях | Результат |
+| --- | --- | --- |
+| GET | `/api/index-methodologies/team-results-demo-0.1` | Формула, точні ваги, пороги, версія, статус та обмеження |
+| GET | `/api/assessments/{id}/index?methodology=team-results-demo-0.1` | Індекс, компоненти, внески, видимі категорії та хеші |
+| GET | `/api/assessments/{id}/recommendations?methodology=team-results-demo-0.1` | Пояснювані пропозиції й окремий фактичний контекст |
+| GET | `/api/analytics/comparisons?assessment_id=1&comparison_assessment_id=2&methodology=team-results-demo-0.1` | Розриви категорій і необов’язкове зіставлення двох циклів |
+
+`methodology` обов’язковий для трьох обчислювальних маршрутів. Немає параметра чи версія невідома — 422. Деморежим вимкнено — 503. Невідомий цикл — 404; відкритий — 409. Непогоджений набір компонентів/ваг — 409. Однакові ID у порівнянні циклів — 422. Метадані невідомої версії — 404.
+
+Приклад запиту:
+
+```bash
+curl -H 'X-Role: manager' 'http://127.0.0.1:8000/api/assessments/1/index?methodology=team-results-demo-0.1'
+```
+
+Успішна відповідь має assessment, source=survey, synthetic_only=true, methodology_version, approval_status, official=false, status, index, index_exact, components, by_category, coverage, expert, audit, precision, warnings. Для умовного випадку, де всі 7 компонентів мають 50 балів:
+
+```json
+{"methodology_version":"team-results-demo-0.1","approval_status":"proposed",
+ "official":false,"source":"survey","synthetic_only":true,
+ "status":"ok","index":50.0,"index_exact":"50"}
+```
+
+Це скорочений приклад. Компонент C1 у повній відповіді:
+
+```json
+{"code":"C1","name":"Синтетичний компонент","score":50.0,
+ "weight":0.15,"weight_exact":"3/20","contribution":7.5,
+ "contribution_exact":"15/2","status":"ok"}
+```
+
+Приклад помилки 409:
+
+```json
+{"detail":"Results do not match the selected demo methodology"}
+```
+
+Приклад помилки 503:
+
+```json
+{"detail":"Set INTEGRITY_ANALYTICS_DEMO=1 only for a synthetic database"}
+```
+
+Формула: **II = Σ(Ci × wi)**. Ваги C1..C7: 0.15, 0.15, 0.15, 0.20, 0.10, 0.15, 0.10; точна сума 1. Це числа з поточного демо-seed, **не офіційні ваги МОУ/НАЗК**. Їхня нерівність ще потребує змістовного обґрунтування командою; поточна реалізація забезпечує лише прозорість та інтеграційну сумісність. Інші ваги чи компоненти потребують нової версії й людського рішення.
+
+Джерело — вже нормалізовані до 0–100 й округлені до 0.1 бали `/results`. Повторного перетворення шкали немає. `Fraction` зберігає точні десяткові вхідні числа. Поля exact стосуються цих агрегатів, а не сирих анкет. За коректного upstream-округлення похибка індексу від округлення не перевищує 0.05 бала; статистична похибка не оцінюється. Для порогових сигналів теж використовуються наявні округлені агрегати.
+
+Немає компонента — `index=null`, `status=insufficient_data`, без перерозподілу ваг. Прихована загальна кількість — `index=null`, `status=suppressed`; похідні групові значення також приховані. Приховані категорії/клітинки не відновлюються ні індексом, ні порівнянням, ні рекомендацією. k береться з `/results`. coverage.response_rate=null, бо немає знаменника запланованих учасників.
+
+Усі survey-категорії залишаються категоріями самооцінювання: mgmt не перетворюється на незалежних експертів. expert.status=not_available, index=null.
+
+Для видимих категорій gap=left−right; abs(gap)>=25 — авторський сигнал перегляду, не доказ нечесності чи статистична значущість. Для прихованих gap_points=null, flag=null, status=unavailable.
+
+Для двох циклів change=after−before. assessment_id — before, comparison_assessment_id — after; порядок задає клієнт. Повертається limited_comparability, бо upstream не фіксує історичні версії анкет, популяції та методики. Це числове зіставлення, не доведене поліпшення. У разі зміни змісту анкет висновок про динаміку не обґрунтований.
+
+Рекомендації: DATA_QUALITY_V1, LOW_SCORE_LT_50_V1, CATEGORY_GAP_GE_25_V1. Кожна має відтворюваний id, assessment_id, rule_id, component_code, basis, text, audit, status=proposed, owner_role/due_date=null, requires_human_decision=true. Умова низького бала — строго <50; розрив — >=25. Обидва пороги авторські.
+
+Фактичні показники повертаються окремим context_only. Непідтверджене значення — null; навіть підтверджені не віднімаються від бала зрілості, бо `/results` не надає погоджених metric_id, одиниць та посилань на докази. Індекс фактами не коригується.
+
+Детерміновані GET-маршрути не записують пропозиції у recommendations, не приймають їх і не призначають строки. Доменний Tracker у services/tracker.py вимагає явного людського рішення; збереження історії й майбутній PATCH-маршрут — окремий інтеграційний крок. Наявні seed-статуси done/overdue не змінюються автоматично.
+
+Tracker порівнює ID циклів після приведення числа та його десяткового рядка до одного значення і відхиляє перевірку тією ж оцінкою. Він **не перевіряє хронологію циклів**: числовий порядок ID не гарантує часовий порядок. Перед реальним статусом `verified` інтеграційний сервіс має окремо перевірити дати та незмінну версію оцінювання в БД.
