@@ -177,3 +177,43 @@ def _migrate_v0_to_v1(con: sqlite3.Connection, engine: Engine) -> dict:
 
     return {"action": "migrated", "backup": str(backup) if backup else None,
             "response_sets": sets_before, "answers": answers_before, "units_added": units_added}
+
+
+def check_schema(engine: Engine) -> None:
+    """
+    MIG-1 (release): лише перевірка, БД не змінюється.
+    Сервер не стартує, якщо схема INTEGRITY_DB не відповідає поточній версії —
+    тоді потрібна явна міграція (python -m app.migrations) після перевіреної резервної копії.
+    """
+    raw = engine.raw_connection()
+    try:
+        con: sqlite3.Connection = raw.driver_connection
+        version = con.execute("PRAGMA user_version").fetchone()[0]
+        tables = _tables(con)
+        missing = {t.name for t in Base.metadata.sorted_tables} - tables
+        if version != SCHEMA_VERSION or missing or needs_migration(con):
+            raise RuntimeError(
+                f"Схема INTEGRITY_DB не відповідає версії {SCHEMA_VERSION} (зараз {version}, "
+                f"відсутні таблиці: {sorted(missing) or 'немає'}). Автоміграція в release вимкнена: "
+                "зробіть перевірену резервну копію і виконайте python -m app.migrations --apply "
+                "--confirm-verified-backup")
+    finally:
+        raw.close()
+
+
+if __name__ == "__main__":
+    # Явна міграція (MIG-1): лише з підтвердженням перевіреної резервної копії.
+    import argparse
+
+    from .database import engine as _engine
+    from .v2_auth import migrate_auth_db
+
+    parser = argparse.ArgumentParser(description="Явна міграція INTEGRITY_DB і V2_AUTH_DB")
+    parser.add_argument("--apply", action="store_true", help="виконати міграцію")
+    parser.add_argument("--confirm-verified-backup", action="store_true",
+                        help="підтверджую: свіжу резервну копію зроблено і перевірено (integrity_check, кількість рядків)")
+    args = parser.parse_args()
+    if not (args.apply and args.confirm_verified_backup):
+        raise SystemExit("Міграцію не виконано: потрібні --apply і --confirm-verified-backup")
+    print("INTEGRITY_DB:", migrate(_engine))
+    print("V2_AUTH_DB:", migrate_auth_db())

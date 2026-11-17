@@ -17,7 +17,7 @@ from ..anonymity import suppress_small_groups
 from ..database import get_db
 from ..models import AccessToken, Answer, Component, Cycle, Question, ResponseSet, Unit
 from ..questionnaire_contract import SAFE_INTEGER, Questionnaire
-from ..roles import ALL_ROLES, ANALYTICS_ROLES, require_role
+from ..roles import ANALYTICS_ROLES, require_role
 
 router = APIRouter(prefix="/api", tags=["Оцінювання"])
 
@@ -40,19 +40,18 @@ def assessment_to_dict(c: Cycle) -> dict:
 # Перегляд оцінювань і анкет
 # ---------------------------------------------------------------------------
 
-@router.get("/assessments", dependencies=[Depends(require_role(*ALL_ROLES))])
+@router.get("/assessments")  # публічний GET (розділ 2.1)
 def list_assessments(db: Session = Depends(get_db)):
     """Усі цикли оцінювання (для вибору циклу і графіка динаміки)."""
     return [assessment_to_dict(c) for c in db.query(Cycle).order_by(Cycle.start_date).all()]
 
 
-@router.get("/assessments/{assessment_id}", dependencies=[Depends(require_role(*ALL_ROLES))])
+@router.get("/assessments/{assessment_id}")  # публічний GET
 def read_assessment(assessment_id: int, db: Session = Depends(get_db)):
     return assessment_to_dict(get_assessment(assessment_id, db))
 
 
-@router.get("/assessments/{assessment_id}/questionnaires",
-            dependencies=[Depends(require_role(*ALL_ROLES))])
+@router.get("/assessments/{assessment_id}/questionnaires")  # публічний GET
 def read_questionnaire(assessment_id: int, db: Session = Depends(get_db)):
     """
     Анкета: компоненти з вагами та питаннями (методика прозора — ваги видно всім).
@@ -73,7 +72,7 @@ def read_questionnaire(assessment_id: int, db: Session = Depends(get_db)):
     return data
 
 
-@router.get("/units", dependencies=[Depends(require_role(*ALL_ROLES))])
+@router.get("/units")  # публічний GET
 def list_units(db: Session = Depends(get_db)):
     """Довідник підрозділів — для випадного списку в анкеті."""
     return [u.name for u in db.query(Unit).order_by(Unit.name).all()]
@@ -103,8 +102,9 @@ class AnonymousSubmission(BaseModel):
         return self
 
 
-@router.post("/assessments/{assessment_id}/submissions", status_code=201,
-             dependencies=[Depends(require_role("respondent"))])
+# Анонімний Survey POST: доступ ЛИШЕ за одноразовим кодом. Маршрут не читає cookie сесії
+# і не приймає X-Role (наскрізна анонімність, розділ 1.2 контракту).
+@router.post("/assessments/{assessment_id}/submissions", status_code=201)
 def submit_answers(assessment_id: int, body: AnonymousSubmission, db: Session = Depends(get_db)):
     """
     Приймає заповнену анкету.

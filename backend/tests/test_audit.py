@@ -144,8 +144,8 @@ def test_action_and_log_are_atomic():
 
 def test_audit_log_access_by_role():
     assert client.get("/api/audit-events", headers=ADMIN).status_code == 200
-    assert client.get("/api/audit-events", headers=AUDITOR).status_code == 200
-    for role in ("manager", "respondent", "anticorruption", "expert"):
+    # V2: роль auditor не вводиться до рішення №5 — журнал лише для admin (S12)
+    for role in ("auditor", "manager", "respondent", "anticorruption", "expert"):
         assert client.get("/api/audit-events", headers={"X-Role": role}).status_code == 403
     assert client.get("/api/audit-events").status_code == 401
 

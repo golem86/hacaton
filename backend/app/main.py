@@ -1,37 +1,77 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import audit
+from . import audit, settings
 from .database import engine
-from .migrations import migrate
-from .routes import assessments, results, analytics
-
-# Доводить базу до поточної схеми: створює нову або безпечно оновлює стару
-# (з резервною копією і перевірками; дані не стираються). Див. docs/DATABASE_UPGRADE.md
-_migration = migrate(engine)
-if _migration["action"] == "migrated":
-    print(f"База оновлена до нової схеми. Резервна копія: {_migration['backup']}")
-
-app = FastAPI(title="Integrity Dashboard API")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.include_router(audit.router)  # журнал дій: GET /api/audit-events
-
-# Адреси модулів підключаються тут; самі адреси лежать у backend/app/routes/
-app.include_router(assessments.router)
-app.include_router(results.router)
-app.include_router(analytics.router)
+from .migrations import check_schema, migrate
+from .routes import analytics, assessments, results, v2_admin, v2_auth, v2_user
+from .v2_auth import check_auth_schema, migrate_auth_db
 
 
-@app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+class DropSurveySubmissionAccessLog(logging.Filter):
+    """
+    S10: журнал доступу uvicorn не містить запитів подання анонімних анкет —
+    інакше IP і час подання можна було б зіставити з людиною.
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not any("/submissions" in str(arg) for arg in (record.args or ()))
 
 
-@app.get("/")
-def hello():
-    return {"message": "Integrity Dashboard працює"}
+def prepare_databases() -> None:
+    """
+    MIG-1: у development БД доводяться до поточної схеми автоматично;
+    у release застосунок лише ПЕРЕВІРЯЄ схему і не стартує, якщо вона не відповідає —
+    міграція виконується окремою явною командою після перевіреної резервної копії.
+    """
+    if settings.auto_migrate():
+        report = migrate(engine)
+        if report["action"] == "migrated":
+            print(f"База оновлена до нової схеми. Резервна копія: {report['backup']}")
+        migrate_auth_db()
+    else:
+        check_schema(engine)
+        check_auth_schema()
+
+
+def create_app() -> FastAPI:
+    settings.validate_release_config()
+    prepare_databases()
+
+    access_log = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, DropSurveySubmissionAccessLog) for f in access_log.filters):
+        access_log.addFilter(DropSurveySubmissionAccessLog())
+
+    application = FastAPI(title="Integrity Dashboard API")
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=sorted(settings.frontend_origins()),
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["Content-Type", "X-CSRF-Token"],
+        allow_credentials=True,
+    )
+    application.include_router(audit.router)  # журнал дій: GET /api/audit-events
+
+    # Адреси модулів підключаються тут; самі адреси лежать у backend/app/routes/
+    application.include_router(assessments.router)
+    application.include_router(results.router)
+    application.include_router(analytics.router)
+    application.include_router(v2_auth.router)
+    application.include_router(v2_user.router)
+    application.include_router(v2_admin.router)
+    if settings.dev_mail_enabled():           # S3: у release маршрут не існує взагалі
+        application.include_router(v2_auth.dev_router)
+
+    @application.get("/api/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @application.get("/")
+    def hello():
+        return {"message": "Integrity Dashboard працює"}
+
+    return application
+
+
+app = create_app()
