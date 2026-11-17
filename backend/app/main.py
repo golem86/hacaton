@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from . import audit
 from .database import engine
 from .migrations import migrate
 from .routes import assessments, results, analytics
@@ -18,6 +19,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(audit.router)  # журнал дій: GET /api/audit-events
 
 # Адреси модулів підключаються тут; самі адреси лежать у backend/app/routes/
 app.include_router(assessments.router)

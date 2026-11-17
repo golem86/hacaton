@@ -26,7 +26,7 @@
 | Comparative Analytics | `GET /api/analytics/comparisons` | `Comparison` | Реалізовано у пропозиції №4, synthetic opt-in |
 | Recommendations Engine | `GET /api/assessments/{assessment_id}/recommendations` | `RecommendationProposal` | Реалізовано у пропозиції №4, GET лише пропонує |
 | Recommendations Tracker | `GET /api/recommendations`; `PATCH /api/recommendations/{recommendation_id}` | `TrackedRecommendation` | Заплановано |
-| Audit Trail | `GET /api/audit-events` | `AuditEvent` | Заплановано |
+| Audit Trail | `GET /api/audit-events` | `AuditEvent` | Реалізовано (backend-audit) |
 | Reporting Module | `GET /api/assessments/{assessment_id}/reports`; `GET /api/reports/{report_id}/export` | `Report`, файл експорту | Заплановано |
 
 Шляхи зі статусом «Заплановано» є пропозицією для обговорення. Жоден з них зараз не повинен вважатися доступним API. Зовнішні інтеграції та формат експорту команда визначить окремо.
@@ -61,6 +61,7 @@
 | `POST /api/assessments/{id}/submissions` | | ✓ | | | | | |
 | `POST /api/assessments/{id}/tokens`, `POST /api/assessments/{id}/close` | ✓ | | | | | | |
 | `GET /api/assessments/{id}/participation`, `GET /api/assessments/{id}/results` | ✓ | | | | ✓ | ✓ | ✓ |
+| `GET /api/audit-events` | ✓ | | | | | | ✓ |
 
 Помилки доступу: `401` — роль не вказана або невідома; `403` — у ролі немає прав.
 
@@ -123,6 +124,19 @@
 ```
 
 Числа в прикладі умовні. Приховування категорій те саме, що в `participation`: первинне (< k) і вторинне (сума прихованих ≥ k), однакове для всіх компонентів. Окремі анкети й відповіді не повертаються. Розрахунок Integrity Index (ваги × бали, рівні зрілості) виконує Index Engine поверх цих даних.
+
+### `GET /api/audit-events?assessment_id=&limit=100`
+
+Лише `admin` і `auditor`. Записи адміністративних дій, найновіші першими; `limit` від 1 до 500 (інакше `422`); `assessment_id` необов'язковий фільтр.
+
+```json
+[{"id": 2, "created_at": "2026-11-17T08:15:02.123456Z", "actor_role": "admin",
+  "action": "assessment.close", "assessment_id": 3, "details": {}},
+ {"id": 1, "created_at": "2026-11-17T08:10:40.654321Z", "actor_role": "admin",
+  "action": "tokens.issue", "assessment_id": 3, "details": {"count": 20}}]
+```
+
+Журналюються: `tokens.issue` (лише кількість, без кодів) і `assessment.close`. Запис зберігається в одній транзакції з самою дією. Невдалі спроби (`401`, `403`, `409`, `422`) не журналюються. **Не журналюються ніколи:** коди доступу, відповіді, категорія й підрозділ респондента, подання анкет (час подання міг би розкрити автора). Див. `docs/anonymity.md`.
 
 ### `GET /api/assessments/{id}/participation?by_unit=false`
 

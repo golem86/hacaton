@@ -9,9 +9,10 @@
 (ні імені, ні ID користувача, ні точного часу відправки).
 Токени доступу лежать в окремій таблиці і НЕ пов'язані з відповідями.
 """
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text,
+                        UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -160,3 +161,25 @@ class Recommendation(Base):
     status: Mapped[str] = mapped_column(String(20), default="proposed")
     owner_role: Mapped[str | None] = mapped_column(String(100), nullable=True)  # відповідальний (роль)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)          # строк
+
+
+# ---------------------------------------------------------------------------
+# 6. ЖУРНАЛ ДІЙ (Audit Trail)
+# ---------------------------------------------------------------------------
+
+class AuditEvent(Base):
+    """
+    Запис про адміністративну дію: хто (роль), що, коли, над яким циклом.
+
+    НІКОЛИ не зберігаємо: коди доступу, відповіді анкет, категорію чи підрозділ
+    респондента. Подання анкет не журналюється взагалі — інакше час подання
+    разом із розкладом людей міг би розкрити автора анкети.
+    """
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)        # час сервера (UTC)
+    actor_role: Mapped[str] = mapped_column(String(50))           # роль, не ім'я
+    action: Mapped[str] = mapped_column(String(50))               # напр. "tokens.issue"
+    assessment_id: Mapped[int | None] = mapped_column(ForeignKey("cycles.id"), nullable=True)
+    details: Mapped[str] = mapped_column(Text, default="{}")      # JSON без чутливих даних
