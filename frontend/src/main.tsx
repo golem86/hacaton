@@ -10,6 +10,7 @@ import {
   type AssessmentResults,
 } from './dashboard'
 import { loadResults } from './dashboard/loadResults'
+import Survey from './pages/Survey'
 import './style.css'
 
 function App() {
@@ -148,6 +149,15 @@ function App() {
         )}
         <p className="demo-note">Демо-доступ через X-Role: manager. Це не автентифікація.</p>
       </section>
+      {!detailLoading &&
+        !detailError &&
+        selectedAssessment?.id === selectedId &&
+        selectedAssessment.status === 'open' && (
+          <Survey
+            key={selectedAssessment.id}
+            assessmentId={selectedAssessment.id}
+          />
+        )}
       <section className="dashboard-content" aria-labelledby="dashboard-heading">
         <div className="dashboard-intro">
           <div>
