@@ -1,0 +1,182 @@
+# V2 CI — Integrity Management Dashboard V2.
+# Лише перевірки й підготовка артефакту frontend. Жодного deployment, SSH, підключень до сервера, секретів
+# чи self-hosted runner. Runner-и — GitHub-hosted. Сторонні Actions закріплено повними SHA комітів (тег — у коментарі).
+name: V2 CI
+
+on:
+  pull_request:
+    branches: [feature/v2-integration]
+  push:
+    branches: [feature/v2-integration]
+
+# Мінімальні права: лише читання коду. pull_request (не pull_request_target): PR з форків без секретів і без запису.
+permissions:
+  contents: read
+
+concurrency:
+  group: v2-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Очікуваний склад релізного кандидата dde86e68f4405c23ec4aad14db80f0b764fb4556.
+  # PR, що змінює кількість тестів, має оновити ці значення — так зміна складу видна в рецензії.
+  EXPECTED_BACKEND_TESTS: "348"
+  EXPECTED_FRONTEND_TESTS: "36"
+  RELEASE_SHA: dde86e68f4405c23ec4aad14db80f0b764fb4556
+  RELEASE_BACKEND_TREE: 834b96670600f0188714730c80007d6e8a808873   # backend, який перевіряє B1 REV6
+
+jobs:
+  repo-checks:
+    name: Repository checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: git diff --check
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          # Увесь вміст коміту відносно порожнього дерева + зміни цього PR/push
+          git diff --check 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
+          if [ "$EVENT" = pull_request ]; then git diff --check "$PR_BASE" HEAD; fi
+          if [ "$EVENT" = push ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then git diff --check "$PUSH_BEFORE" HEAD; fi
+          echo "git diff --check: OK"
+
+      - name: No databases, secrets or private logs in Git
+        run: |
+          bad=$(git ls-files | grep -iE '(\.db|\.sqlite3?|\.env|\.pem|\.key|\.p12|\.pfx|\.log|\.bak)$|(^|/)\.env\.|credentials.*\.json$' | grep -v '\.env\.example$' || true)
+          if [ -n "$bad" ]; then echo "::error::У Git є заборонені файли:"; echo "$bad"; exit 1; fi
+          echo "Заборонених файлів немає"
+
+      - name: Release candidate composition
+        run: |
+          tree=$(git rev-parse HEAD:backend)
+          files=$(git ls-tree -r --name-only HEAD backend | wc -l)
+          {
+            echo "### Склад коміту ${GITHUB_SHA}"
+            echo "| Що | Значення |"
+            echo "| --- | --- |"
+            echo "| Релізний кандидат | \`${RELEASE_SHA}\` |"
+            echo "| backend tree | \`${tree}\` |"
+            echo "| Файлів backend | ${files} |"
+            if [ "$tree" = "$RELEASE_BACKEND_TREE" ]; then
+              echo "| backend = кандидат | так — B1 REV6 перевіряє цей самий backend |"
+            else
+              echo "| backend = кандидат | **ні** — backend змінено; B1 REV6 його не покриває |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$tree" != "$RELEASE_BACKEND_TREE" ]; then echo "::notice::backend відрізняється від релізного кандидата ${RELEASE_SHA}"; fi
+
+  backend:
+    name: Backend (Python 3.13.14, Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: backend
+    env:
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13.14"   # як на сервері
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip check
+
+      - name: Pytest (full suite)
+        run: python -X utf8 -m pytest -q -p no:cacheprovider --junitxml="$RUNNER_TEMP/backend-junit.xml"
+
+      - name: Check test count
+        run: |
+          python - "$RUNNER_TEMP/backend-junit.xml" <<'EOF'
+          import os, sys, xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root)
+          tot = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "failures", "errors", "skipped")}
+          exp = int(os.environ["EXPECTED_BACKEND_TESTS"])
+          print(tot)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write(f"### Backend: {tot['tests']} tests, failures {tot['failures']}, errors {tot['errors']}, skipped {tot['skipped']} (очікується {exp})\n")
+          if tot["tests"] != exp or tot["failures"] or tot["errors"] or tot["skipped"]:
+              sys.exit(f"Очікується рівно {exp} passed без failures/errors/skipped")
+          EOF
+
+  frontend:
+    name: Frontend (pnpm, tests, TypeScript, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 10.34.9
+          package_json_file: frontend/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.10.0"
+          package-manager-cache: false
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Tests
+        run: |
+          pnpm test 2>&1 | tee "$RUNNER_TEMP/frontend-tests.txt"
+          tests=$(grep -E '^ℹ tests [0-9]+' "$RUNNER_TEMP/frontend-tests.txt" | awk '{print $3}')
+          fail=$(grep -E '^ℹ fail [0-9]+' "$RUNNER_TEMP/frontend-tests.txt" | awk '{print $3}')
+          echo "### Frontend: ${tests} tests, fail ${fail} (очікується ${EXPECTED_FRONTEND_TESTS})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$tests" != "$EXPECTED_FRONTEND_TESTS" ] || [ "$fail" != "0" ]; then echo "::error::Очікується рівно ${EXPECTED_FRONTEND_TESTS} pass"; exit 1; fi
+
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+
+      - name: Production build
+        env:
+          VITE_API_BASE_URL: ""    # той самий origin (/api, /v2), як у пакеті розгортання
+        run: pnpm build
+
+      - name: Check build output
+        run: |
+          if grep -rl 'X-Role' dist; then echo "::error::У збірці є X-Role"; exit 1; fi
+          if grep -rlE 'https?://(127\.0\.0\.1|localhost)' dist; then echo "::error::У збірці є локальні адреси API"; exit 1; fi
+          (cd dist && find . -type f | sort | sed 's|^\./||' | xargs sha256sum) > "$RUNNER_TEMP/DIST-SHA256.txt"
+          cp "$RUNNER_TEMP/DIST-SHA256.txt" dist-SHA256.txt
+          { echo "### Frontend dist SHA256"; echo '```'; cat dist-SHA256.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload frontend dist (artifact only, no deployment)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: frontend-dist-${{ github.sha }}
+          path: |
+            frontend/dist/
+            frontend/dist-SHA256.txt
+          if-no-files-found: error
+          retention-days: 14
