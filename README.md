@@ -67,4 +67,11 @@ cd ..
 git diff --check
 ```
 
+Ті самі перевірки автоматично виконує GitHub Actions ([`.github/workflows/v2-ci.yml`](.github/workflows/v2-ci.yml)) для кожного PR у `feature/v2-integration` і після push у цю гілку:
+- backend — Python 3.13.14 на Windows, повний pytest з контролем кількості тестів;
+- frontend — pnpm `--frozen-lockfile`, тести, TypeScript і production build;
+- `git diff --check` і перевірка, що в Git немає БД і секретів.
+
+Збірка frontend зберігається як артефакт на 14 днів. CI нічого не розгортає і не підключається до сервера.
+
 Архітектурні домовленості — у [docs/architecture.md](docs/architecture.md), правила роботи з даними — у [docs/security.md](docs/security.md). Нові маршрути, схеми даних і формулу індексу команда погоджує до реалізації.
