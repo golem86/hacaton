@@ -10,12 +10,12 @@ import { getAssessmentResults } from './dashboard/results'
 import { CategoryComparison, ComponentScores, DashboardSummary, ObjectiveIndicators, PendingModules, type AssessmentResults } from './dashboard'
 import { AnalyticsModules } from './dashboard/AnalyticsModules'
 import { PersonalModule, type PersonalView } from './v2/PersonalModule'
+import { pathForPublicPage, publicPageFromPath, type PublicPage } from './v2/publicRoutes'
 import Survey from './pages/Survey'
 import './style.css'
 import './v2/v2.css'
 
 type AdminSection = 'overview' | 'analytics' | 'testing' | 'audit' | 'reports'
-type PublicPage = 'login' | 'register' | 'two-factor' | 'reset-request' | 'reset-confirm'
 type Route = { role: 'admin'; section: AdminSection } | { role: 'user'; section: PersonalView }
 const adminItems: { key: AdminSection; title: string }[] = [
   { key: 'overview', title: 'Огляд' }, { key: 'analytics', title: 'Аналітика' },
@@ -36,7 +36,7 @@ function homeFor(user: AuthUser) { return user.role === 'admin' ? '/admin' : '/a
 
 function App() {
   const [path, setPath] = useState(location.pathname)
-  const [page, setPage] = useState<PublicPage>(location.pathname === '/register' ? 'register' : 'login')
+  const [page, setPage] = useState<PublicPage>(() => publicPageFromPath(location.pathname))
   const [session, setSession] = useState<AuthUser | null>(null)
   const [pendingUser, setPendingUser] = useState<AuthUser | null>(null)
   const [pendingEmail, setPendingEmail] = useState('')
@@ -44,7 +44,7 @@ function App() {
   const [authError, setAuthError] = useState('')
   const [resetNotice, setResetNotice] = useState('')
   useEffect(() => {
-    const onPop = () => { setPath(location.pathname); setPage(location.pathname === '/register' ? 'register' : 'login') }
+    const onPop = () => { setPath(location.pathname); setPage(publicPageFromPath(location.pathname)) }
     const onExpired = () => { setSession(null); setPendingUser(null); setAuthError('Сесію завершено. Увійдіть знову.'); setPage('login'); go('/login'); void ensureCsrf().catch(() => {}) }
     window.addEventListener('popstate', onPop)
     window.addEventListener('v2-session-expired', onExpired)
@@ -59,7 +59,7 @@ function App() {
     setAuthError('')
     try {
       const result = await loginUser({ email, password })
-      setPendingUser(result.user); setPendingEmail(email); setPage('two-factor'); go('/login/2fa')
+      setPendingUser(result.user); setPendingEmail(email); go(pathForPublicPage('two-factor'))
     } catch (error) { setAuthError(error instanceof Error ? error.message : 'Не вдалося увійти.') }
   }
   async function verify(code: string) {
@@ -79,9 +79,9 @@ function App() {
   if (path === '/survey') return <PublicSurvey />
   if (!session) return <AuthPage page={page} pendingEmail={pendingEmail} error={authError} notice={resetNotice} pendingUser={pendingUser}
     onLogin={signIn} onRegister={signUp} onVerify={verify} onResend={() => resendTwoFactor().then(() => setAuthError('Код повторно надіслано.'))}
-    onResetRequest={async email => { setAuthError(''); await requestPasswordReset(email); setResetNotice('Якщо адреса зареєстрована, інструкція надійде через налаштований канал.'); setPage('reset-confirm') }}
-    onResetConfirm={async (email, code, password, confirmation) => { await confirmPasswordReset({ email, code, password, password_confirmation: confirmation }); setPage('login'); setAuthError('Пароль оновлено. Увійдіть із новим паролем.') }}
-    onSwitch={next => { setAuthError(''); setResetNotice(''); setPage(next); go(next === 'register' ? '/register' : '/login') }} />
+    onResetRequest={async email => { setAuthError(''); await requestPasswordReset(email); setResetNotice('Якщо адреса зареєстрована, інструкція надійде через налаштований канал.'); go(pathForPublicPage('reset-confirm')) }}
+    onResetConfirm={async (email, code, password, confirmation) => { await confirmPasswordReset({ email, code, password, password_confirmation: confirmation }); setAuthError('Пароль оновлено. Увійдіть із новим паролем.'); go(pathForPublicPage('login')) }}
+    onSwitch={next => { setAuthError(''); setResetNotice(''); go(pathForPublicPage(next)) }} />
 
   const route = routeFromPath(path)
   if (route.role !== session.role) return <RoleDenied user={session} onLogout={signOut} />
