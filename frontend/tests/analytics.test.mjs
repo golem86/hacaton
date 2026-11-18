@@ -122,12 +122,13 @@ test('API errors, disabled demo and malformed data are handled', async () => {
       globalThis.fetch = async () => response({}, status)
       await assert.rejects(api.getIntegrityIndex(1), error => {
         const markup = html(createElement(ModuleState, {
-          state: { status: 'error', message: error.message },
+          state: { status: 'error', message: error.message, retryable: status !== 503 },
           retry: () => {},
           children: () => assert.fail('error must not render success'),
         }))
         assert.match(markup, /role="alert"/)
-        assert.match(markup, /Спробувати ще раз/)
+        if (status === 503) assert.doesNotMatch(markup, /Спробувати ще раз/)
+        else assert.match(markup, /Спробувати ще раз/)
         return error.status === status && error.message.length > 0
       })
     }
@@ -147,6 +148,28 @@ test('API errors, disabled demo and malformed data are handled', async () => {
       assert.match(markup, /з’єднатися/)
       return error.status === 0
     })
+  } finally { globalThis.fetch = oldFetch }
+})
+
+test('HTTP 503 unavailable analytics renders a clear non-retryable state', async () => {
+  const oldFetch = globalThis.fetch
+  const states = []
+  try {
+    globalThis.fetch = async () => response({}, 503)
+    const stop = loadAnalytics(signal => api.getIntegrityIndex(1, signal), state => states.push(state))
+    await tick()
+    stop()
+    const errorState = states.at(-1)
+    assert.equal(errorState.status, 'error')
+    assert.equal(errorState.retryable, false)
+    assert.match(errorState.message, /не ввімкнений у поточній конфігурації/)
+    const markup = html(createElement(ModuleState, {
+      state: errorState,
+      retry: () => {},
+      children: () => assert.fail('unavailable analytics must not render success'),
+    }))
+    assert.match(markup, /role="alert"/)
+    assert.doesNotMatch(markup, /Спробувати ще раз/)
   } finally { globalThis.fetch = oldFetch }
 })
 

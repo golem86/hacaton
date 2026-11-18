@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { ApiError } from '../api/client'
 import {
   getComparisons, getIntegrityIndex, getMethodology, getRecommendations,
   type Comparisons, type IntegrityIndex, type Methodology, type Recommendations,
@@ -9,7 +10,7 @@ import './dashboard.css'
 
 export type RemoteState<T> =
   | { status: 'loading' }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string; retryable?: boolean }
   | { status: 'success'; data: T }
 
 export interface KeyedRemoteState<T> {
@@ -45,6 +46,7 @@ export function loadAnalytics<T>(
       if (!controller.signal.aborted) onState({
         status: 'error',
         message: error instanceof Error ? error.message : 'Не вдалося завантажити аналітику.',
+        retryable: !(error instanceof ApiError && error.status === 503),
       })
     })
   return () => controller.abort()
@@ -67,7 +69,7 @@ export function ModuleState<T>({ state, retry, children }: {
   if (state.status === 'error') return (
     <div role="alert">
       <p>{state.message}</p>
-      <button type="button" onClick={retry}>Спробувати ще раз</button>
+      {state.retryable !== false && <button type="button" onClick={retry}>Спробувати ще раз</button>}
     </div>
   )
   return <>{children(state.data)}</>
