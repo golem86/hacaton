@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import audit, settings
+from . import api_docs, audit, settings
 from .database import engine
 from .migrations import check_schema, migrate
 from .routes import analytics, assessments, results, v2_admin, v2_auth, v2_user
@@ -43,7 +43,8 @@ def create_app() -> FastAPI:
     if not any(isinstance(f, DropSurveySubmissionAccessLog) for f in access_log.filters):
         access_log.addFilter(DropSurveySubmissionAccessLog())
 
-    application = FastAPI(title="Integrity Dashboard API")
+    # Стандартні /docs, /redoc, /openapi.json вимкнено: Swagger і схема — лише для адміністратора (api_docs.py)
+    application = FastAPI(title="Integrity Dashboard API", docs_url=None, redoc_url=None, openapi_url=None)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=sorted(settings.frontend_origins()),
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     application.include_router(v2_admin.router)
     if settings.dev_mail_enabled():           # S3: у release маршрут не існує взагалі
         application.include_router(v2_auth.dev_router)
+    api_docs.install(application)             # GET /docs і /openapi.json — лише сесія admin з 2FA
 
     @application.get("/api/health")
     def health() -> dict[str, str]:

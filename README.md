@@ -25,7 +25,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Перевірка доступності API — `http://127.0.0.1:8000/api/health`. Схема поточного API — `http://127.0.0.1:8000/docs`.
+Перевірка доступності API — `http://127.0.0.1:8000/api/health`. Схема API (`/docs`, `/openapi.json`) доступна лише адміністратору V2 після входу з 2FA; див. `docs/API_CONTRACT.md`, розділ «Документація API (Swagger)».
 
 Frontend у другому вікні (пряме підключення до backend):
 

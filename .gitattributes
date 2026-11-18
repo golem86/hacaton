@@ -1,0 +1,2 @@
+# Сторонні файли Swagger UI зберігаються байт-у-байт (SHA-256 звіряють тести)
+backend/app/static/swagger-ui/** binary
