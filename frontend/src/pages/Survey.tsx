@@ -38,19 +38,18 @@ export default function Survey({ assessmentId }: SurveyProps) {
   }, [assessmentId, attempt, validId])
 
   return (
-    <section className="module-panel survey-api" aria-labelledby="survey-title">
-      <h2 id="survey-title">Цифрове анкетування</h2>
+    <section className="module-panel survey-api" aria-label="Анкета циклу оцінювання">
       {!validId && <p role="status">Оберіть цикл оцінювання, щоб відкрити анкету. Для цього модулю потрібен ID циклу від командної навігації.</p>}
-      {validId && (!currentLoad || load.status === 'loading') && <p role="status">Завантаження анкети й підрозділів…</p>}
+      {validId && (!currentLoad || load.status === 'loading') && <p className="survey-state" role="status">Завантажуємо запитання й перелік підрозділів…</p>}
       {validId && currentLoad && load.status === 'error' && (
-        <div>
+        <div className="survey-state survey-state-error">
           <p role="alert">{load.message}</p>
           <button className="survey-api-button" type="button" onClick={() => setAttempt(value => value + 1)}>Спробувати ще раз</button>
         </div>
       )}
       {validId && currentLoad && load.status === 'ready' && (
         load.questionnaire.flatMap(component => component.questions).length === 0 || load.units.length === 0
-          ? <p role="status">Анкету поки неможливо заповнити: немає питань або підрозділів. Зверніться до відповідального за оцінювання.</p>
+          ? <div className="survey-state survey-state-error" role="status"><strong>Анкета ще не готова</strong><p>Для вибраного циклу поки немає запитань або підрозділів.</p><p>Зверніться до відповідального за оцінювання.</p></div>
           : <SurveyForm
               key={`${assessmentId}-${attempt}`}
               assessmentId={assessmentId!}

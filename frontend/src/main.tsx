@@ -115,7 +115,85 @@ function AuthPage(props: { page: PublicPage; pendingEmail: string; error: string
 }
 
 function RoleDenied({user,onLogout}:{user:AuthUser;onLogout:()=>Promise<void>}) { return <main className="v2-auth-page"><section className="v2-auth-card"><h1>Доступ обмежено</h1><p>Роль {user.role} не має доступу до цієї панелі. Дозволи перевіряються сервером.</p><button className="v2-button" onClick={()=>void onLogout()}>Вийти</button></section></main> }
-function PublicSurvey() { const [assessments,setAssessments]=useState<Assessment[]>([]),[selected,setSelected]=useState(''),[error,setError]=useState(''); useEffect(()=>{const c=new AbortController();getAssessments(c.signal).then(setAssessments).catch(e=>setError(e instanceof Error?e.message:'Не вдалося завантажити цикли'));return()=>c.abort()},[]); return <main className="page"><header className="page-header"><p className="eyebrow">Анонімне опитування</p><h1>Survey</h1><p>Потрібен одноразовий код. Подання не пов’язується з обліковим записом.</p><a href="/login">Вхід адміністратора</a></header>{error&&<p role="alert">{error}</p>}<label htmlFor="survey-cycle">Цикл оцінювання</label><select id="survey-cycle" value={selected} onChange={e=>setSelected(e.target.value)}><option value="">Оберіть цикл</option>{assessments.filter(a=>a.status==='open').map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>{selected?<Survey key={selected} assessmentId={Number(selected)}/>:<p>Оберіть доступний відкритий цикл.</p>}</main> }
+function PublicSurvey() {
+  const [assessments, setAssessments] = useState<Assessment[]>([])
+  const [selected, setSelected] = useState('')
+  const [load, setLoad] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoad('loading')
+    setError('')
+    getAssessments(controller.signal)
+      .then(items => {
+        if (!controller.signal.aborted) {
+          setAssessments(items)
+          setLoad('ready')
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : 'Не вдалося завантажити цикли оцінювання.')
+          setLoad('error')
+        }
+      })
+    return () => controller.abort()
+  }, [attempt])
+
+  const openAssessments = assessments.filter(assessment => assessment.status === 'open')
+
+  return (
+    <div className="survey-app">
+      <header className="survey-masthead">
+        <a className="survey-brand" href="/" aria-label="Integrity Management — на головну">
+          <span className="survey-brand-mark">IM</span>
+          <span><strong>Integrity<br />Management</strong><small>Building Integrity · 2026</small></span>
+        </a>
+        <a className="survey-admin-link" href="/login">Вхід адміністратора <span aria-hidden="true">↗</span></a>
+      </header>
+
+      <main className="survey-main">
+        <section className="survey-hero" aria-labelledby="survey-page-title">
+          <p className="survey-eyebrow">Анонімне опитування</p>
+          <h1 id="survey-page-title">Ваша думка допомагає змінам</h1>
+          <p>Дайте відповіді на запитання про доброчесність. Для подання потрібен одноразовий код; відповіді не пов’язуються з вашим обліковим записом.</p>
+          <div className="survey-assurances" aria-label="Гарантії опитування">
+            <span><strong>Анонімно</strong><small>без прив’язки до профілю</small></span>
+            <span><strong>За обраним циклом</strong><small>питання завантажуються з анкети</small></span>
+            <span><strong>Одноразовий код</strong><small>захищає від повторного подання</small></span>
+          </div>
+        </section>
+
+        <section className="survey-cycle-card" aria-labelledby="survey-cycle-title">
+          <div className="survey-cycle-heading">
+            <div><p className="survey-eyebrow">Початок</p><h2 id="survey-cycle-title">Оберіть цикл оцінювання</h2></div>
+            <span className="survey-step">Крок 1 з 2</span>
+          </div>
+          {load === 'loading' && <p className="survey-state" role="status">Завантажуємо доступні цикли…</p>}
+          {load === 'error' && <div className="survey-state survey-state-error" role="alert"><p>{error}</p><button type="button" className="survey-secondary-button" onClick={() => setAttempt(value => value + 1)}>Спробувати ще раз</button></div>}
+          {load === 'ready' && openAssessments.length > 0 && (
+            <div className="survey-cycle-field">
+              <label htmlFor="survey-cycle">Відкритий цикл</label>
+              <select id="survey-cycle" value={selected} onChange={event => setSelected(event.target.value)}>
+                <option value="">Оберіть цикл зі списку</option>
+                {openAssessments.map(assessment => <option key={assessment.id} value={assessment.id}>{assessment.name}</option>)}
+              </select>
+              <p className="survey-field-hint">Оберіть цикл, у якому ви берете участь.</p>
+            </div>
+          )}
+          {load === 'ready' && openAssessments.length === 0 && (
+            <div className="survey-empty-state" role="status"><span aria-hidden="true">✓</span><div><strong>Зараз немає відкритих циклів</strong><p>Коли опитування буде доступне, воно з’явиться тут.</p></div></div>
+          )}
+          {selected && openAssessments.some(assessment => assessment.id === Number(selected)) && <Survey key={selected} assessmentId={Number(selected)} />}
+        </section>
+
+        <footer className="survey-footer">Якщо у вас виникли питання щодо участі, зверніться до координатора опитування.</footer>
+      </main>
+    </div>
+  )
+}
 
 function AdminPanel({section}:{section:AdminSection}) { const [assessments,setAssessments]=useState<Assessment[]>([]),[id,setId]=useState<number|null>(null),[detail,setDetail]=useState<Assessment|null>(null),[results,setResults]=useState<AssessmentResults|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[events,setEvents]=useState<AuditEvent[]>([]),[tokenCount,setTokenCount]=useState(10),[issued,setIssued]=useState<string[]>([])
   useEffect(()=>{const c=new AbortController();getAssessments(c.signal).then(list=>{setAssessments(list);if(list.length)setId(list[0].id)}).catch(e=>setError(e instanceof Error?e.message:'Помилка API')).finally(()=>setLoading(false));return()=>c.abort()},[])
@@ -123,7 +201,7 @@ function AdminPanel({section}:{section:AdminSection}) { const [assessments,setAs
   useEffect(()=>{if(section!=='audit')return;const c=new AbortController();getAuditEvents(c.signal).then(setEvents).catch(e=>setError(e instanceof Error?e.message:'Не вдалося завантажити журнал'));return()=>c.abort()},[section])
   if(section==='audit')return <section className="v2-card"><h2>Audit Trail</h2>{error&&<p role="alert">{error}</p>}{events.length?events.map(e=><article className="v2-history-item" key={e.id}><strong>{e.action}</strong><span>{e.created_at} · {e.actor_role} · цикл {e.assessment_id??'—'}</span></article>):!error&&<p>Записів поки немає.</p>}</section>
   if(section==='reports')return <section className="v2-card"><h2>Звіти</h2><p>Доступні агрегати показані в аналітиці. PDF/XLSX експорт очікує серверного Reporting API.</p><p>Експорт повертає HTTP 501 до затвердження формату.</p></section>
-  if(section==='testing')return <section className="v2-card"><h2>Цикли та одноразові коди</h2>{loading?<p role="status">Завантажуємо…</p>:<><label>Цикл<select value={id??''} onChange={e=>setId(Number(e.target.value)||null)}>{assessments.map(a=><option key={a.id} value={a.id}>{a.name} · {a.status}</option>)}</select></label><label>Кількість кодів<input type="number" min={1} max={500} value={tokenCount} onChange={e=>setTokenCount(Number(e.target.value))}/></label><button className="v2-button" disabled={!id||detail?.status!=='open'} onClick={()=>id&&issueAccessTokens(id,tokenCount).then(r=>setIssued(r.tokens)).catch(e=>setError(e instanceof Error?e.message:'Помилка'))}>Видати одноразові коди</button>{issued.length>0&&<div role="status"><p>Коди показуються лише зараз. Передайте їх респондентам окремо:</p><textarea readOnly value={issued.join('\n')}/></div>}</>}</section>
+  if(section==='testing')return <section className="v2-card"><p className="v2-overline">Керування доступом</p><h2>Цикли та одноразові коди</h2>{loading?<p role="status">Завантажуємо цикли оцінювання…</p>:<><div className="v2-form-grid v2-token-form"><label>Цикл оцінювання<select value={id??''} onChange={e=>setId(Number(e.target.value)||null)}><option value="">Оберіть цикл</option>{assessments.map(a=><option key={a.id} value={a.id}>{a.name} · {a.status==='open'?'відкритий':'закритий'}</option>)}</select></label><label>Кількість кодів<input type="number" min={1} max={500} value={tokenCount} onChange={e=>setTokenCount(Math.max(1,Math.min(500,Number(e.target.value)||1)))}/><small>Від 1 до 500 кодів за один раз.</small></label><button className="v2-button v2-button-primary" disabled={!id||detail?.status!=='open'} onClick={()=>id&&issueAccessTokens(id,tokenCount).then(r=>setIssued(r.tokens)).catch(e=>setError(e instanceof Error?e.message:'Не вдалося видати коди.'))}>Видати одноразові коди</button></div>{detail?.status==='closed'&&<p className="v2-form-hint" role="status">Цикл закритий: нові коди для нього не видаються.</p>}{error&&<p className="v2-inline-error" role="alert">{error}</p>}{issued.length>0&&<div className="v2-issued-codes" role="status"><strong>Збережіть коди зараз</strong><p>Вони показуються лише один раз. Передайте їх респондентам окремо.</p><textarea readOnly value={issued.join('\n')}/></div>}</>}</section>
   return <>{assessments.length>0&&<label className="cycle-select">Цикл оцінювання<select value={id??''} onChange={e=>setId(Number(e.target.value)||null)}>{assessments.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}{error&&<div role="alert" className="v2-auth-error">{error}</div>}{section==='overview'&&<><h2>Оперативний огляд</h2>{results?<DashboardSummary results={results}/>:<p>{detail?.status==='open'?'Результати стануть доступними після закриття циклу.':loading?'Завантаження…':'Оберіть цикл.'}</p>}<PendingModules/></>}{section==='analytics'&&<><h2>Агреговані результати</h2>{results?<><ComponentScores components={results.components}/><CategoryComparison categories={results.categories} components={results.components}/><ObjectiveIndicators components={results.components}/>{detail?.status==='closed'&&id&&<AnalyticsModules id={id} assessments={assessments}/>}</>:<p>{detail?.status==='open'?'Цикл відкритий: агрегати недоступні до закриття.':loading?'Завантаження…':'Результатів немає.'}</p>}</>}</>
 }
 
