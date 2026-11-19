@@ -10,7 +10,39 @@ import {
   type AssessmentResults,
 } from './dashboard'
 import { loadResults } from './dashboard/loadResults'
+import { categoryName, scoreText } from './dashboard/format'
 import './style.css'
+
+function exportResults(results: AssessmentResults) {
+  const rows: string[][] = [
+    ['Показник', 'Компонент', 'Категорія', 'Значення', 'Кількість відповідей'],
+  ]
+
+  for (const component of results.components) {
+    rows.push(['Загальний бал', `${component.code} ${component.name}`, '', scoreText(component.score), ''])
+    for (const category of results.categories) {
+      const cell = component.by_category.find((item) => item.category === category.category)
+      const hidden = category.hidden || cell?.hidden === true
+      rows.push([
+        'Бал за категорією',
+        `${component.code} ${component.name}`,
+        categoryName(category.category),
+        hidden ? 'Приховано' : scoreText(cell?.score ?? null),
+        hidden ? 'Приховано' : category.responses === null ? 'Немає даних' : String(category.responses),
+      ])
+    }
+  }
+
+  const csv = `\uFEFF${rows.map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(';')).join('\r\n')}`
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `integrity-results-${results.assessment.id}.csv`
+  document.body.append(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 function App() {
   const [assessments, setAssessments] = useState<Assessment[]>([])
@@ -155,6 +187,9 @@ function App() {
             <h2 id="dashboard-heading">Результати циклу</h2>
             <p>Бали компонентів, доступні порівняння та об’єктивні показники. Індивідуальні відповіді не відображаються.</p>
           </div>
+          {results && selectedAssessment?.id === results.assessment.id && (
+            <button className="export-button" type="button" onClick={() => exportResults(results)}>Завантажити CSV</button>
+          )}
         </div>
 
         {selectedId === null && <p className="dashboard-state dashboard-state-empty">Оберіть цикл оцінювання, щоб переглянути доступні дані.</p>}
