@@ -1,0 +1,47 @@
+<!--
+  WinSW: служба backend Integrity Management Dashboard V2 (шаблон; секретів немає).
+  Розміщення: C:\srv\integrity-v2\services\backend\integrity-v2-backend.xml поруч із integrity-v2-backend.exe (копія WinSW V1).
+  Плейсхолдери __…__ заповнює №4 на сервері (розділ 5 плану), значення не потрапляють у Git, звіти чи чат.
+  Обліковий запис служби: NT SERVICE\integrity-v2-backend (у <serviceaccount>; перевіряється програмно до старту).
+-->
+<service>
+  <id>integrity-v2-backend</id>
+  <name>Integrity Dashboard V2 - backend</name>
+  <description>Integrity Management Dashboard V2 backend (uvicorn, 127.0.0.1:8100). V1 is not affected.</description>
+  <executable>C:\srv\integrity-v2\venv\Scripts\python.exe</executable>
+  <arguments>-E -s -X utf8 -m uvicorn app.main:app --host 127.0.0.1 --port 8100 --workers 1 --no-access-log --no-proxy-headers</arguments>
+  <workingdirectory>C:\srv\integrity-v2\app\integrity-v2-dde86e6\backend</workingdirectory>
+
+  <env name="APP_ENV" value="release"/>
+  <env name="INTEGRITY_DB" value="C:\srv\integrity-v2\data\integrity_v2.db"/>
+  <env name="V2_AUTH_DB" value="C:\srv\integrity-v2\data\v2_auth.db"/>
+  <env name="FRONTEND_ORIGINS" value="https://v2-host.tailnet.example"/>
+  <env name="TRUSTED_PROXIES" value="127.0.0.1,::1"/>
+  <env name="INTEGRITY_ANALYTICS_DEMO" value="1"/>
+  <env name="V2_SECRET_KEY" value="__V2_SECRET_KEY__"/>
+  <env name="V2_SMTP_HOST" value="__V2_SMTP_HOST__"/>
+  <env name="V2_SMTP_PORT" value="587"/>
+  <env name="V2_SMTP_USER" value="__V2_SMTP_USER__"/>
+  <env name="V2_SMTP_PASSWORD" value="__V2_SMTP_PASSWORD__"/>
+  <env name="V2_SMTP_FROM" value="__V2_SMTP_FROM__"/>
+  <!-- НЕ задавати: INTEGRITY_DEMO_XROLE, V2_AUTH_DEV_MAIL, V2_AUTH_SECURE_COOKIE -->
+
+  <!-- REV2 (I01): лише Manual; старт — вручну після програмної перевірки StartName/PathName/StartMode/State -->
+  <startmode>Manual</startmode>
+  <!-- REV2 (I01, D2): віртуальний акаунт служби, без пароля. Якщо WinSW не застосує його під час install —
+       sc.exe config obj= "NT SERVICE\integrity-v2-backend"; LocalSystem/LocalService не використовуються; без підтвердження — STOP -->
+  <serviceaccount>
+    <domain>NT SERVICE</domain>
+    <user>integrity-v2-backend</user>
+  </serviceaccount>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="none"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>15 sec</stoptimeout>
+  <logpath>C:\srv\integrity-v2\logs\backend</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

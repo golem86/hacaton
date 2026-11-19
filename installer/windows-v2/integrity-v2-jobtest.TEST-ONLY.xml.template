@@ -1,0 +1,26 @@
+<!--
+  ТІЛЬКИ ДЛЯ ТЕСТОВОГО ХОСТА (етап 5, runtime-harness.ps1). НЕ production-конфігурація, НЕ затверджено №5.
+  Тестова служба WinSW 2.12.0 з експериментальним launcher-ом Job Object: id integrity-v2-jobtest (інший, ніж у V2),
+  каталог __TEST_ROOT__ (не production-каталог V2), синтетичний дочірній процес job_child.py (не backend, без БД і секретів).
+  Плейсхолдери __…__ заповнює runtime-harness.ps1; файл після підстановки лежить лише в тестовому каталозі.
+-->
+<service>
+  <id>integrity-v2-jobtest</id>
+  <name>Integrity V2 Job Object test (TEST ONLY)</name>
+  <description>TEST ONLY: experimental Job Object launcher validation. Not V2 production, not V1.</description>
+  <executable>__BASE_PYTHON__</executable>
+  <arguments>-I -E -s "__TEST_ROOT__\kit\v2_job_launcher.py" run --job "Global\integrity-v2-jobtest-job" --state "__TEST_ROOT__\state\launcher.json" -- "__BASE_PYTHON__" -I "__TEST_ROOT__\kit\job_child.py" grandchild "__TEST_ROOT__\state\child.json"</arguments>
+  <workingdirectory>__TEST_ROOT__\kit</workingdirectory>
+  <startmode>Manual</startmode>
+  <serviceaccount>
+    <domain>NT SERVICE</domain>
+    <user>integrity-v2-jobtest</user>
+  </serviceaccount>
+  <onfailure action="none"/>
+  <stoptimeout>__STOP_TIMEOUT__</stoptimeout>
+  <logpath>__TEST_ROOT__\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>1024</sizeThreshold>
+    <keepFiles>3</keepFiles>
+  </log>
+</service>
