@@ -9,8 +9,13 @@ export interface Assessment {
   id: number
   name: string
   start_date: string
-  status: 'open' | 'closed'
+  status: 'draft' | 'open' | 'closed'
   min_group_size: number
+  description?: string
+  scope?: string
+  end_date?: string | null
+  categories?: Array<'mgmt' | 'npp' | 'cadets' | 'staff'>
+  questionnaire_version?: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -28,7 +33,7 @@ function isAssessment(value: unknown): value is Assessment {
     && Number.isSafeInteger(value.id) && (value.id as number) > 0
     && typeof value.name === 'string'
     && isCalendarDate(value.start_date)
-    && (value.status === 'open' || value.status === 'closed')
+    && (value.status === 'draft' || value.status === 'open' || value.status === 'closed')
     && Number.isSafeInteger(value.min_group_size) && (value.min_group_size as number) > 0
 }
 

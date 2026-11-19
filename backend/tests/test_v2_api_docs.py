@@ -36,6 +36,8 @@ VENDORED_SHA256 = {
 ASSET_URLS = ["/docs/swagger-ui/swagger-ui-bundle.js", "/docs/swagger-ui/swagger-ui.css"]
 # Фактичні правила CSRF backend для операцій зміни стану (None — CSRF не перевіряється)
 EXPECTED_CSRF = {
+    ("POST", "/api/assessments"): "session",
+    ("POST", "/api/assessments/{assessment_id}/activate"): "session",
     ("POST", "/api/assessments/{assessment_id}/submissions"): None,          # публічна анонімна анкета
     ("POST", "/api/assessments/{assessment_id}/tokens"): "session",
     ("POST", "/api/assessments/{assessment_id}/close"): "session",

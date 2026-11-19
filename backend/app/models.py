@@ -76,6 +76,18 @@ class Cycle(Base):
     min_group_size: Mapped[int] = mapped_column(Integer, default=5)
 
 
+class CycleConfig(Base):
+    """Додаткові параметри нових циклів; старі seed-цикли зберігають свій контракт."""
+    __tablename__ = "cycle_configs"
+
+    cycle_id: Mapped[int] = mapped_column(ForeignKey("cycles.id"), primary_key=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    scope: Mapped[str] = mapped_column(String(200), default="")
+    categories_json: Mapped[str] = mapped_column(Text)
+    questionnaire_version: Mapped[str] = mapped_column(String(50), default="demo-v1")
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+
 # ---------------------------------------------------------------------------
 # 3. ВІДПОВІДІ: анонімно!
 # ---------------------------------------------------------------------------
@@ -134,6 +146,15 @@ class AccessToken(Base):
     cycle_id: Mapped[int] = mapped_column(ForeignKey("cycles.id"))
     token: Mapped[str] = mapped_column(String(64), unique=True)
     used: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AccessTokenPolicy(Base):
+    """Категорія та строк коду, без посилання на анкету чи особу."""
+    __tablename__ = "access_token_policies"
+
+    token_id: Mapped[int] = mapped_column(ForeignKey("access_tokens.id"), primary_key=True)
+    category: Mapped[str] = mapped_column(String(30))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
 
 
 # ---------------------------------------------------------------------------

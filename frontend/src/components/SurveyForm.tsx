@@ -8,6 +8,8 @@ interface SurveyFormProps {
   assessmentId: number
   questionnaire: Questionnaire
   units: string[]
+  version?: string
+  categories?: string[]
 }
 
 const categories: { value: RespondentCategory; label: string }[] = [
@@ -17,7 +19,7 @@ const categories: { value: RespondentCategory; label: string }[] = [
   { value: 'staff', label: 'Працівники' },
 ]
 
-export default function SurveyForm({ assessmentId, questionnaire, units }: SurveyFormProps) {
+export default function SurveyForm({ assessmentId, questionnaire, units, version, categories: allowedCategories }: SurveyFormProps) {
   const formId = useId()
   const categoryRef = useRef<HTMLSelectElement>(null)
   const unitRef = useRef<HTMLSelectElement>(null)
@@ -42,6 +44,7 @@ export default function SurveyForm({ assessmentId, questionnaire, units }: Surve
     setAttempted(true)
     setSubmissionError('')
     const body = prepareSubmission(questionnaire, selected, category, unit, token, units)
+    if (body && version) body.questionnaire_version = version
     if (!category) { categoryRef.current?.focus(); return }
     if (!units.includes(unit)) { unitRef.current?.focus(); return }
     if (!token.trim()) { tokenRef.current?.focus(); return }
@@ -84,7 +87,7 @@ export default function SurveyForm({ assessmentId, questionnaire, units }: Surve
             required aria-invalid={attempted && !category}
             onChange={event => setCategory(event.target.value as RespondentCategory | '')}>
             <option value="">Оберіть категорію</option>
-            {categories.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+            {categories.filter(item => !allowedCategories || allowedCategories.includes(item.value)).map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
           {attempted && !category && <p className="survey-api-error" role="alert">Оберіть категорію.</p>}
         </div>

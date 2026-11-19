@@ -30,7 +30,7 @@ from sqlalchemy.schema import CreateTable
 from .database import Base
 from .models import Answer, ResponseSet, Unit
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class MigrationError(RuntimeError):
@@ -90,6 +90,9 @@ def migrate(engine: Engine) -> dict:
             report["action"] = "created"
         elif needs_migration(con):
             report.update(_migrate_v0_to_v1(con, engine))
+        elif con.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+            db_file = Path(engine.url.database) if engine.url.database not in (None, "", ":memory:") else None
+            report = {"action": "migrated", "backup": str(backup_database(con, db_file)) if db_file else None}
     finally:
         raw.close()
 

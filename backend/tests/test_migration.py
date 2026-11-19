@@ -182,8 +182,8 @@ def test_v1_database_gets_audit_table_without_touching_data(tmp_path):
     report = migrate(engine)
 
     after = inspect_db(db)
-    assert report["action"] == "up_to_date" and report["backup"] is None
-    assert after["version"] == SCHEMA_VERSION == 2
+    assert report["action"] == "migrated" and report["backup"] is not None
+    assert after["version"] == SCHEMA_VERSION == 3
     assert "audit_events" in after["tables"]
     assert after["set_rows"] == before["set_rows"] and after["answer_rows"] == before["answer_rows"]
     assert set(Base.metadata.tables) <= after["tables"]

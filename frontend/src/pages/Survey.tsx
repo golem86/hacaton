@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import SurveyForm from '../components/SurveyForm'
-import { getQuestionnaire, getUnits } from '../api/assessments'
+import { getAssessment, getQuestionnaire, getUnits } from '../api/assessments'
 import type { Questionnaire } from '../types/questionnaireApi'
 import './Survey.css'
 
@@ -12,7 +12,7 @@ interface SurveyProps {
 type LoadState =
   | { status: 'loading'; assessmentId?: number }
   | { status: 'error'; assessmentId: number; message: string }
-  | { status: 'ready'; assessmentId: number; questionnaire: Questionnaire; units: string[] }
+  | { status: 'ready'; assessmentId: number; questionnaire: Questionnaire; units: string[]; version?: string; categories?: string[] }
 
 export default function Survey({ assessmentId }: SurveyProps) {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
@@ -27,8 +27,10 @@ export default function Survey({ assessmentId }: SurveyProps) {
     Promise.all([
       getQuestionnaire(assessmentId, controller.signal),
       getUnits(controller.signal),
-    ]).then(([questionnaire, units]) => {
-      if (!controller.signal.aborted) setLoad({ status: 'ready', assessmentId, questionnaire, units })
+      getAssessment(assessmentId, controller.signal),
+    ]).then(([questionnaire, units, assessment]) => {
+      if (!controller.signal.aborted) setLoad({ status: 'ready', assessmentId, questionnaire, units,
+        version: assessment.questionnaire_version, categories: assessment.categories })
     }).catch((error: unknown) => {
       if (!controller.signal.aborted) {
         setLoad({ status: 'error', assessmentId, message: error instanceof Error ? error.message : 'Не вдалося завантажити анкету.' })
@@ -56,6 +58,8 @@ export default function Survey({ assessmentId }: SurveyProps) {
               assessmentId={assessmentId!}
               questionnaire={load.questionnaire}
               units={load.units}
+              version={load.version}
+              categories={load.categories}
             />
       )}
     </section>

@@ -246,6 +246,32 @@ def test_s4_admin_api_write_requires_csrf():
     assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=csrf).status_code == 201
 
 
+def test_assessment_manager_requires_verified_admin_session_and_csrf():
+    body = {"name": "Синтетичний V2", "start_date": "2026-11-19",
+            "categories": ["cadets"], "min_group_size": 5,
+            "questionnaire_version": "demo-v1"}
+    anon = TestClient(app)
+    assert anon.post("/api/assessments", json=body, headers={"X-Role": "admin"}).status_code == 401
+    user, user_csrf = login(make_user())
+    assert user.post("/api/assessments", json=body,
+                     headers={**user_csrf, "X-Role": "admin"}).status_code == 403
+    admin, csrf = admin_client()
+    assert admin.post("/api/assessments", json=body).status_code == 403
+    created = admin.post("/api/assessments", json=body, headers=csrf)
+    assert created.status_code == 201
+    cycle_id = created.json()["id"]
+    path = f"/api/assessments/{cycle_id}"
+    assert admin.post(path + "/activate").status_code == 403
+    assert admin.post(path + "/activate", headers=csrf).status_code == 200
+    assert admin.post(path + "/tokens?category=cadets").status_code == 403
+    assert admin.post(path + "/tokens?category=cadets", headers=csrf).status_code == 201
+    assert anon.get(path + "/participation").status_code == 401
+    assert user.get(path + "/participation").status_code == 403
+    assert admin.get(path + "/participation").status_code == 200
+    assert admin.post(path + "/close").status_code == 403
+    assert admin.post(path + "/close", headers=csrf).status_code == 200
+
+
 def test_s4_cookie_without_host_prefix_is_ignored_in_secure_mode(monkeypatch):
     monkeypatch.setenv("V2_AUTH_SECURE_COOKIE", "1")
     client, _ = login(make_user(), base_url="https://testserver")

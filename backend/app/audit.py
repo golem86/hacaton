@@ -23,7 +23,7 @@ from .roles import require_role
 # Дозволені службові поля details і їхній тип. Нове поле додається сюди свідомо, з рев'ю.
 ALLOWED_DETAILS: dict[str, type] = {"count": int}
 # Дозволені дії журналу
-ALLOWED_ACTIONS = {"tokens.issue", "assessment.close",
+ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "assessment.activate",
                    "auth.login",          # успішний вхід після 2FA: лише роль, без email і пароля
                    "user.create_admin"}   # створення адміністратора CLI-командою
 # Роль auditor не вводиться до рішення №5 — журнал бачить лише admin (S12)

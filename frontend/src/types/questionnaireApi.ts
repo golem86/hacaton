@@ -22,6 +22,7 @@ export interface SubmissionAnswer {
 
 export interface AnonymousSubmission {
   token: string
+  questionnaire_version?: string
   respondent_category: RespondentCategory
   unit: string
   answers: SubmissionAnswer[]

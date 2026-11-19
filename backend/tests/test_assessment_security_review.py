@@ -1,0 +1,121 @@
+"""P0: приховування участі, close/submit та оновлення синтетичної SQLite-БД."""
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date
+from threading import Barrier
+
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, inspect
+
+from app.database import SessionLocal, engine
+from app.main import app
+from app.migrations import check_schema, migrate
+from app.models import AccessToken, Question, ResponseSet
+
+client = TestClient(app)
+ADMIN = {"X-Role": "admin"}
+
+
+def new_cycle():
+    response = client.post("/api/assessments", headers=ADMIN, json={
+        "name": "Синтетичний P0", "start_date": date.today().isoformat(),
+        "categories": ["cadets"], "min_group_size": 5, "questionnaire_version": "demo-v1"})
+    assert response.status_code == 201
+    cycle_id = response.json()["id"]
+    assert client.post(f"/api/assessments/{cycle_id}/activate", headers=ADMIN).status_code == 200
+    return cycle_id
+
+
+def issue(cycle_id, count=1):
+    response = client.post(f"/api/assessments/{cycle_id}/tokens", headers=ADMIN,
+                           params={"count": count, "category": "cadets"})
+    assert response.status_code == 201
+    return response.json()["tokens"]
+
+
+def submission(token):
+    with SessionLocal() as db:
+        answers = [{"question_id": q.id, "value": 3} for q in db.query(Question).filter_by(kind="survey")]
+    return {"token": token, "respondent_category": "cadets", "unit": "Факультет 1",
+            "questionnaire_version": "demo-v1", "answers": answers}
+
+
+def test_small_participation_cannot_be_reconstructed_from_token_counts():
+    cycle_id = new_cycle()
+    path = f"/api/assessments/{cycle_id}"
+    codes = issue(cycle_id, 6)
+    for code in codes[:2]:
+        assert client.post(path + "/submissions", json=submission(code)).status_code == 201
+    for by_unit in (False, True):
+        stats = client.get(path + "/participation", params={"by_unit": by_unit}, headers=ADMIN).json()
+        assert stats["tokens_issued"] == 6
+        assert stats["tokens_unused"] is None
+        assert stats["responses_total"] is None
+        assert stats["participation_percent"] is None
+        assert stats["groups"] is None
+    assert client.post(path + "/close", headers=ADMIN).status_code == 200
+    closed = client.get(path + "/participation", headers=ADMIN).json()
+    assert closed["tokens_unused"] is None and closed["responses_total"] is None
+    assert closed["groups"] is None
+    assert client.get(path + "/participation?by_unit=true", headers=ADMIN).json()["groups"] is None
+
+
+def test_close_and_submit_race_preserves_transaction_and_blocks_later_submissions():
+    cycle_id = new_cycle()
+    path = f"/api/assessments/{cycle_id}"
+    first, later = issue(cycle_id, 2)
+    gate = Barrier(2)
+
+    def submit_now():
+        gate.wait()
+        return client.post(path + "/submissions", json=submission(first)).status_code
+
+    def close_now():
+        gate.wait()
+        return client.post(path + "/close", headers=ADMIN).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        submitted = pool.submit(submit_now)
+        closed = pool.submit(close_now)
+        submit_status, close_status = submitted.result(), closed.result()
+    assert close_status == 200
+    assert submit_status in (201, 403, 409)
+    assert client.post(path + "/submissions", json=submission(later)).status_code == 409
+    with SessionLocal() as db:
+        saved = db.query(ResponseSet).filter_by(cycle_id=cycle_id).count()
+        used = db.query(AccessToken).filter_by(cycle_id=cycle_id, used=True).count()
+        assert saved == used == (1 if submit_status == 201 else 0)
+        assert db.query(AccessToken).filter_by(token=later).one().used is False
+
+
+def _snapshot(path):
+    with sqlite3.connect(path) as con:
+        return (con.execute("SELECT COUNT(*) FROM response_sets").fetchone()[0],
+                con.execute("SELECT COUNT(*), SUM(value) FROM answers").fetchone(),
+                con.execute("SELECT COUNT(*) FROM cycles").fetchone()[0])
+
+
+def test_schema_2_to_3_keeps_synthetic_results_and_is_idempotent(tmp_path):
+    source = engine.url.database
+    target = tmp_path / "synthetic-v2.db"
+    with sqlite3.connect(source) as original, sqlite3.connect(target) as copy:
+        original.backup(copy)
+    with sqlite3.connect(target) as con:
+        con.execute("DROP TABLE access_token_policies")
+        con.execute("DROP TABLE cycle_configs")
+        con.execute("PRAGMA user_version = 2")
+    before = _snapshot(target)
+    copied_engine = create_engine(f"sqlite:///{target}")
+    report = migrate(copied_engine)
+    assert report["action"] == "migrated" and report["backup"]
+    backup = report["backup"]
+    assert _snapshot(backup) == before
+    with sqlite3.connect(backup) as con:
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert _snapshot(target) == before
+    assert {"cycle_configs", "access_token_policies"} <= set(inspect(copied_engine).get_table_names())
+    check_schema(copied_engine)
+    again = migrate(copied_engine)
+    assert again == {"action": "up_to_date", "backup": None}
+    assert _snapshot(target) == before
+    copied_engine.dispose()
