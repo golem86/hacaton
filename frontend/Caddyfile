@@ -1,0 +1,16 @@
+:80 {
+    encode gzip zstd
+
+    # handle preserves /api, /v2 and Swagger paths. Caddy forwards Host and
+    # constructs X-Forwarded-* headers while ignoring untrusted client values.
+    @backend path /api /api/* /v2 /v2/* /docs /docs/* /openapi.json /redoc
+    handle @backend {
+        reverse_proxy backend:8000
+    }
+
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}
