@@ -36,7 +36,10 @@ ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "ass
                    # Зрілість за Додатком В: лише роль і цикл (без відповідей, статусів і доказів);
                    # анонімні анкети Додатка В не журналюються взагалі
                    "annex_v.expert_create", "checklist.update", "checklist.confirm",
-                   "objective.create", "objective.confirm"}
+                   "objective.create", "objective.confirm",
+                   # Чернетка тексту звіту локальною LM: лише роль, id адміністратора, цикл і count —
+                   # кількість циклів у запиті (1 або 2). Ні тексту, ні виду, ні промпту в журналі немає
+                   "report.narrative"}
 # Роль auditor не вводиться до рішення №5 — журнал бачить лише admin (S12)
 AUDIT_ROLES = ("admin",)
 

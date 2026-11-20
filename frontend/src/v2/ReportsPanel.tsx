@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { getManagedAssessments, type Assessment } from '../api/assessments'
 import { downloadCycleReport, getCycleReport, type ReportFormat } from '../api/reports'
+import { getLmStatus } from '../api/narrative'
 import { SuppressionNote } from '../dashboard/suppression'
+import { CompareNarrative, CycleNarrative, type LmState } from './NarrativePanel'
 
 type LoadState<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T }
 type Report = Awaited<ReturnType<typeof getCycleReport>>
@@ -31,6 +33,17 @@ export default function ReportsPanel() {
     return () => controller.abort()
   }, [attempt])
 
+  const [lm, setLm] = useState<LmState>({ status: 'loading' })
+  useEffect(() => {
+    const controller = new AbortController()
+    getLmStatus(controller.signal).then(data => {
+      if (!controller.signal.aborted) setLm({ status: 'ready', data })
+    }).catch(error => {
+      if (!controller.signal.aborted) setLm({ status: 'error', message: errorMessage(error, 'сервер не відповів.') })
+    })
+    return () => controller.abort()
+  }, [])
+
   return (
     <section className="v2-card v2-report" aria-labelledby="reports-title">
       <header>
@@ -54,12 +67,13 @@ export default function ReportsPanel() {
               {cycles.data.map(cycle => <option key={cycle.id} value={cycle.id}>{cycle.name}</option>)}
             </select>
           </label>)}
-      {selectedId !== null && <ReportDownload key={selectedId} id={selectedId} />}
+      {selectedId !== null && <ReportDownload key={selectedId} id={selectedId} lm={lm} />}
+      {cycles.status === 'ready' && <CompareNarrative cycles={cycles.data} lm={lm} />}
     </section>
   )
 }
 
-function ReportDownload({ id }: { id: number }) {
+function ReportDownload({ id, lm }: { id: number; lm: LmState }) {
   const [report, setReport] = useState<LoadState<Report>>({ status: 'loading' })
   const [attempt, setAttempt] = useState(0)
   const [busy, setBusy] = useState<ReportFormat | null>(null)
@@ -128,6 +142,7 @@ function ReportDownload({ id }: { id: number }) {
       </div>
       {busy && <p role="status">Готуємо {busy.toUpperCase()}…</p>}
       {downloadError && <p className="v2-auth-error" role="alert">{downloadError}</p>}
+      <CycleNarrative id={id} lm={lm} />
     </>
   )
 }

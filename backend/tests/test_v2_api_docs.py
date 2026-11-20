@@ -61,12 +61,14 @@ EXPECTED_CSRF = {
     ("POST", "/v2/admin/users/lookup"): "session",                      # email у тілі, не в URL
     ("POST", "/v2/admin/users/{user_id}/role"): "session",
     ("POST", "/v2/admin/users/{user_id}/revoke-sessions"): "session",
+    ("POST", "/v2/admin/reports/compare/narrative"): "session",        # чернетки локальною LM (docs/LOCAL_LM.md)
+    ("POST", "/v2/admin/reports/{assessment_id}/narrative"): "session",
     ("POST", "/v2/user/attempts"): "session",
     ("PATCH", "/v2/user/attempts/{attempt_id}"): "session",
     ("POST", "/v2/user/attempts/{attempt_id}/complete"): "session",
 }
 PATH_VALUES = {"assessment_id": str(OPEN_ID), "attempt_id": "nonexistent", "version": "team-results-demo-0.1",
-               "action_id": "1", "user_id": "1", "code": "B-01", "indicator_id": "1"}
+               "action_id": "1", "user_id": "1", "code": "B-01", "indicator_id": "1", "job_id": "unknown-job-id"}
 
 
 @pytest.fixture(autouse=True)

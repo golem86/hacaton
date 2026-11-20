@@ -30,6 +30,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   'checklist.confirm': 'Підтверджено пункт чеклиста Додатка Б',
   'objective.create': 'Внесено об’єктивний показник',
   'objective.confirm': 'Підтверджено об’єктивний показник',
+  'report.narrative': 'Чернетка тексту звіту (локальна ШІ)',
 }
 
 /** Ролі виконавця: сесійні ролі V2 (admin, user, data_officer) і демонстраційні ролі V1 з backend/app/roles.py. */
@@ -67,6 +68,7 @@ const ACTION_KINDS: Readonly<Record<string, string>> = {
   'checklist.confirm': 'maturity',
   'objective.create': 'maturity',
   'objective.confirm': 'maturity',
+  'report.narrative': 'cycle',
 }
 
 const ALL = 'all'

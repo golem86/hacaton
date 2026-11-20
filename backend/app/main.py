@@ -45,6 +45,7 @@ def prepare_databases() -> None:
 def create_app() -> FastAPI:
     settings.validate_release_config()
     max_body_bytes()                          # некоректний V2_MAX_BODY_BYTES — сервер не стартує
+    settings.check_lm_config()                # некоректні V2_LM_* — сервер не стартує
     prepare_databases()
 
     access_log = logging.getLogger("uvicorn.access")
