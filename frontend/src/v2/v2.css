@@ -124,5 +124,45 @@
 .v2-auth-error { margin-top: 1rem; padding: .75rem .9rem; border-left: 3px solid #a54e43; border-radius: .45rem; background: #fbefed; color: #7a3931; font-size: .82rem; }
 .v2-auth-link { display: block; margin: 1.1rem auto 0; border: 0; background: transparent; color: var(--teal); font: inherit; font-size: .84rem; font-weight: 750; cursor: pointer; }
 .v2-auth-link:hover { text-decoration: underline; }
-@media (max-width: 900px) { .v2-shell { grid-template-columns: minmax(0, 1fr); } .v2-sidebar { gap: 1rem; padding: .8rem 1rem; overflow: hidden; } .v2-brand { padding: 0; } .v2-nav { display: flex; width: 100%; overflow-x: auto; gap: .3rem; padding-bottom: .1rem; } .v2-nav-label { display: none; } .v2-nav button { width: auto; flex: none; white-space: nowrap; } .v2-content-grid { grid-template-columns: 1fr; } }
+.v2-auth-survey { margin-top: 1.15rem; padding-top: .45rem; border-top: 1px solid var(--line); text-align: center; }
+.v2-auth-survey a {
+  display: inline-grid;
+  min-height: 2.75rem;
+  place-items: center;
+  padding: .35rem .6rem;
+  border-radius: .4rem;
+  color: var(--green);
+  font-size: .88rem;
+  font-weight: 750;
+  text-underline-offset: .2em;
+}
+.v2-auth-survey a:hover { background: var(--soft); }
+.v2-auth-survey a:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.v2-report { display: grid; gap: 1.1rem; }
+.v2-report > p, .v2-report header p { margin: 0; }
+.v2-report header p { margin-top: .5rem; }
+.v2-report .cycle-select { margin: 0; }
+.v2-report__metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; margin: 0; }
+.v2-report__metrics div { padding: .8rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--soft); }
+.v2-report__metrics dt { color: var(--muted); font-size: .8rem; }
+.v2-report__metrics dd { margin: .25rem 0 0; font-weight: 720; overflow-wrap: anywhere; }
+.v2-report__downloads { display: flex; flex-wrap: wrap; gap: .65rem; }
+.v2-report__downloads .v2-button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.v2-blocked-banner { margin: 1rem 0; padding: 1rem 1.1rem; border: 1px solid #e6d5b2; border-left: 4px solid #9b742d; border-radius: .6rem; background: #fbf7ee; color: #4d4029; }
+.v2-blocked-banner strong { display: block; color: #614914; }
+.v2-blocked-banner p { margin: .4rem 0 0; line-height: 1.55; }
+.v2-unit-results-blocked { max-width: 860px; }
+@media (max-width: 900px) {
+  .v2-shell { grid-template-columns: minmax(0, 1fr); }
+  .v2-sidebar { gap: .8rem; padding: .8rem 1rem; }
+  .v2-brand { padding: 0; }
+  .v2-nav { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .v2-nav-label { display: none; }
+  .v2-nav button { width: auto; min-height: 2.75rem; }
+  .v2-content-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .v2-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v2-nav button { width: 100%; min-width: 0; padding: .45rem .55rem; font-size: .82rem; overflow-wrap: anywhere; }
+}
 @media (max-width: 600px) { .v2-main { padding: 1.15rem .85rem 3rem; } .v2-topbar { flex-direction: column; } .v2-topbar-actions { width: 100%; align-items: stretch; } .v2-live-status { align-self: flex-start; } .v2-account-menu { width: 100%; max-width: none; } .v2-account-details { flex: 1; } .v2-card { border-radius: .75rem; padding: 1rem; } .v2-analysis-teaser { align-items: flex-start; flex-direction: column; } .v2-profile-card { align-items: start; flex-wrap: wrap; } .v2-profile-card .v2-pill { margin-left: 0; } .v2-section-heading { flex-direction: column; } .v2-stat-grid { grid-template-columns: 1fr; } .v2-stat-grid-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); } .v2-test-item, .v2-history-item { align-items: start; flex-direction: column; } .v2-test-item .v2-button { width: 100%; } .v2-scale { gap: .3rem; } .v2-scale-option { min-height: 3.4rem; } .v2-scale-option span { display: none; } .v2-anonymous-question { grid-template-columns: 1fr; gap: .65rem; } .v2-anonymous-footer, .v2-card-actions, .v2-attempt-actions { align-items: stretch; flex-direction: column; } .v2-button { width: 100%; } .v2-admin-grid { grid-template-columns: 1fr; } .v2-admin-wide { grid-column: auto; } .v2-cycle-item { align-items: start; flex-direction: column; } }

@@ -134,7 +134,9 @@
 | `/api/assessments/{id}/recommendations?methodology=` | GET | Сесія | `admin` | — | 200 / 401, 403, 404, 409, 422, 503 |
 | `/api/analytics/comparisons?assessment_id=&comparison_assessment_id=&methodology=` | GET | Сесія | `admin` | — | 200 / 401, 403, 404, 409, 422, 503 |
 | `/v2/admin/reports/{id}` | GET | Сесія | `admin` | — | 200 / 401, 403, 404, 409 |
-| `/v2/admin/reports/{id}/export?format=pdf\|xlsx` | GET | Сесія | `admin` | — | 501 до окремого контракту Reporting / 401, 403, 404, 422 |
+| `/v2/admin/reports/{id}/export?format=pdf\|xlsx` | GET | Сесія | `admin` | — | 200 (локальна реалізація), 401, 403, 404, 409, 422 |
+
+Локальний експорт повертає файл `integrity-report-{id}.pdf` або `integrity-report-{id}.xlsx` для закритого циклу. Обидва формати використовують ті самі агрегати та правила приховування, що й `/api/assessments/{id}/results`. У файлі є підсумок циклу, бали компонентів, кількість анкет і бали за категоріями. Сирі відповіді, одноразові коди та офіційний Integrity Index не експортуються. Формат потребує погодження №5 перед інтеграцією.
 
 Канонічні маршрути даних — `/api/*`. `GET /v2/admin/assessments`, `/assessments/{id}`, `/assessments/{id}/results`, `/comparisons` прототипу дублюють їх; frontend використовує `/api/*`, дублікати вилучаються, щоб не було двох контрактів на ті самі дані.
 

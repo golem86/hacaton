@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { getAssessments, type Assessment } from '../api/assessments'
 import { activateCycle, closeCycle, createCycle, getParticipation, issueAccessTokens, type Participation } from '../api/admin'
+import './AssessmentManager.css'
 
 const categoryLabels = { mgmt: 'Керівництво', npp: 'Науково-педагогічні працівники', cadets: 'Курсанти', staff: 'Працівники' }
 type Category = keyof typeof categoryLabels
@@ -22,6 +23,7 @@ export default function AssessmentManager() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const selected = cycles.find(c => c.id === id)
+  const endDateTooEarly = Boolean(startDate && endDate && endDate < startDate)
 
   async function refresh(selectId?: number) {
     const list = await getAssessments()
@@ -55,31 +57,147 @@ export default function AssessmentManager() {
       return created.id
     })
   }
-  return <section className="v2-card"><h2>Цикли оцінювання</h2>
-    {error && <p role="alert">{error}</p>}
-    <form onSubmit={submit}><h3>Новий цикл</h3>
-      <label>Назва<input required maxLength={50} value={name} onChange={e => setName(e.target.value)} /></label>
-      <label>Опис<input maxLength={2000} value={description} onChange={e => setDescription(e.target.value)} /></label>
-      <label>Обсяг<input maxLength={200} value={scope} onChange={e => setScope(e.target.value)} /></label>
-      <label>Початок<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
-      <label>Кінець<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
-      <label>Мінімальний розмір групи<input required type="number" min={5} max={1000} value={minGroup} onChange={e => setMinGroup(Number(e.target.value))} /></label>
-      <fieldset><legend>Категорії</legend>{(Object.keys(categoryLabels) as Category[]).map(item => <label key={item}>
-        <input type="checkbox" checked={categories.includes(item)} onChange={e => setCategories(previous => e.target.checked ? [...previous, item] : previous.filter(x => x !== item))} />{categoryLabels[item]}</label>)}</fieldset>
-      <p>Анкета: demo-v1 (демонстраційна шкала; методика не затверджена).</p>
-      <button className="v2-button" disabled={busy}>Створити чернетку</button>
-    </form>
-    <hr />
-    <label>Цикл<select value={id ?? ''} onChange={e => { const next = cycles.find(c => c.id === Number(e.target.value)); setId(next?.id ?? null); setCategory(next?.categories?.[0] ?? 'mgmt'); setCodes([]); setParticipation(null) }}>{cycles.map(c => <option key={c.id} value={c.id}>{c.name} · {c.status}</option>)}</select></label>
-    {selected && <div><p>Статус: {selected.status}. Поріг: {selected.min_group_size}. Версія: {selected.questionnaire_version ?? 'demo-v1'}.</p>
-      <p>Категорії: {(selected.categories ?? Object.keys(categoryLabels)).join(', ')}. Період: {selected.start_date} — {selected.end_date ?? 'без кінцевої дати'}.</p>
-      {selected.status === 'draft' && <button className="v2-button" disabled={busy} type="button" onClick={() => void run(() => activateCycle(selected.id))}>Активувати</button>}
-      {selected.status === 'open' && <button className="v2-button" disabled={busy} type="button" onClick={() => void run(() => closeCycle(selected.id))}>Закрити цикл</button>}
-      <h3>Участь</h3><p>Видано кодів: {participation?.tokens_issued ?? '—'}; невикористаних: {participation?.tokens_unused ?? 'приховано'}; анкет: {participation?.responses_total ?? 'приховано'}; участь: {participation?.participation_percent == null ? 'приховано' : `${participation.participation_percent}%`}.</p>
-      {selected.status === 'open' && <div><label>Категорія кодів<select value={category} onChange={e => setCategory(e.target.value as Category)}>{(selected.categories ?? Object.keys(categoryLabels) as Category[]).map(item => <option key={item} value={item}>{categoryLabels[item as Category]}</option>)}</select></label>
-        <label>Кількість кодів<input type="number" min={1} max={500} value={count} onChange={e => setCount(Number(e.target.value))} /></label>
-        <button className="v2-button" disabled={busy} type="button" onClick={() => void run(async () => { const result = await issueAccessTokens(selected.id, count, category); setCodes(result.tokens) })}>Видати коди</button>
-        {codes.length > 0 && <div role="status"><p>Коди показуються лише зараз. Передайте їх респондентам окремо.</p><textarea readOnly value={codes.join('\n')} /></div>}</div>}
-    </div>}
-  </section>
+  return (
+    <section className="cycle-manager" aria-labelledby="cycle-manager-title">
+      <header className="cycle-manager__masthead">
+        <h2 id="cycle-manager-title">Цикли оцінювання</h2>
+        <p>Налаштовуйте цикли та переглядайте участь в анонімному опитуванні.</p>
+      </header>
+
+      {error && <p className="cycle-manager__error" role="alert">{error}</p>}
+
+      <div className="cycle-manager__layout">
+        <form className="v2-card cycle-manager__form" onSubmit={submit} aria-labelledby="new-cycle-title">
+          <h3 id="new-cycle-title">Новий цикл</h3>
+          <div className="cycle-manager__fields">
+            <label className="cycle-manager__field cycle-manager__wide">Назва
+              <input required maxLength={50} value={name} onChange={e => setName(e.target.value)} />
+            </label>
+            <label className="cycle-manager__field">Опис
+              <input maxLength={2000} value={description} onChange={e => setDescription(e.target.value)} />
+            </label>
+            <label className="cycle-manager__field">Обсяг
+              <input maxLength={200} value={scope} onChange={e => setScope(e.target.value)} />
+            </label>
+            <label className="cycle-manager__field">Початок
+              <input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            </label>
+            <div className="cycle-manager__field">
+              <label htmlFor="cycle-end-date">Кінець</label>
+              <input
+                id="cycle-end-date"
+                type="date"
+                min={startDate || undefined}
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                aria-invalid={endDateTooEarly || undefined}
+                aria-describedby={endDateTooEarly ? 'cycle-end-date-error' : undefined}
+              />
+              {endDateTooEarly && (
+                <p id="cycle-end-date-error" className="cycle-manager__field-error">
+                  Дата завершення не може бути раніше дати початку.
+                </p>
+              )}
+            </div>
+            <label className="cycle-manager__field cycle-manager__wide">Мінімальний розмір групи
+              <input required type="number" min={5} max={1000} value={minGroup} onChange={e => setMinGroup(Number(e.target.value))} />
+            </label>
+          </div>
+
+          <fieldset className="cycle-manager__categories">
+            <legend>Категорії</legend>
+            <div className="cycle-manager__choices">
+              {(Object.keys(categoryLabels) as Category[]).map(item => (
+                <label className="cycle-manager__choice" key={item}>
+                  <input type="checkbox" checked={categories.includes(item)} onChange={e => setCategories(previous => e.target.checked ? [...previous, item] : previous.filter(x => x !== item))} />
+                  <span>{categoryLabels[item]}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <footer className="cycle-manager__form-footer">
+            <p><strong>Анкета demo-v1</strong><br />Демонстраційна шкала. Методика не затверджена.</p>
+            <button className="v2-button v2-button-primary" disabled={busy}>Створити чернетку</button>
+          </footer>
+        </form>
+
+        <section className="v2-card cycle-manager__overview" aria-labelledby="cycle-overview-title">
+          <h3 id="cycle-overview-title">Огляд циклу</h3>
+          <label className="cycle-manager__field">Цикл
+            <select value={id ?? ''} onChange={e => { const next = cycles.find(c => c.id === Number(e.target.value)); setId(next?.id ?? null); setCategory(next?.categories?.[0] ?? 'mgmt'); setCodes([]); setParticipation(null) }}>
+              {cycles.map(c => <option key={c.id} value={c.id}>{c.name} · {c.status}</option>)}
+            </select>
+          </label>
+
+          {selected ? (
+            <>
+              <div className="cycle-manager__summary">
+                <p className="cycle-manager__status" data-status={selected.status}>Статус: {selected.status}</p>
+                <dl className="cycle-manager__details">
+                  <div className="cycle-manager__wide">
+                    <dt>Період</dt>
+                    <dd>{selected.start_date} — {selected.end_date ?? 'без кінцевої дати'}</dd>
+                  </div>
+                  <div>
+                    <dt>Поріг групи</dt>
+                    <dd>{selected.min_group_size}</dd>
+                  </div>
+                  <div>
+                    <dt>Версія анкети</dt>
+                    <dd>{selected.questionnaire_version ?? 'demo-v1'}</dd>
+                  </div>
+                  <div className="cycle-manager__wide">
+                    <dt>Категорії</dt>
+                    <dd className="cycle-manager__category-list">
+                      {(selected.categories ?? Object.keys(categoryLabels) as Category[]).map(item => (
+                        <span key={item}>{categoryLabels[item]}</span>
+                      ))}
+                    </dd>
+                  </div>
+                </dl>
+                {selected.status === 'draft' && <button className="v2-button" disabled={busy} type="button" onClick={() => void run(() => activateCycle(selected.id))}>Активувати</button>}
+                {selected.status === 'open' && <button className="v2-button" disabled={busy} type="button" onClick={() => void run(() => closeCycle(selected.id))}>Закрити цикл</button>}
+              </div>
+
+              <section className="cycle-manager__participation" aria-labelledby="cycle-participation-title">
+                <h4 id="cycle-participation-title">Участь</h4>
+                <dl className="cycle-manager__metrics">
+                  <div><dt>Видано кодів:</dt>{' '}<dd>{participation?.tokens_issued ?? '—'}</dd></div>
+                  <div><dt>Невикористаних:</dt>{' '}<dd>{participation?.tokens_unused ?? 'приховано'}</dd></div>
+                  <div><dt>Анкет:</dt>{' '}<dd>{participation?.responses_total ?? 'приховано'}</dd></div>
+                  <div className="cycle-manager__metric-accent"><dt>Рівень участі:</dt>{' '}<dd>{participation?.participation_percent == null ? 'приховано' : `${participation.participation_percent}%`}</dd></div>
+                </dl>
+              </section>
+
+              {selected.status === 'open' && (
+                <section className="cycle-manager__codes" aria-labelledby="cycle-codes-title">
+                  <h4 id="cycle-codes-title">Коди доступу</h4>
+                  <div className="cycle-manager__fields">
+                    <label className="cycle-manager__field">Категорія кодів
+                      <select value={category} onChange={e => setCategory(e.target.value as Category)}>
+                        {(selected.categories ?? Object.keys(categoryLabels) as Category[]).map(item => (
+                          <option key={item} value={item}>{categoryLabels[item as Category]}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="cycle-manager__field">Кількість кодів
+                      <input type="number" min={1} max={500} value={count} onChange={e => setCount(Number(e.target.value))} />
+                    </label>
+                  </div>
+                  <button className="v2-button" disabled={busy} type="button" onClick={() => void run(async () => { const result = await issueAccessTokens(selected.id, count, category); setCodes(result.tokens) })}>Видати коди</button>
+                  {codes.length > 0 && (
+                    <div className="cycle-manager__issued" role="status">
+                      <p>Коди показуються лише зараз. Передайте їх респондентам окремо.</p>
+                      <textarea aria-label="Видані коди" readOnly value={codes.join('\n')} />
+                    </div>
+                  )}
+                </section>
+              )}
+            </>
+          ) : <p className="cycle-manager__empty">Оберіть цикл зі списку, щоб переглянути його параметри.</p>}
+        </section>
+      </div>
+    </section>
+  )
 }

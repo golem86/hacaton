@@ -27,7 +27,7 @@
 | Recommendations Engine | `GET /api/assessments/{assessment_id}/recommendations` | `RecommendationProposal` | Реалізовано у пропозиції №4, GET лише пропонує |
 | Recommendations Tracker | `GET /api/recommendations`; `PATCH /api/recommendations/{recommendation_id}` | `TrackedRecommendation` | Заплановано |
 | Audit Trail | `GET /api/audit-events` | `AuditEvent` | Реалізовано (backend-audit) |
-| Reporting Module | `GET /api/assessments/{assessment_id}/reports`; `GET /api/reports/{report_id}/export` | `Report`, файл експорту | Заплановано |
+| Reporting Module V2 | `GET /v2/admin/reports/{id}`; `GET /v2/admin/reports/{id}/export?format=pdf\|xlsx` | Дозволені агрегати, PDF або XLSX | Локальна реалізація V2, [контракт](V2_INTEGRATION_CONTRACT.md#33-analytics-формати-без-змін) |
 
 Шляхи зі статусом «Заплановано» є пропозицією для обговорення. Жоден з них зараз не повинен вважатися доступним API. Зовнішні інтеграції та формат експорту команда визначить окремо.
 
