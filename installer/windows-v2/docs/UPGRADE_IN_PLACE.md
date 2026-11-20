@@ -71,7 +71,9 @@ ssh <admin>@<сервер> powershell -NoProfile -NonInteractive -ExecutionPolic
 ```
 
 Версії схем за замовчуванням: з `integrity 3 / auth 1` (сервер TLSFIX5) до `integrity 5 / auth 2` (`-FromIntegrityVersion`,
-`-FromAuthVersion`, `-ToIntegrityVersion`, `-ToAuthVersion`).
+`-FromAuthVersion`, `-ToIntegrityVersion`, `-ToAuthVersion`). Поточний код — integrity 6 / auth 2: для сервера, встановленого
+`clean-install.ps1` поточного релізу ([CLEAN_INSTALL_CURRENT.md](CLEAN_INSTALL_CURRENT.md)), версії передаються явно
+(`-FromIntegrityVersion 6 -FromAuthVersion 2 -ToIntegrityVersion <нова> -ToAuthVersion <нова>`).
 
 ## 4. Кроки, точки зупинки й коди виходу
 
@@ -93,8 +95,10 @@ ssh <admin>@<сервер> powershell -NoProfile -NonInteractive -ExecutionPolic
 - `data\integrity_v2.db` 3→5, `data\v2_auth.db` 1→2 (копії до міграції — у каталозі `pre-upgrade-<stamp>`).
 - `app\frontend\dist` (попередній — `dist.prev-<stamp>`), `caddy\Caddyfile` (копія — `Caddyfile.orig`).
 - Режим запуску обох служб: Automatic (Delayed Start) — після перезавантаження сайт піднімається сам; залежність Caddy → Tailscale зберігається.
-  Завдання TLS-поновлення приймає Auto і Manual. Старі операторські `Restart-V2Tlsfix5Verified.ps1` / `Verify-V2Tlsfix5Runtime.ps1`
-  (закріплені на common TLSFIX5) вимагають Manual і версії 3/1 — після оновлення ними не користуватися.
+  Завдання TLS-поновлення (`Integrity-V2-TLS-Renewal`) приймає Auto і Manual і не залежить від версій БД. Операторські
+  `tls\Restart-V2Tlsfix5Verified.ps1` / `tls\Verify-V2Tlsfix5Runtime.ps1` оновлено: Auto (зокрема Delayed) або Manual, версії БД — з
+  файлів (`v2_db_tool user-version`, лише записи `SCHEMA_SPECS`) + строга схема, служба `integrity-v2-lm` (якщо є) перевіряється й не
+  зупиняється; common і `v2_db_tool.py` беруться з каталогу інсталятора релізу (`-CommonSha256`/`-DbToolSha256` — необов'язкове закріплення).
 
 ## 6. Відкат і що робити при збої
 
@@ -209,7 +213,9 @@ XML повертається побайтово, старий ключ. Післ
 
 - На реальному сервері не запускалося; адаптери SCM/ACL/HTTP перевірені лише симуляцією та попереднім кодом TLSFIX5.
 - `SCHEMA_SPECS` для integrity 5 і auth 2 звірено з кодом (bind-check OK); БД, створені кодом релізу 3/1 і мігровані новим кодом у release, проходять строгі перевірки 14/14.
-- Clean Install (`clean-install.ps1`, `Initialize/Complete-V2CleanDatabases`, `$V2DbSet`) досі закріплений на dde86e6 (3/1);
-  для чистого встановлення посиленого релізу ці версії й deploy ZIP треба оновити окремо.
+- Clean Install оновлено під поточний реліз ([CLEAN_INSTALL_CURRENT.md](CLEAN_INSTALL_CURRENT.md)): пакет того самого формату, що й
+  пакет оновлення (`deploy\Build-V2CleanPackage.ps1`), БД integrity 6 / auth 2 (`$V2ReleaseSchema`, `$V2DbSet`), `mark-synthetic`,
+  маніфест коду в `pkg\<ReleaseId>-BACKEND-SHA256.txt` (його бере `preflight.current-code`), служби Automatic (Delayed Start),
+  Gmail SMTP, `-WithLm`. Справжнього прогону на Windows-хості ще не було.
 - Відкат БД повертає стан на момент `backup.db`: дані, записані після оновлення, втрачаються (саме тому `-ConfirmRestoreFromBackup`).
 - Шляхи pip у venv близькі до MAX_PATH; на сервері (`C:\srv\integrity-v2`) запас достатній, у тестах — короткі імена каталогів.
