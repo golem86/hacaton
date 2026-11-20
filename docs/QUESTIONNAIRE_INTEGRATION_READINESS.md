@@ -15,7 +15,7 @@
 
 | Check | Result | Evidence / limitation |
 |---|---|---|
-| Full backend pytest | **PASS: 427 passed, 1 skipped** | `PYTHONUTF8=1 ..\\..\\audit-venv\\Scripts\\python.exe -m pytest -q` from `backend`. Initial run without `PYTHONUTF8=1` failed in unrelated `test_mig1_explicit_migration_requires_confirmed_backup`: a spawned Python process decoded Windows output as UTF-8 and raised `UnicodeDecodeError`; no test expectation or production code was changed. |
+| Full backend pytest | **PASS: 427 passed, 1 skipped (428 test cases total)** | `PYTHONUTF8=1 ..\\..\\audit-venv\\Scripts\\python.exe -m pytest -q` from `backend`. Initial run without `PYTHONUTF8=1` failed in unrelated `test_mig1_explicit_migration_requires_confirmed_backup`: a spawned Python process decoded Windows output as UTF-8 and raised `UnicodeDecodeError`; no test expectation or production code was changed. |
 | Questionnaire integration + expert prototype tests | **PASS: 66 passed, 1 skipped** | Includes synthetic SQLite, 2.1.0 forms, session/2FA/CSRF/Origin, assignment/grant revocation, and ledger tests. One skip is the OS-denied symlink creation test. |
 | Frontend unit tests | **PASS: 46 passed, 0 skipped** | `npm test` after the test-only harness/proxy additions; only harmless Vite WebSocket port and npm update notices. |
 | TypeScript + production build | **PASS** | `npm run build` after the test-only harness/proxy additions; `tsc --noEmit` and Vite production build completed. |
@@ -25,6 +25,8 @@
 | Windows symlink security case | **NOT RUN / skipped** | Symlink creation raised an OS privilege error even in an elevated attempt. |
 | PR #25 GitHub Actions | **NOT RUN** | `.github/workflows/v2-ci.yml` triggers PR checks only when base is `feature/v2-integration`; Draft PR #25 targets the release branch. No Actions PASS is inferred. |
 | `git diff --check` and workflow YAML | **PASS** | Workflow parsed using the Python YAML parser. |
+
+The WIP copy of the CI workflow now expects 428 backend test cases and 46 frontend tests. Its existing gates still require a complete test report and zero failures, errors, skipped, cancelled, or todo cases. `RELEASE_SHA` and `RELEASE_BACKEND_TREE` remain unchanged because they identify the historical B1 REV6 snapshot. Local Windows skipped the symlink test, so the backend CI gate is not yet demonstrated as passing on this WIP.
 
 ## Security findings and limits
 
