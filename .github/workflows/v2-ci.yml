@@ -18,10 +18,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Очікуваний склад релізного кандидата dde86e68f4405c23ec4aad14db80f0b764fb4556.
+  # Лічильники тестів — для поточного PR. Provenance нижче — історичний B1 REV6 snapshot.
   # PR, що змінює кількість тестів, має оновити ці значення — так зміна складу видна в рецензії.
-  EXPECTED_BACKEND_TESTS: "348"
-  EXPECTED_FRONTEND_TESTS: "36"
+  EXPECTED_BACKEND_TESTS: "361"
+  EXPECTED_FRONTEND_TESTS: "38"
   RELEASE_SHA: dde86e68f4405c23ec4aad14db80f0b764fb4556
   RELEASE_BACKEND_TREE: 834b96670600f0188714730c80007d6e8a808873   # backend, який перевіряє B1 REV6
 
@@ -109,8 +109,18 @@ jobs:
           python - "$RUNNER_TEMP/backend-junit.xml" <<'EOF'
           import os, sys, xml.etree.ElementTree as ET
           root = ET.parse(sys.argv[1]).getroot()
+          if root.tag not in ("testsuite", "testsuites"):
+              sys.exit("Некоректний JUnit root")
           suites = [root] if root.tag == "testsuite" else list(root)
-          tot = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "failures", "errors", "skipped")}
+          keys = ("tests", "failures", "errors", "skipped")
+          if not suites or any(s.tag != "testsuite" or any(s.get(k) is None for k in keys) for s in suites):
+              sys.exit("Відсутній або неповний JUnit testsuite")
+          tot = {k: sum(int(s.get(k)) for s in suites) for k in keys}
+          cases = [case for suite in suites for case in suite.findall("testcase")]
+          tags = {"failures": "failure", "errors": "error", "skipped": "skipped"}
+          actual = {k: sum(case.find(tag) is not None for case in cases) for k, tag in tags.items()}
+          if len(cases) != tot["tests"] or any(actual[k] != tot[k] for k in actual):
+              sys.exit("JUnit counts не відповідають фактичним testcase")
           exp = int(os.environ["EXPECTED_BACKEND_TESTS"])
           print(tot)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
@@ -149,11 +159,15 @@ jobs:
 
       - name: Tests
         run: |
+          set -euo pipefail
           pnpm test 2>&1 | tee "$RUNNER_TEMP/frontend-tests.txt"
-          tests=$(grep -E '^ℹ tests [0-9]+' "$RUNNER_TEMP/frontend-tests.txt" | awk '{print $3}')
-          fail=$(grep -E '^ℹ fail [0-9]+' "$RUNNER_TEMP/frontend-tests.txt" | awk '{print $3}')
-          echo "### Frontend: ${tests} tests, fail ${fail} (очікується ${EXPECTED_FRONTEND_TESTS})" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$tests" != "$EXPECTED_FRONTEND_TESTS" ] || [ "$fail" != "0" ]; then echo "::error::Очікується рівно ${EXPECTED_FRONTEND_TESTS} pass"; exit 1; fi
+          summary() { awk -v key="$1" '$1 == "ℹ" && $2 == key && $3 ~ /^[0-9]+$/ && NF == 3 {print $3}' "$RUNNER_TEMP/frontend-tests.txt"; }
+          tests=$(summary tests); pass=$(summary pass); fail=$(summary fail)
+          skipped=$(summary skipped); cancelled=$(summary cancelled); todo=$(summary todo)
+          echo "### Frontend: $pass/$tests passed, fail $fail, skipped $skipped, cancelled $cancelled, todo $todo (очікується $EXPECTED_FRONTEND_TESTS)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$tests" != "$EXPECTED_FRONTEND_TESTS" ] || [ "$pass" != "$EXPECTED_FRONTEND_TESTS" ] || [ "$fail" != "0" ] || [ "$skipped" != "0" ] || [ "$cancelled" != "0" ] || [ "$todo" != "0" ]; then
+            echo "::error::Очікується рівно $EXPECTED_FRONTEND_TESTS passed, без fail/skipped/cancelled/todo та з повним TAP summary"; exit 1
+          fi
 
       - name: TypeScript
         run: pnpm exec tsc --noEmit
