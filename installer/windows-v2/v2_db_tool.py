@@ -234,6 +234,77 @@ _INTEGRITY_TABLES_V5 = dict(
 );""",
 )
 
+# integrity 6 = 5 + зрілість за Додатком В (feature/integration ba61232; лише нові таблиці)
+_INTEGRITY_TABLES_V6 = dict(
+    _INTEGRITY_TABLES_V5,
+    annex_v_responses="""CREATE TABLE annex_v_responses (
+    id INTEGER NOT NULL,
+    cycle_id INTEGER NOT NULL,
+    respondent_category VARCHAR(30) NOT NULL,
+    form INTEGER NOT NULL,
+    version VARCHAR(20) NOT NULL,
+    PRIMARY KEY (id),
+    FOREIGN KEY(cycle_id) REFERENCES cycles (id)
+);""",
+    annex_v_answers="""CREATE TABLE annex_v_answers (
+    id INTEGER NOT NULL,
+    response_id INTEGER NOT NULL,
+    question_id VARCHAR(40) NOT NULL,
+    option_id VARCHAR(40) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE (response_id, question_id),
+    FOREIGN KEY(response_id) REFERENCES annex_v_responses (id)
+);""",
+    annex_v_expert_assessments="""CREATE TABLE annex_v_expert_assessments (
+    id INTEGER NOT NULL,
+    cycle_id INTEGER NOT NULL,
+    expert_label VARCHAR(120) NOT NULL,
+    form INTEGER NOT NULL,
+    version VARCHAR(20) NOT NULL,
+    answers_json TEXT NOT NULL,
+    entered_role VARCHAR(50) NOT NULL,
+    entered_by_user_id INTEGER,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    FOREIGN KEY(cycle_id) REFERENCES cycles (id)
+);""",
+    checklist_entries="""CREATE TABLE checklist_entries (
+    id INTEGER NOT NULL,
+    cycle_id INTEGER NOT NULL,
+    code VARCHAR(10) NOT NULL,
+    status VARCHAR(10) NOT NULL,
+    evidence TEXT,
+    entered_role VARCHAR(50) NOT NULL,
+    entered_by_user_id INTEGER,
+    entered_at DATETIME NOT NULL,
+    confirmed BOOLEAN NOT NULL,
+    confirmed_role VARCHAR(50),
+    confirmed_by_user_id INTEGER,
+    confirmed_at DATETIME,
+    PRIMARY KEY (id),
+    UNIQUE (cycle_id, code),
+    FOREIGN KEY(cycle_id) REFERENCES cycles (id)
+);""",
+    maturity_indicators="""CREATE TABLE maturity_indicators (
+    id INTEGER NOT NULL,
+    cycle_id INTEGER NOT NULL,
+    criterion VARCHAR(30) NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    value FLOAT NOT NULL,
+    target FLOAT NOT NULL,
+    period VARCHAR(50) NOT NULL,
+    entered_role VARCHAR(50) NOT NULL,
+    entered_by_user_id INTEGER,
+    entered_at DATETIME NOT NULL,
+    confirmed BOOLEAN NOT NULL,
+    confirmed_role VARCHAR(50),
+    confirmed_by_user_id INTEGER,
+    confirmed_at DATETIME,
+    PRIMARY KEY (id),
+    FOREIGN KEY(cycle_id) REFERENCES cycles (id)
+);""",
+)
+
 _AUTH_DDL_V1 = """
 CREATE TABLE IF NOT EXISTS v2_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -329,6 +400,21 @@ SCHEMA_SPECS = {
                    "version_file": "backend/app/migrations.py", "version_symbol": "SCHEMA_VERSION"},
         "forbidden": (("column", "access_tokens", "token"),),
         "contract": (("table", "recommendation_actions"),
+                     ("column", "access_tokens", "token_hash", {"notnull": 1}),
+                     ("no_column", "access_tokens", "token"),
+                     ("unique", "access_tokens", ("token_hash",)),
+                     ("column", "audit_events", "actor_user_id", {"type": "INTEGER", "notnull": 0, "pk": 0}),
+                     ("pk", "instance_meta", ("key",)),
+                     ("column", "instance_meta", "value", {"notnull": 1}),
+                     ("kv_insert", "instance_meta")),
+    },
+    ("integrity", 6): {
+        "status": "integrity 6: 5 + Додаток В (feature/integration ba61232)", "ddl": _join(_INTEGRITY_TABLES_V6),
+        "strict_sql": False,   # audit_events.actor_user_id додається ALTER TABLE → текст CREATE відрізняється від свіжого
+        "source": {"files": ("backend/app/models.py", "backend/app/migrations.py"), "generator": "sqlalchemy",
+                   "version_file": "backend/app/migrations.py", "version_symbol": "SCHEMA_VERSION"},
+        "forbidden": (("column", "access_tokens", "token"),),
+        "contract": (("table", "recommendation_actions"), ("table", "annex_v_responses"), ("table", "annex_v_answers"), ("table", "annex_v_expert_assessments"), ("table", "checklist_entries"), ("table", "maturity_indicators"),
                      ("column", "access_tokens", "token_hash", {"notnull": 1}),
                      ("no_column", "access_tokens", "token"),
                      ("unique", "access_tokens", ("token_hash",)),
