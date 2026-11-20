@@ -1,6 +1,16 @@
 # API proposal: user-scoped unit aggregates
 
-**Status:** proposal only; not implemented or approved. No frontend request is made until #5 approves the contract and backend provides the endpoint.
+**Status:** implemented locally (branch `local/unit-results`, schema 7). Decisions taken for the open questions are recorded below in «Implementation decisions»; they still need team (#5/#2) confirmation before release.
+
+## Implementation decisions (answers to the questions below)
+
+1. **Membership source.** Table `user_units` in INTEGRITY_DB (`user_id` → `units.name`, one unit per user). Only the server owner assigns or clears it: `python -m app.v2_unit_cli set-unit|clear-unit --email … --unit … [--confirm]` (plan without `--confirm`). No web route — neither the user nor the admin can choose a unit. Each change writes audit event `user.unit_change` (actor `server`, no email, id or unit name).
+2. **k and complementary suppression.** `k = cycles.min_group_size` (≥ 5). Results are shown only if (a) the user's unit has ≥ k responses **and** (b) in the whole cycle every non-empty «category × unit» cell has ≥ k responses. Rule (b) is global on purpose: unit scores (seen by different users), category scores (`/results`, management) and the cycle total are all sums over cells of the same table, so any differencing between them (several users from different units colluding, a user moved between units, or one user plus management) yields only a sum of whole cells — each ≥ k people. An independent review reproduced recovery of one manager's C1–C7 scores with an earlier, weaker rule («unit ≥ k and rest of cycle ≥ k»); that is now a regression test. The response count is rounded down to a multiple of 5, empty and small units return identical bodies, no category breakdown and no client filters. Consequence: if the cycle has any small cell (e.g. 1–4 managers scattered over units), no unit results are shown for that cycle at all.
+3. **Membership date.** Resolved at request time (current assignment). Reassignment is a server-owner action recorded in the audit log; thanks to rule 2(b) seeing several units of the same cycle reveals only whole-cell aggregates. Residual: k−1 colluding members of one unit can subtract their own answers (same as for any k-threshold aggregate).
+4. **Status shape.** `404` unknown or draft cycle, `409` open cycle (cycle list is public anyway). `200` with `privacy_status` = `available` | `suppressed` | `no_unit`; per component `status` = `available` | `suppressed` | `insufficient_data`.
+5. **Methodology.** `methodology_version: "unit-mean-0-100-v1"` — the same formula as `/api/assessments/{id}/results`: mean of `(answer − scale_min) / (scale_max − scale_min) × 100` over survey questions of the component.
+
+Implementation: `backend/app/services/unit_results.py`, route in `backend/app/routes/v2_user.py`, CLI `backend/app/v2_unit_cli.py`, tests `backend/tests/test_v2_unit_results.py`; frontend `frontend/src/v2/UnitResults.tsx`, `frontend/src/api/v2User.ts`, tests `frontend/tests/unit-results.test.mjs`.
 
 ## Current gap
 

@@ -265,3 +265,26 @@ def test_no_open_codes_in_db_or_output(engine):
             for row in con.execute(f'SELECT * FROM "{table}"'):
                 for value in row:
                     assert not (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{32}", value))
+
+
+def test_no_small_groups_plan_has_only_large_cells():
+    from collections import Counter
+    from datetime import date
+    questions = [demo_cycle.QuestionSpec(i, f"C{i}", 1, 5) for i in range(1, 8)]
+    units = ["Кафедра загальних дисциплін", "Факультет 1", "Факультет 2"]
+    plan = demo_cycle.build_plan(name="T", seed=7, total=150, questions=questions, units=units,
+                                 today=date(2026, 11, 20), unit_safe=True)
+    cells = Counter((category, unit) for category, unit, _ in plan.responses)
+    assert len(plan.responses) == 150
+    assert all(n > demo_cycle.MIN_GROUP_SIZE for n in cells.values())
+    assert {c for c, _ in cells} == set(demo_cycle.CATEGORIES)
+    assert plan.hidden_categories == []
+
+
+def test_no_small_groups_refuses_too_few_responses():
+    from datetime import date
+    import pytest
+    questions = [demo_cycle.QuestionSpec(1, "C1", 1, 5)]
+    with pytest.raises(demo_cycle.DemoRefused):
+        demo_cycle.build_plan(name="T", seed=1, total=40, questions=questions,
+                              units=["A", "B", "C"], today=date(2026, 11, 20), unit_safe=True)

@@ -411,7 +411,7 @@ function Assert-V2RestorePermitted {
 # Версії схем поточного релізу (backend\app\migrations.py SCHEMA_VERSION, backend\app\v2_auth.py AUTH_SCHEMA_VERSION; обидві
 # мають бути в SCHEMA_SPECS v2_db_tool.py). Clean Install створює БД саме цих версій; Clean Install перевіряє збіг із кодом релізу
 # (bind-check). Історично: release dde86e6 / TLSFIX5 — 3/1.
-$V2ReleaseSchema = [ordered]@{ integrity = 6; auth = 2 }
+$V2ReleaseSchema = [ordered]@{ integrity = 7; auth = 2 }
 # B3: набір копій перевіряється ДО будь-якої мутації: рівно дві БД (integrity_v2.db, v2_auth.db — версії поточного релізу), без
 # дублікатів БД і шляхів копій, копії — існуючі файли поза data\, SHA256 — 64 hex.
 $V2DbSet = [ordered]@{ 'integrity_v2.db' = $V2ReleaseSchema.integrity; 'v2_auth.db' = $V2ReleaseSchema.auth }

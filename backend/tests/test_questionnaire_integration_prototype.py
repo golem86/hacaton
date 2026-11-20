@@ -142,7 +142,7 @@ def test_schema5_migration_backup_preservation_constraints_and_idempotency(migra
 
 
 def test_prototype_pins_current_integrity_schema_version():
-    assert PROTOTYPE_SCHEMA_VERSION == SCHEMA_VERSION == 6
+    assert PROTOTYPE_SCHEMA_VERSION == SCHEMA_VERSION == 7
 
 
 CORE_TABLES_FOR_TEST = (

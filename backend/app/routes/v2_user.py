@@ -6,8 +6,12 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, StrictInt
 
+from ..database import get_db
+from ..request_limits import IdQuery
+from ..services.unit_results import UnitResultsUnavailable, unit_results
 from ..v2_auth import complete_attempt, create_attempt, get_attempt, list_attempts
 from ..v2_catalog import PERSONAL_ASSESSMENTS, PERSONAL_QUESTIONS, get_personal_assessment, is_open, public_assessment
 from .v2_auth import require_v2_role
@@ -179,3 +183,18 @@ def personal_stats(user: dict[str, Any] = Depends(require_v2_role("user"))):
         "average_response": (sum(values) / len(values)) if values else None,
         "official_index": None,
     }
+
+
+@router.get("/unit-results")
+def personal_unit_results(assessment_id: IdQuery, user: dict[str, Any] = Depends(require_v2_role("user")),
+                          db: Session = Depends(get_db)):
+    """Узагальнені бали C1–C7 підрозділу користувача за закритий цикл (docs/USER_UNIT_RESULTS_API_PROPOSAL.md).
+
+    Підрозділ визначає лише сервер (user_units, призначає власник сервера); клієнт його не передає.
+    Малі групи приховуються (див. services/unit_results.py)."""
+    try:
+        return unit_results(db, assessment_id, user["id"])
+    except UnitResultsUnavailable as error:
+        if error.code == "not_closed":
+            raise HTTPException(status_code=409, detail="Результати доступні після закриття оцінювання") from error
+        raise HTTPException(status_code=404, detail="Оцінювання не знайдено") from error

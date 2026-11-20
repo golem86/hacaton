@@ -377,3 +377,21 @@ class MaturityIndicator(Base):
     confirmed_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
     confirmed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class UserUnit(Base):
+    """
+    Належність користувача V2 до підрозділу — для екрана «Результати підрозділу».
+
+    Призначає ЛИШЕ власник сервера командою `python -m app.v2_unit_cli` (як і ролі admin та
+    data_officer): ні сам користувач, ні адміністратор у вебі підрозділ не обирають, інакше
+    можна було б переглядати чужі підрозділи або «перебирати» малі групи.
+    user_id — id з V2_AUTH_DB (окрема база, тому без зовнішнього ключа); підрозділ — лише з
+    довідника units. Анкети з користувачем НЕ пов'язуються: таблиця не має зв'язку з
+    response_sets і не дозволяє дізнатися, чи подавав цей користувач анкету.
+    """
+    __tablename__ = "user_units"
+
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    unit: Mapped[str] = mapped_column(ForeignKey("units.name"))
+    assigned_at: Mapped[datetime] = mapped_column(DateTime)

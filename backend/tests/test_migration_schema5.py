@@ -25,7 +25,7 @@ from legacy_schemas import LEGACY_CODES, make_legacy_db, table_rows
 
 # Таблиці schema 6 (зрілість за Додатком В) — нові й порожні після міграції старої БД
 SCHEMA6_TABLES = {"annex_v_responses", "annex_v_answers", "annex_v_expert_assessments", "checklist_entries",
-                  "maturity_indicators"}
+                  "maturity_indicators", "user_units"}
 
 
 def sha(code: str) -> str:
@@ -52,7 +52,7 @@ def legacy(request, tmp_path):
 
 
 def test_schema_version_is_6():
-    assert SCHEMA_VERSION == 6
+    assert SCHEMA_VERSION == 7
 
 
 def test_legacy_database_is_migrated_to_5_without_data_loss(legacy):

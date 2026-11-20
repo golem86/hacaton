@@ -139,4 +139,4 @@ def test_mig1_explicit_migration_requires_confirmed_backup(tmp_path):
                              cwd=backend, env=env, capture_output=True, text=True, encoding="utf-8")
     assert applied.returncode == 0, applied.stderr
     with sqlite3.connect(tmp_path / "i.db") as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7

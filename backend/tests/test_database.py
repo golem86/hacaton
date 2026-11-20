@@ -20,7 +20,7 @@ def test_all_tables_created():
                       "access_tokens", "access_token_policies", "cycle_configs",
                       "objective_indicators", "recommendations", "recommendation_actions", "audit_events",
                       "instance_meta", "annex_v_responses", "annex_v_answers", "annex_v_expert_assessments",
-                      "checklist_entries", "maturity_indicators"}
+                      "checklist_entries", "maturity_indicators", "user_units"}
 
 
 def test_demo_data_loaded():

@@ -146,8 +146,8 @@ def test_old_versions_fail_new_expectations(tmp_path):
 
 def test_unknown_version_is_stop(tmp_path):
     p = make_db(tmp_path / "x.db", "integrity", 3)
-    code, _, err = run("integrity-schema", p, "--expect-version", "7")
-    assert code != 0 and "немає очікувань схеми integrity версії 7" in err
+    code, _, err = run("integrity-schema", p, "--expect-version", "8")
+    assert code != 0 and "немає очікувань схеми integrity версії 8" in err
 
 
 # ------------------------------------------------------------------------------------------------ синтетичні міграції

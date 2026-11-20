@@ -160,10 +160,24 @@
 .v2-report__downloads { display: flex; flex-wrap: wrap; gap: .65rem; }
 .v2-report__subheading { margin: .4rem 0 0; font-size: 1.05rem; }
 .v2-report__downloads .v2-button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
-.v2-blocked-banner { margin: 1rem 0; padding: 1rem 1.1rem; border: 1px solid #e6d5b2; border-left: 4px solid #9b742d; border-radius: .6rem; background: #fbf7ee; color: #4d4029; }
-.v2-blocked-banner strong { display: block; color: #614914; }
-.v2-blocked-banner p { margin: .4rem 0 0; line-height: 1.55; }
-.v2-unit-results-blocked { max-width: 860px; }
+.v2-unit-results { max-width: 960px; }
+.v2-unit-field { display: grid; gap: .35rem; max-width: 26rem; margin: 1rem 0; }
+.v2-unit-field label { color: var(--ink); font-size: .84rem; font-weight: 750; }
+.v2-unit-field select { min-height: 2.5rem; padding: .45rem .6rem; border: 1px solid #cfdcd6; border-radius: .55rem; background: #fff; color: var(--ink); font: inherit; }
+.v2-unit-notice { margin: 1rem 0; padding: 1rem 1.1rem; border: 1px solid #e6d5b2; border-left: 4px solid #9b742d; border-radius: .6rem; background: #fbf7ee; color: #4d4029; }
+.v2-unit-notice strong { display: block; color: #614914; }
+.v2-unit-notice p { margin: .4rem 0 0; line-height: 1.55; }
+.v2-unit-summary strong { overflow-wrap: anywhere; }
+.v2-unit-table-wrap { overflow-x: auto; }
+.v2-unit-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.v2-unit-table caption { caption-side: top; padding-bottom: .5rem; color: var(--muted); font-size: .8rem; text-align: left; }
+.v2-unit-table th, .v2-unit-table td { padding: .65rem .55rem; border-bottom: 1px solid #e3ece7; text-align: left; vertical-align: middle; }
+.v2-unit-table thead th { color: var(--muted); font-size: .74rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.v2-unit-table tbody th { color: var(--teal); font-weight: 800; }
+.v2-unit-table .v2-unit-score { font-variant-numeric: tabular-nums; font-weight: 750; text-align: right; }
+.v2-unit-bar { min-width: 6rem; }
+.v2-unit-footnote { margin-top: 1rem; font-size: .8rem; }
+.v2-unit-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 900px) {
   .v2-shell { grid-template-columns: minmax(0, 1fr); }
   .v2-brand { padding: 0; }

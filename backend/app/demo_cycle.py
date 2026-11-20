@@ -8,6 +8,8 @@
   python -m app.demo_cycle --responses 150 --seed 2026                     # лише план, БД не змінюється
   python -m app.demo_cycle --responses 150 --seed 2026 --confirm           # створити цикл
   python -m app.demo_cycle --responses 150 --seed 2026 --name "Демо 2026" --confirm
+  python -m app.demo_cycle --responses 150 --name "Демо: підрозділи" --no-small-groups --confirm
+                                    # кожна клітинка «категорія × підрозділ» ≥ k + 1 (екран «Результати підрозділу»)
 
 На сервері Windows — обгортка installer/windows-v2/ops/New-V2DemoCycle.ps1 ([-Apply]). Опис — docs/DEMO_DATA.md.
 
@@ -117,6 +119,31 @@ def category_counts(total: int) -> dict[str, int]:
     return {"mgmt": SMALL_GROUPS["mgmt"], "npp": npp, "cadets": rest - npp, "staff": SMALL_GROUPS["staff"]}
 
 
+UNIT_SAFE_CELL = {"mgmt": 6, "staff": 6}   # --no-small-groups: керівництво й персонал — по 6 у кожному підрозділі
+
+
+def unit_safe_cells(total: int, units: list[str]) -> dict[tuple[str, str], int]:
+    """--no-small-groups: таблиця «(категорія, підрозділ) → кількість», де кожна клітинка ≥ k + 1.
+
+    Для екрана «Результати підрозділу»: він показує дані лише тоді, коли в усьому циклі немає клітинок
+    з 1…k−1 анкет. НПП і курсанти розподіляються за UNIT_WEIGHTS, але не менше k + 1 у кожному підрозділі."""
+    floor = MIN_GROUP_SIZE + 1
+    cells = {(c, u): n for c, n in UNIT_SAFE_CELL.items() for u in units}
+    rest = total - sum(cells.values())
+    if rest < 2 * floor * len(units):
+        raise DemoRefused(f"--no-small-groups: замало анкет; потрібно щонайменше "
+                          f"{sum(cells.values()) + 2 * floor * len(units)} для {len(units)} підрозділів.")
+    npp = round(rest * NPP_SHARE)
+    for category, amount in (("npp", npp), ("cadets", rest - npp)):
+        weights = [UNIT_WEIGHTS[category].get(u, 1 / len(units)) for u in units]
+        share = [max(floor, int(amount * w / sum(weights))) for w in weights]
+        share[share.index(max(share))] += amount - sum(share)      # залишок — найбільшому підрозділу
+        if min(share) < floor:
+            raise DemoRefused("--no-small-groups: не вдалося розкласти анкети без малих клітинок.")
+        cells.update({(category, u): n for u, n in zip(units, share)})
+    return cells
+
+
 def _answer(rng: random.Random, level: float, question: QuestionSpec) -> int:
     span = question.scale_max - question.scale_min
     fraction = min(100.0, max(0.0, level + rng.gauss(0, ANSWER_SD))) / 100
@@ -124,18 +151,23 @@ def _answer(rng: random.Random, level: float, question: QuestionSpec) -> int:
 
 
 def build_plan(*, name: str, seed: int, total: int, questions: list[QuestionSpec], units: list[str],
-               today: date) -> DemoPlan:
+               today: date, unit_safe: bool = False) -> DemoPlan:
     """Детермінований план: однакові seed, кількість, питання й підрозділи → однакові анкети."""
     rng = random.Random(seed)
-    counts = category_counts(total)
-    order = [category for category in CATEGORIES for _ in range(counts[category])]
-    rng.shuffle(order)                     # анкети в БД не йдуть блоками за категоріями
     questions = sorted(questions, key=lambda q: q.id)
     units = sorted(units)
+    if unit_safe:
+        cells = unit_safe_cells(total, units)
+        counts = {c: sum(n for (cat, _), n in cells.items() if cat == c) for c in CATEGORIES}
+        order = [(c, u) for (c, u), n in sorted(cells.items()) for _ in range(n)]
+    else:
+        counts = category_counts(total)
+        order = [(category, None) for category in CATEGORIES for _ in range(counts[category])]
+    rng.shuffle(order)                     # анкети в БД не йдуть блоками за категоріями
     responses = []
-    for category in order:
+    for category, fixed_unit in order:
         weights = [UNIT_WEIGHTS[category].get(unit, 1 / len(units)) for unit in units]
-        unit = rng.choices(units, weights=weights)[0]
+        unit = fixed_unit or rng.choices(units, weights=weights)[0]
         person = rng.gauss(0, PERSON_SD)
         answers = {q.id: _answer(rng, PROFILE[category].get(q.component, DEFAULT_LEVEL) + person, q)
                    for q in questions}
@@ -238,7 +270,7 @@ def _summary(plan: DemoPlan) -> list[str]:
 
 
 def run(engine, *, responses: int, seed: int, name: str, confirm: bool, today: date | None = None,
-        out: Callable[[str], None] = print) -> int:
+        out: Callable[[str], None] = print, unit_safe: bool = False) -> int:
     """Основна логіка CLI (engine передається явно — так тести працюють з копією БД)."""
     from sqlalchemy.orm import Session
     name = " ".join(name.split())
@@ -254,7 +286,7 @@ def run(engine, *, responses: int, seed: int, name: str, confirm: bool, today: d
             check_guards(db, name)
             questions, units = _load_inputs(db)
             plan = build_plan(name=name, seed=seed, total=responses, questions=questions, units=units,
-                              today=today or date.today())
+                              today=today or date.today(), unit_safe=unit_safe)
             out(f"ПЛАН  синтетичний цикл «{name}» (seed {seed}, статус closed):")
             for line in _summary(plan):
                 out(line)
@@ -284,6 +316,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=2026, help="зерно генератора (відтворюваність)")
     parser.add_argument("--name", default=DEFAULT_NAME, help="назва циклу (до 50 символів, унікальна)")
     parser.add_argument("--confirm", action="store_true", help="записати в БД (без нього — лише план)")
+    parser.add_argument("--no-small-groups", action="store_true",
+                        help="без малих клітинок «категорія × підрозділ» (для екрана «Результати підрозділу»)")
     args = parser.parse_args(argv)           # неправильні аргументи → SystemExit(2), тобто «відмова»
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -291,7 +325,8 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
     from .database import engine            # створення engine не відкриває і не створює файл
-    return run(engine, responses=args.responses, seed=args.seed, name=args.name, confirm=args.confirm)
+    return run(engine, responses=args.responses, seed=args.seed, name=args.name, confirm=args.confirm,
+               unit_safe=args.no_small_groups)
 
 
 if __name__ == "__main__":

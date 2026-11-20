@@ -28,6 +28,7 @@ ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "ass
                    "auth.login",          # успішний вхід після 2FA: лише роль, без email і пароля
                    "auth.logout", "auth.logout_all", "auth.password_reset", "auth.2fa_lockout",
                    "user.role_change", "user.sessions_revoke",   # docs/V2_HARDENING_CONTRACT.md, розділ 4
+                   "user.unit_change",    # підрозділ користувача (лише серверна команда v2_unit_cli)
                    "user.create_admin",   # створення адміністратора CLI-командою
                    # Recommendations Tracker: рішення посадової особи і зміни статусу
                    # (лише роль і цикл; відповідальний, обґрунтування й докази — не в журналі)

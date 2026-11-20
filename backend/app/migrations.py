@@ -17,10 +17,13 @@
       лише нова таблиця, тож резервна копія + create_all без перебудови наявних.
   5 — посилення за аудитом — access_tokens.token_hash замість відкритого коду,
       audit_events.actor_user_id, таблиця instance_meta (див. нижче «Крок до версії 5»).
-  6 — поточна: зрілість за Додатком В — нові таблиці annex_v_responses, annex_v_answers,
+  6 — зрілість за Додатком В — нові таблиці annex_v_responses, annex_v_answers,
       annex_v_expert_assessments, checklist_entries, maturity_indicators. Наявні таблиці
       не змінюються; крок 5 → 6 виконує той самий _upgrade_to_current (перевірена резервна
       копія, нові таблиці в одній транзакції, перевірки, user_version = 6).
+  7 — поточна: user_units (належність користувача V2 до підрозділу для екрана «Результати
+      підрозділу»; призначає лише власник сервера). Лише нова таблиця, крок 6 → 7 — той самий
+      _upgrade_to_current.
 
 Що робить migrate() для старої бази:
   1. Робить резервну копію файлу бази (integrity.backup-<дата-час>.db) і перевіряє її:
@@ -56,7 +59,7 @@ from sqlalchemy.schema import CreateIndex, CreateTable
 from .database import Base
 from .models import AccessToken, Answer, ResponseSet, Unit, hash_access_code
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 LEGACY_TOKEN_COLUMNS = {"id", "cycle_id", "token", "used"}   # access_tokens у версіях 1..4
 
 

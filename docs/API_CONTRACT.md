@@ -449,6 +449,24 @@ k-анонімність (як `/results`):
 
 Журнал: дія `report.maturity_export` — роль `admin`, `actor_user_id`, `assessment_id`, `details: {}`. Невдалі спроби не журналюються.
 
+## Результати підрозділу для користувача (`GET /v2/user/unit-results?assessment_id={id}`)
+
+Сесія V2 з роллю `user` після 2FA (інші ролі → 403, без сесії → 401). Підрозділ визначає лише сервер
+(таблиця `user_units`, призначає власник сервера: `python -m app.v2_unit_cli set-unit --email … --unit … --confirm`);
+будь-які параметри підрозділу чи категорії від клієнта ігноруються. `404` — циклу немає, `409` — цикл не закрито,
+`404` також для чернетки циклу, `422` — id поза 1..2^63−1.
+
+```json
+{"assessment": {"id": 1, "name": "2025-II", "status": "closed"}, "unit": "Факультет 1",
+ "methodology_version": "unit-mean-0-100-v1", "min_group_size": 5,
+ "privacy_status": "available", "responses": 90,
+ "components": [{"code": "C1", "name": "…", "score": 52.3, "status": "available"}]}
+```
+
+`privacy_status`: `available` (`responses` округлено вниз до кратного 5) | `suppressed` (у підрозділі < k анкет або в
+циклі є клітинка «категорія × підрозділ» з 1…k−1 анкет; `responses` і всі `score` — null) | `no_unit` (`unit` = null). Розрізу за категоріями немає. Деталі й обґрунтування —
+`docs/USER_UNIT_RESULTS_API_PROPOSAL.md`, `docs/anonymity.md` §4.6.
+
 ## V2 Hardening — зміни за аудитом backend (20.11.2026)
 
 Повний робочий контракт і обґрунтування: `docs/V2_HARDENING_CONTRACT.md`. Схеми: V2_AUTH_DB `user_version = 2`, INTEGRITY_DB `user_version = 5` (4 — Recommendations Tracker).

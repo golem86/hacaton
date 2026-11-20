@@ -305,6 +305,18 @@ _INTEGRITY_TABLES_V6 = dict(
 );""",
 )
 
+# integrity 7 = 6 + user_units (належність користувача V2 до підрозділу; лише нова таблиця)
+_INTEGRITY_TABLES_V7 = dict(
+    _INTEGRITY_TABLES_V6,
+    user_units="""CREATE TABLE user_units (
+    user_id INTEGER NOT NULL,
+    unit VARCHAR(100) NOT NULL,
+    assigned_at DATETIME NOT NULL,
+    PRIMARY KEY (user_id),
+    FOREIGN KEY(unit) REFERENCES units (name)
+);""",
+)
+
 _AUTH_DDL_V1 = """
 CREATE TABLE IF NOT EXISTS v2_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -415,6 +427,21 @@ SCHEMA_SPECS = {
                    "version_file": "backend/app/migrations.py", "version_symbol": "SCHEMA_VERSION"},
         "forbidden": (("column", "access_tokens", "token"),),
         "contract": (("table", "recommendation_actions"), ("table", "annex_v_responses"), ("table", "annex_v_answers"), ("table", "annex_v_expert_assessments"), ("table", "checklist_entries"), ("table", "maturity_indicators"),
+                     ("column", "access_tokens", "token_hash", {"notnull": 1}),
+                     ("no_column", "access_tokens", "token"),
+                     ("unique", "access_tokens", ("token_hash",)),
+                     ("column", "audit_events", "actor_user_id", {"type": "INTEGER", "notnull": 0, "pk": 0}),
+                     ("pk", "instance_meta", ("key",)),
+                     ("column", "instance_meta", "value", {"notnull": 1}),
+                     ("kv_insert", "instance_meta")),
+    },
+    ("integrity", 7): {
+        "status": "integrity 7: 6 + user_units (екран «Результати підрозділу»)", "ddl": _join(_INTEGRITY_TABLES_V7),
+        "strict_sql": False,   # audit_events.actor_user_id додається ALTER TABLE → текст CREATE відрізняється від свіжого
+        "source": {"files": ("backend/app/models.py", "backend/app/migrations.py"), "generator": "sqlalchemy",
+                   "version_file": "backend/app/migrations.py", "version_symbol": "SCHEMA_VERSION"},
+        "forbidden": (("column", "access_tokens", "token"),),
+        "contract": (("table", "recommendation_actions"), ("table", "annex_v_responses"), ("table", "annex_v_answers"), ("table", "annex_v_expert_assessments"), ("table", "checklist_entries"), ("table", "maturity_indicators"), ("table", "user_units"),
                      ("column", "access_tokens", "token_hash", {"notnull": 1}),
                      ("no_column", "access_tokens", "token"),
                      ("unique", "access_tokens", ("token_hash",)),

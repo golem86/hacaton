@@ -5,10 +5,10 @@ from contextlib import closing
 from sqlalchemy import create_engine
 
 from app.migrations import SCHEMA_VERSION, check_schema, migrate
-from app.models import (AnnexVAnswer, AnnexVExpertAssessment, AnnexVResponse, ChecklistEntry,
+from app.models import (UserUnit, AnnexVAnswer, AnnexVExpertAssessment, AnnexVResponse, ChecklistEntry,
                         MaturityIndicator)
 
-NEW_TABLES = [AnnexVAnswer, AnnexVExpertAssessment, ChecklistEntry, MaturityIndicator, AnnexVResponse]
+NEW_TABLES = [AnnexVAnswer, AnnexVExpertAssessment, ChecklistEntry, MaturityIndicator, AnnexVResponse, UserUnit]
 
 
 def test_schema_5_database_gets_maturity_tables_with_backup(tmp_path):
@@ -25,11 +25,11 @@ def test_schema_5_database_gets_maturity_tables_with_backup(tmp_path):
 
     report = migrate(engine)
 
-    assert SCHEMA_VERSION == 6
+    assert SCHEMA_VERSION == 7
     assert report["action"] == "migrated" and report["backup"]
     assert set(report["tables_created"]) == {m.__tablename__ for m in NEW_TABLES}
     with closing(sqlite3.connect(db_file)) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
         assert con.execute("SELECT name FROM cycles").fetchall() == [("SYN",)]
         for model in NEW_TABLES:
             assert con.execute(f"SELECT COUNT(*) FROM {model.__tablename__}").fetchone()[0] == 0
