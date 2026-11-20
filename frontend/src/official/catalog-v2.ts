@@ -137,12 +137,14 @@ export const fullTemplates: readonly OfficialTemplate[] = [
   {
     id: 'appendix-v-form-1', version: '2.0.0', title: 'Анкета 1 · повний адаптований каталог',
     audience: 'working_group', audienceNote: 'Заголовок на с. 53 визначає членів робочої групи.',
+    catalogStatus: 'full_catalog', methodologyStatus: 'pending_approval',
     sourceUrl, contentNote: 'Усі 12 питань адаптовано за змістом PDF. Це WIP Preview без серверного збереження.',
     questions: form1.map(entry => question(1, entry)),
   },
   {
     id: 'appendix-v-form-2', version: '2.0.0', title: 'Анкета 2 · повний адаптований каталог',
     audience: 'ambiguous', audienceNote: 'Заголовок с. 60 називає робочу групу, Додаток Г на с. 67 — особовий склад. Категорію має визначити №5.',
+    catalogStatus: 'full_catalog', methodologyStatus: 'pending_approval',
     sourceUrl, contentNote: 'Усі 10 питань адаптовано за змістом PDF. Це WIP Preview без серверного збереження.',
     questions: form2.map(entry => question(2, entry)),
   },
@@ -177,6 +179,7 @@ function revised(template: OfficialTemplate): OfficialTemplate {
     version: '2.1.0',
     title: `${template.title.replace('2.0.0', '2.1.0')} · методично уточнена редакція`,
     contentNote: 'Редакція 2.1.0: відновлено докладні критерії зрілості; 0% позначено як текст опції, не score. Анкета 1 №4/5 має source_duplicate. Зміни очікують методичного затвердження.',
+    catalogStatus: 'full_catalog', methodologyStatus: 'pending_approval',
     questions,
   }
 }

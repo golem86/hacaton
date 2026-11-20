@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const api = process.env.V2_E2E_API_URL || 'http://127.0.0.1:8018'
+const questionnaireAPI = process.env.V2_E2E_QUESTIONNAIRE_API_URL || 'http://127.0.0.1:8020'
 const password = process.env.V2_E2E_TEST_PASSWORD || 'E2E-Only-Local-Synthetic-2026!'
 
 async function signIn(page: Page, email: string) {
@@ -23,6 +24,8 @@ test('self preview validates selections and keeps expert view restricted', async
   await signIn(page, 'e2e-user@example.test')
   await page.goto('/app/official')
   await expect(page.getByRole('heading', { name: /Офіційна анкета · WIP Preview/ })).toBeVisible()
+  await expect(page.getByLabel('Шаблон і версія')).toHaveValue('appendix-v-form-1@2.1.0')
+  await page.getByLabel('Шаблон і версія').selectOption('appendix-v-form-1@1.0.0')
   await page.getByRole('button', { name: 'Перевірити відповіді' }).click()
   await expect(page.getByRole('alert')).toContainText('Оберіть один варіант')
   await page.locator('.official-option input').first().check()
@@ -73,7 +76,7 @@ test('complete catalogs navigate four sections, validate all answers and review 
   await page.goto('/app/official')
   for (const [form, count] of [[1, 12], [2, 10]] as const) {
     await page.getByLabel('Шаблон і версія').selectOption(`appendix-v-form-${form}@2.0.0`)
-    await expect(page.getByText('Ця версія охоплює всі питання відповідної анкети в адаптованому викладі.')).toBeVisible()
+    await expect(page.getByText('Це повний каталог питань в адаптованому викладі.')).toBeVisible()
     await expect(page.locator('.official-section')).toHaveCount(4)
     await expect(page.locator('.official-question-buttons button')).toHaveCount(count)
     await page.getByRole('button', { name: 'Перевірити відповіді' }).click()
@@ -92,6 +95,7 @@ test('complete catalogs navigate four sections, validate all answers and review 
     await expect(page.locator('.official-assessment button[type="submit"]')).toHaveCount(0)
   }
   await page.getByLabel('Шаблон і версія').selectOption('appendix-v-form-1@2.1.0')
+  await expect(page.getByText('Це повний каталог питань в адаптованому викладі.')).toBeVisible()
   await page.locator('.official-question-buttons button').nth(3).click()
   await expect(page.getByText(/дублікат у джерелі/)).toBeVisible()
   await page.locator('.official-question-buttons button').nth(9).click()
@@ -101,4 +105,46 @@ test('complete catalogs navigate four sections, validate all answers and review 
   await expect(page.locator('.official-option').last()).toContainText(/зовнішній аудит усієї системи/)
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
   expect(overflow).toBe(false)
+})
+
+test('synthetic browser submission persists both 2.1.0 forms without session credentials', async ({ page }) => {
+  await signIn(page, 'e2e-user@example.test')
+  const observedHeaders: Record<string, string>[] = []
+  page.on('request', request => {
+    if (request.url().includes('/prototype-test-api/cycles/')) observedHeaders.push(request.headers())
+  })
+  await page.goto('/e2e/official-integration-harness.html')
+  await expect(page.getByRole('heading', { name: /Тільки тест/ })).toBeVisible()
+
+  for (const [form, answerCount] of [[1, 12], [2, 10]] as const) {
+    await page.locator('#template').selectOption(`appendix-v-form-${form}@2.1.0`)
+    const groups = page.locator('#questionnaire fieldset')
+    await expect(groups).toHaveCount(answerCount)
+    for (let i = 0; i < answerCount; i++) await groups.nth(i).locator('input').first().check()
+    await page.getByRole('button', { name: 'Надіслати синтетичне подання' }).click()
+    const result = page.locator('#result')
+    await expect(result).toHaveAttribute('data-status', '201')
+    await expect(result).toContainText('підтверджено тестовим API')
+
+    const persisted = await page.request.get(`${questionnaireAPI}/_e2e/verify/${form}`)
+    expect(persisted.status()).toBe(200)
+    expect(await persisted.json()).toEqual({
+      binding: [`appendix-v-form-${form}`, '2.1.0'],
+      response: [`appendix-v-form-${form}`, '2.1.0', form === 1 ? 'synthetic-working-group' : 'synthetic-ambiguous-review'],
+      response_sets: 1,
+      official_answers: answerCount,
+      code_used: true,
+      numeric_answers: 1,
+      respondent_link_columns: [],
+    })
+    const sent = observedHeaders.at(-1) ?? {}
+    expect(Object.keys(sent).some(name => ['cookie', 'authorization'].includes(name.toLowerCase()))).toBe(false)
+    if (form === 1) {
+      await page.getByRole('button', { name: 'Надіслати синтетичне подання' }).click()
+      await expect(result).toHaveAttribute('data-status', '403')
+      const replayState = await (await page.request.get(`${questionnaireAPI}/_e2e/verify/${form}`)).json()
+      expect(replayState.response_sets).toBe(1)
+      expect(replayState.official_answers).toBe(answerCount)
+    }
+  }
 })

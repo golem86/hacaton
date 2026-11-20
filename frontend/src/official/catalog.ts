@@ -19,6 +19,8 @@ export type OfficialTemplate = {
   audienceNote: string
   sourceUrl?: string
   contentNote?: string
+  catalogStatus: 'partial_prototype' | 'full_catalog'
+  methodologyStatus: 'pending_approval'
   questions: readonly OfficialQuestion[]
 }
 
@@ -28,6 +30,7 @@ const legacyTemplates: readonly OfficialTemplate[] = [
   {
     id: 'appendix-v-form-1', version: '1.0.0', title: 'Анкета 1 · робоча група',
     audience: 'working_group', audienceNote: 'Заголовок на с. 53 прямо вказує членів робочої групи.',
+    catalogStatus: 'partial_prototype', methodologyStatus: 'pending_approval',
     questions: [{
       id: 'av-f1-culture-1', kind: 'single_choice', required: true,
       text: 'Яку роль відіграє керівник (начальник) у розбудові доброчесності в у ВВНЗ (ВНП ЗВО):',
@@ -44,6 +47,7 @@ const legacyTemplates: readonly OfficialTemplate[] = [
   {
     id: 'appendix-v-form-2', version: '1.0.0', title: 'Анкета 2 · призначення потребує уточнення',
     audience: 'ambiguous', audienceNote: 'Заголовок на с. 60 теж вказує членів робочої групи; Додаток Г згадує анкету 2 для особового складу. Потрібне рішення власника методики.',
+    catalogStatus: 'partial_prototype', methodologyStatus: 'pending_approval',
     questions: [{
       id: 'av-f2-culture-1', kind: 'single_choice', required: true,
       text: 'Яку цінність відіграє доброчесність і корпоративна культура у ВВНЗ (ВНП ЗВО) щодо запобігання та виявлення корупції (оберіть один варіант, який найбільше підходить):',
@@ -67,6 +71,7 @@ export const officialTemplates: readonly OfficialTemplate[] = [
   ...legacyTemplates,
   {
     ...legacyTemplates[0], version: '1.1.0', title: 'Анкета 1 · робоча група · розширений preview',
+    catalogStatus: 'partial_prototype', methodologyStatus: 'pending_approval',
     sourceUrl, contentNote: 'Частковий каталог. Нове питання та варіанти стисло адаптовано за джерелом; звіряйте з PDF перед офіційним застосуванням.',
     questions: [legacyTemplates[0].questions[0], {
       id: 'av-f1-system-2', kind: 'single_choice', required: true,
@@ -83,6 +88,7 @@ export const officialTemplates: readonly OfficialTemplate[] = [
   },
   {
     ...legacyTemplates[1], version: '1.1.0', title: 'Анкета 2 · аудиторія не визначена · розширений preview',
+    catalogStatus: 'partial_prototype', methodologyStatus: 'pending_approval',
     sourceUrl, contentNote: 'Частковий каталог. Нове питання та варіанти стисло адаптовано за джерелом; аудиторію та формулювання має затвердити №5.',
     questions: [legacyTemplates[1].questions[0], {
       id: 'av-f2-system-2', kind: 'single_choice', required: true,
@@ -100,6 +106,8 @@ export const officialTemplates: readonly OfficialTemplate[] = [
   ...fullTemplates,
   ...reviewedTemplates,
 ]
+
+export const DEFAULT_OFFICIAL_TEMPLATE_KEY = 'appendix-v-form-1@2.1.0'
 
 for (const template of officialTemplates) {
   for (const question of template.questions) {

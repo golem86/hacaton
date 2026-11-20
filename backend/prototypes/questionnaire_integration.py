@@ -903,6 +903,39 @@ def suppress_cells(cells: list[tuple[str, int]], k: int) -> dict:
     return {"total": None if total_hidden else total, "groups": result}
 
 
+class DisclosureQueryConflict(Exception):
+    """The synthetic release family has already disclosed a different query."""
+
+
+class SyntheticDisclosureLedger:
+    """Conservative test-only guard against repeated/overlapping query differencing.
+
+    This is deliberately not a production aggregate API or a substitute for a
+    data-owner-approved suppression policy. Within one release family, the
+    first normalized query is cached; identical requests receive that exact
+    cached result, while a different filter or cycle is rejected.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._entries: dict[str, tuple[str, object]] = {}
+
+    def evaluate(self, release_family: str, query: dict, produce):
+        if not release_family or not isinstance(query, dict):
+            raise ValueError("A synthetic release family and query are required")
+        encoded = json.dumps(query, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        fingerprint = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        with self._lock:
+            existing = self._entries.get(release_family)
+            if existing:
+                if existing[0] != fingerprint:
+                    raise DisclosureQueryConflict("Query unavailable for this release family")
+                return json.loads(json.dumps(existing[1], ensure_ascii=False))
+            frozen_result = json.loads(json.dumps(produce(), ensure_ascii=False))
+            self._entries[release_family] = (fingerprint, frozen_result)
+            return json.loads(json.dumps(frozen_result, ensure_ascii=False))
+
+
 class V2ExpertSessionAdapter:
     """Resolve the real V2 cookie/session and completed 2FA, never X-Role."""
     def __call__(self, request: Request) -> dict:

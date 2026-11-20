@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { getOfficialTemplate, officialTemplates } from './catalog'
+import { DEFAULT_OFFICIAL_TEMPLATE_KEY, getOfficialTemplate, officialTemplates } from './catalog'
 import { validateOfficialAnswers, type OfficialAnswers } from './validation'
 
 type Mode = 'self' | 'expert'
 
 export default function OfficialAssessment({ mode }: { mode: Mode }) {
-  const [templateKey, setTemplateKey] = useState(`${officialTemplates[0].id}@${officialTemplates[0].version}`)
+  const [templateKey, setTemplateKey] = useState(DEFAULT_OFFICIAL_TEMPLATE_KEY)
   const [answers, setAnswers] = useState<OfficialAnswers>({})
   const [index, setIndex] = useState(0)
   const [showErrors, setShowErrors] = useState(false)
@@ -37,12 +37,13 @@ export default function OfficialAssessment({ mode }: { mode: Mode }) {
 
   return <section className="v2-card official-assessment" aria-label={mode === 'expert' ? 'Експертне оцінювання' : 'Офіційна анкета'}>
     <h2>{mode === 'expert' ? 'Експертне оцінювання · WIP Preview' : 'Офіційна анкета · WIP Preview'}</h2>
-    <p>Джерело: Додаток В, друковані с. 53–66. У PDF: Анкета 1 — 12 питань, Анкета 2 — 10 питань. {template.version === '2.0.0' ? 'Ця версія охоплює всі питання відповідної анкети в адаптованому викладі.' : 'Ця версія охоплює лише піднабір питань.'}</p>
+    <p>Джерело: Додаток В, друковані с. 53–66. У PDF: Анкета 1 — 12 питань, Анкета 2 — 10 питань. {template.catalogStatus === 'full_catalog' ? 'Це повний каталог питань в адаптованому викладі.' : 'Це частковий прототип, який охоплює піднабір питань.'}</p>
+    <p>Методичний статус: очікує погодження. Порядок описових варіантів не є оцінкою.</p>
     <p role="status">Відповіді перебувають тільки в пам’яті цієї вкладки. Збереження і подання недоступні.</p>
     {mode === 'expert' && <p>Адміністративна сесія відкриває лише preview. Серверної ролі експерта та сховища експертних оцінок ще немає.</p>}
     <label htmlFor="official-template">Шаблон і версія</label>
     <select id="official-template" value={templateKey} onChange={event => selectTemplate(event.target.value)}>
-      {officialTemplates.map(item => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.title} · v{item.version}</option>)}
+      {officialTemplates.map(item => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.title} · v{item.version} · {item.catalogStatus === 'full_catalog' ? 'повний каталог' : 'частковий прототип'}</option>)}
     </select>
     <p>{template.audienceNote}</p>
     {template.contentNote && <p>{template.contentNote}</p>}

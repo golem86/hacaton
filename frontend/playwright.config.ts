@@ -13,8 +13,10 @@ const pythonDefault = process.platform === 'win32'
 const python = process.env.V2_E2E_PYTHON || (existsSync(pythonDefault) ? pythonDefault : 'python')
 const runDir = process.env.V2_E2E_TEMP_DIR || mkdtempSync(join(tmpdir(), 'im-v2-e2e-'))
 const backendPort = process.env.V2_E2E_BACKEND_PORT || '8018'
+const questionnairePort = process.env.V2_E2E_QUESTIONNAIRE_PORT || '8020'
 const frontendPort = process.env.V2_E2E_FRONTEND_PORT || '5175'
 const apiBaseURL = `http://127.0.0.1:${backendPort}`
+const questionnaireAPIURL = `http://127.0.0.1:${questionnairePort}`
 const frontendBaseURL = `http://127.0.0.1:${frontendPort}`
 const testPassword = 'E2E-Only-Local-Synthetic-2026!'
 
@@ -31,6 +33,8 @@ const localEnv: Record<string, string> = {
   V2_E2E_PYTHON: python,
   V2_E2E_TEMP_DIR: runDir,
   V2_E2E_API_URL: apiBaseURL,
+  QUESTIONNAIRE_E2E_DB: join(runDir, 'official-questionnaire.prototype.sqlite'),
+  V2_E2E_QUESTIONNAIRE_API_URL: questionnaireAPIURL,
   V2_E2E_FRONTEND_URL: frontendBaseURL,
   V2_E2E_ADMIN_EMAIL: 'e2e-admin@example.test',
   V2_E2E_USER_EMAIL: 'e2e-user@example.test',
@@ -74,9 +78,21 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
+      command: `${shellQuote(python)} -m uvicorn prototypes.official_e2e_server:app --host 127.0.0.1 --port ${questionnairePort}`,
+      cwd: backendDir,
+      env: localEnv,
+      url: `${questionnaireAPIURL}/_e2e/health`,
+      timeout: 120_000,
+      reuseExistingServer: false,
+    },
+    {
       command: `pnpm exec vite --host 127.0.0.1 --port ${frontendPort} --strictPort`,
       cwd: frontendDir,
-      env: { ...localEnv, VITE_API_PROXY_TARGET: apiBaseURL },
+      env: {
+        ...localEnv,
+        VITE_API_PROXY_TARGET: apiBaseURL,
+        VITE_QUESTIONNAIRE_TEST_API_TARGET: questionnaireAPIURL,
+      },
       url: frontendBaseURL,
       timeout: 60_000,
       reuseExistingServer: false,

@@ -52,6 +52,7 @@ def test_fixture_ids_match_frontend_v2_structure_and_production_has_no_route():
     assert source.count("section: 3, number:") == 8
     assert source.count("section: 4, number:") == 2
     assert [len(CATALOG[(form, VERSION)]) for form in (FORM1, FORM2)] == [12, 10]
+    assert all(CATALOG[(form, "2.1.0")] == CATALOG[(form, "2.0.0")] for form in (FORM1, FORM2))
     assert [len(CATALOG[(form, VERSION)][f"av-f{index}-accountability-3"])
             for index, form in enumerate((FORM1, FORM2), 1)] == [6, 6]
     from app.main import app as production_app

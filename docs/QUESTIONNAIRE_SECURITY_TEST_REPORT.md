@@ -1,5 +1,7 @@
 # Security review та результати тестів прототипу анкет
 
+> **Prompt 14 update (2026-11-20):** The latest authoritative status is in [`QUESTIONNAIRE_INTEGRATION_READINESS.md`](QUESTIONNAIRE_INTEGRATION_READINESS.md). The test-only schema-3 adapter keeps the existing token plaintext and consumes it in the same transaction that writes official answers. No respondent ID or token FK is stored, but DB/WAL transaction timing remains correlatable by a privileged observer; absolute anonymity is **not** claimed. Full backend suite: 427 passed, 1 OS-denied symlink skip, when run with `PYTHONUTF8=1`. Browser E2E: all 13 cases printed `ok`, but the Windows runner did not return a process exit/aggregate summary, so aggregate PASS is **not claimed**. PR #25 Actions has not run because its base is outside the workflow trigger. The previous sections below record historical results and must not be used as current status.
+
 **Стан:** ізольований prototype / Draft PR #25 / DO NOT MERGE. Огляд коду та тестові дані — синтетичні. Production schema 3, `backend/app`, авторизація, Analytics та Integrity Index не змінювалися.
 
 ## Анонімні описи

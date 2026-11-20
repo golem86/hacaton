@@ -1,5 +1,7 @@
 # Suppression and differencing attack test report
 
+> **Prompt 14 update (2026-11-20):** The current authoritative state is in [`QUESTIONNAIRE_INTEGRATION_READINESS.md`](QUESTIONNAIRE_INTEGRATION_READINESS.md). A test-only, in-memory `SyntheticDisclosureLedger` now caches an identical query result and rejects a changed filter/cycle inside one release family; synthetic tests cover replay, overlapping filters and cross-cycle requests. This is not durable across processes/restarts, is not connected to an aggregate API, and is not a production defense. No aggregate API exists. The older status below describes the pre-ledger implementation and remains historical evidence only.
+
 **Scope:** synthetic helper and prototype route inventory only. No aggregate API exists, and no official aggregate was published. Parameter `k` is supplied per test and is not a production default.
 
 ## Results

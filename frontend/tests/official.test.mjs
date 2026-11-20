@@ -6,7 +6,7 @@ import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true, hmr: false }, optimizeDeps: { noDiscovery: true }, cacheDir: 'node_modules/.vite-official-test', appType: 'custom', logLevel: 'error' })
 after(() => server.close())
-const { officialTemplates, getOfficialTemplate } = await server.ssrLoadModule('/src/official/catalog.ts')
+const { officialTemplates, getOfficialTemplate, DEFAULT_OFFICIAL_TEMPLATE_KEY } = await server.ssrLoadModule('/src/official/catalog.ts')
 const { validateOfficialAnswers } = await server.ssrLoadModule('/src/official/validation.ts')
 const OfficialAssessment = (await server.ssrLoadModule('/src/official/OfficialAssessment.tsx')).default
 
@@ -33,12 +33,25 @@ test('versioned official catalog has unique question and option IDs, source and 
   assert.equal(officialTemplates[3].audience, 'ambiguous')
   assert.deepEqual(officialTemplates.map(t => t.version), ['1.0.0', '1.0.0', '1.1.0', '1.1.0', '2.0.0', '2.0.0', '2.1.0', '2.1.0'])
   assert.deepEqual(officialTemplates.map(t => t.questions.length), [1, 1, 2, 2, 12, 10, 12, 10])
+  assert.deepEqual(officialTemplates.map(t => t.catalogStatus), [
+    'partial_prototype', 'partial_prototype', 'partial_prototype', 'partial_prototype',
+    'full_catalog', 'full_catalog', 'full_catalog', 'full_catalog',
+  ])
+  assert.ok(officialTemplates.every(t => t.methodologyStatus === 'pending_approval'))
   assert.deepEqual(officialTemplates.slice(2, 4).map(t => t.questions[1].source.page), [56, 62])
   assert.ok(officialTemplates.slice(2, 6).every(t => t.sourceUrl?.endsWith('.pdf') && t.contentNote?.includes('адаптовано')))
   assert.ok(officialTemplates.slice(6).every(t => t.sourceUrl?.endsWith('.pdf') && t.contentNote?.includes('2.1.0')))
   assert.deepEqual(officialTemplates[0].questions, officialTemplates[2].questions.slice(0, 1))
   assert.deepEqual(officialTemplates[1].questions, officialTemplates[3].questions.slice(0, 1))
   assert.equal(getOfficialTemplate('appendix-v-form-1', '9.9.9'), undefined)
+})
+
+test('full 2.1.0 catalog is the default preview; methodology remains unapproved', () => {
+  assert.equal(DEFAULT_OFFICIAL_TEMPLATE_KEY, 'appendix-v-form-1@2.1.0')
+  const html = renderToStaticMarkup(React.createElement(OfficialAssessment, { mode: 'self' }))
+  assert.match(html, /appendix-v-form-1@2\.1\.0/)
+  assert.match(html, /повний каталог питань/)
+  assert.match(html, /Методичний статус: очікує погодження/)
 })
 
 test('required answers accept only an option from their own question', () => {

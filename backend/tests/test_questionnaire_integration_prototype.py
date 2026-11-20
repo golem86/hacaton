@@ -19,6 +19,7 @@ from prototypes.official_expert import CATALOG
 from prototypes.questionnaire_integration import (
     DDL, GUARD_TABLE, MIGRATION_TABLES, ExpertAnswers, InMemoryRateLimiter,
     IntegrationError, IntegrationStore, SyntheticSubmission,
+    DisclosureQueryConflict, SyntheticDisclosureLedger,
     apply_questionnaire_migration, core_snapshot, create_integration_test_app,
     create_synthetic_schema3_copy, create_synthetic_schema3_source,
     restore_synthetic_backup, suppress_cells, SQLiteRateLimiter,
@@ -30,14 +31,14 @@ VERSION = "2.0.0"
 SYNTHETIC_CODE = "synthetic-assessment-code"
 
 
-def fixture_questions() -> list[dict]:
+def fixture_questions(form: str = FORM1, version: str = VERSION) -> list[dict]:
     questions = []
-    for index, (question_id, option_ids) in enumerate(CATALOG[(FORM1, VERSION)].items(), start=1):
+    for index, (question_id, option_ids) in enumerate(CATALOG[(form, version)].items(), start=1):
         questions.append({
             "id": question_id,
             "section": f"section-{1 if index <= 5 else 2}",
             "text": f"Synthetic prompt {index}",
-            "source_duplicate": index in {4, 5},
+            "source_duplicate": form == FORM1 and index in {4, 5},
             "options": [{"id": option_id, "text": f"Synthetic option {option_id}"}
                         for option_id in sorted(option_ids)],
         })
@@ -278,6 +279,47 @@ def test_official_sets_are_isolated_by_cycle_and_version(integration):
         sets = con.execute("SELECT cycle_id,template_id,version FROM official_response_sets ORDER BY cycle_id").fetchall()
         assert sets == [(2, FORM1, VERSION)]
         assert con.execute("SELECT used FROM access_tokens WHERE token='synthetic-cycle-2-code'").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize(("cycle_id", "form", "code"), [
+    (2, "appendix-v-form-1", "synthetic-form1-v21-code"),
+    (3, "appendix-v-form-2", "synthetic-form2-v21-code"),
+])
+def test_full_2_1_catalog_submission_persists_after_reopening_sqlite(
+        migrated_db, cycle_id, form, code):
+    db_path, store, before, *_ = migrated_db
+    store.seed_template(form, "2.1.0", 1 if form.endswith("1") else 2, fixture_questions(form, "2.1.0"))
+    with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO cycles(id,name,start_date,status,min_group_size) "
+                    "VALUES (?,?,'2026-02-01','draft',5)", (cycle_id, f"Synthetic cycle {cycle_id}"))
+        con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,questionnaire_version) "
+                    "VALUES (?,?,?,'[\"staff\"]','demo-v1')", (cycle_id, "synthetic", "test"))
+        token_id = con.execute("INSERT INTO access_tokens(cycle_id,token,used) VALUES (?,?,0)",
+                               (cycle_id, code)).lastrowid
+        con.execute("INSERT INTO access_token_policies(token_id,category,expires_at) "
+                    "VALUES (?,?,datetime('now','+1 day'))", (token_id, "staff"))
+    store.bind_cycle(cycle_id, form, "2.1.0")
+    with sqlite3.connect(db_path) as con:
+        con.execute("UPDATE cycles SET status='open' WHERE id=?", (cycle_id,))
+    app, _ = create_integration_test_app(db_path, store)
+    client = TestClient(app)
+    payload = _official_body(code=code, template=form, version="2.1.0",
+                             answers=[{"question_id": q, "option_id": sorted(options)[0]}
+                                      for q, options in CATALOG[(form, "2.1.0")].items()])
+    response = client.post(f"/prototype/integration/cycles/{cycle_id}/official-submissions", json=payload)
+    assert response.status_code == 201, response.text
+    # Verify durable state from a fresh SQLite connection, as after process restart.
+    with sqlite3.connect(db_path) as reopened:
+        reopened.row_factory = sqlite3.Row
+        stored = reopened.execute("SELECT cycle_id,template_id,version,category "
+                                  "FROM official_response_sets").fetchall()
+        assert [tuple(row) for row in stored] == [(cycle_id, form, "2.1.0", "staff")]
+        count = len(CATALOG[(form, "2.1.0")])
+        assert reopened.execute("SELECT COUNT(*) FROM official_answers").fetchone()[0] == count
+        assert reopened.execute("SELECT used FROM access_tokens WHERE token=?", (code,)).fetchone()[0] == 1
+        columns = {r[1] for r in reopened.execute("PRAGMA table_info(official_response_sets)")}
+        assert not ({"user_id", "respondent_id", "token", "created_at", "timestamp"} & columns)
+    assert core_snapshot(db_path)["answers"] == before["answers"]
 
 
 def test_expert_scope_is_limited_to_assigned_cycle_and_assessment(migrated_db, monkeypatch, tmp_path):
@@ -571,6 +613,26 @@ def test_suppression_primary_complementary_intersections_and_no_raw_api(integrat
     assert all("official" not in p or "submissions" in p for p in route_paths if p.startswith("/prototype"))
 
 
+def test_synthetic_disclosure_ledger_blocks_repeats_overlaps_and_cross_cycle_queries():
+    ledger = SyntheticDisclosureLedger()
+    calls = []
+    query = {"cycles": [1], "category": "synthetic-small-group", "unit": None}
+    result = {"total": None, "groups": [{"count": None, "suppressed": True}]}
+    assert ledger.evaluate("synthetic-release", query, lambda: calls.append("first") or result) == result
+    # A replay returns the cached release; it does not execute a new query.
+    assert ledger.evaluate("synthetic-release", dict(reversed(list(query.items()))),
+                           lambda: calls.append("replay") or {"total": 1}) == result
+    assert calls == ["first"]
+    for overlapping in (
+        {"cycles": [1], "category": "synthetic-small-group", "unit": "unit-a"},
+        {"cycles": [1], "category": "all", "unit": None},
+        {"cycles": [2], "category": "synthetic-small-group", "unit": None},
+    ):
+        with pytest.raises(DisclosureQueryConflict) as error:
+            ledger.evaluate("synthetic-release", overlapping, lambda: {"count": 1})
+        assert str(error.value) == "Query unavailable for this release family"
+
+
 @pytest.mark.parametrize("attack", [
     "category-differencing", "cross-cycle-differencing", "overlapping-filter",
     "repeated-query", "intersection-unit-category", "recover-hidden-count-from-total",
@@ -723,6 +785,12 @@ def test_expert_revision_finalize_audit_and_revocation_block_next_request(migrat
         assert all(row[1] > 0 for row in audit)
         assert con.execute("SELECT COUNT(*) FROM official_answers").fetchone()[0] == 0
         assert con.execute("SELECT COUNT(*) FROM expert_answers").fetchone()[0] == 12
+    assignment_id = assigned.json()["assignment_id"]
+    assignment_revoked = admin_client.delete(
+        f"/prototype/integration/expert/assignments/{assignment_id}",
+        headers=_auth_headers(admin_token))
+    assert assignment_revoked.status_code == 200
+    assert expert_client.get(route).status_code == 404  # assignment is rechecked on the next request
     revoked = admin_client.delete(f"/prototype/integration/expert/grants/{expert['id']}",
                                   headers=_auth_headers(admin_token))
     assert revoked.status_code == 200
