@@ -9,6 +9,7 @@
 (ні імені, ні ID користувача, ні точного часу відправки).
 Токени доступу лежать в окремій таблиці і НЕ пов'язані з відповідями.
 """
+import hashlib
 from datetime import date, datetime
 
 from sqlalchemy import (Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text,
@@ -134,17 +135,34 @@ class Answer(Base):
     response_set: Mapped[ResponseSet] = relationship(back_populates="answers")
 
 
+def hash_access_code(code: str) -> str:
+    """SHA-256 (hex) одноразового коду. У БД зберігається лише він (schema 5), не сам код."""
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
 class AccessToken(Base):
     """
     Одноразовий код для проходження анкети.
     Знаємо лише, ЧИ використано код, але НЕ знаємо, яка анкета ним заповнена:
     тут немає посилання на ResponseSet.
+
+    Schema 5: зберігається лише token_hash = SHA-256 коду. Відкритий код повертається
+    один раз у відповіді POST /tokens (лише роль data_officer) і в БД не потрапляє.
+    Коди — 128 випадкових біт, тож перебір хешу непрактичний, а «сіль» не потрібна.
+
+    Залишковий ризик (I3): анкети й коди лежать у різних таблицях без посилань, але
+    порядок рядків (id) у БД зберігається. Той, хто має два знімки БД (до і після
+    подання), бачить, який рядок access_tokens став used=1 і яка анкета з'явилась.
+    Після D1 (admin не отримує кодів, їх видає лише data_officer) і D5 (у БД лише хеші)
+    зіставити рядок коду з людиною можна лише маючи і копії БД, і журнал роздачі кодів
+    поза системою. Захист — доступ до файлів БД і резервних копій лише для служби й
+    адміністраторів сервера (див. також anonymity.py).
     """
     __tablename__ = "access_tokens"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cycle_id: Mapped[int] = mapped_column(ForeignKey("cycles.id"))
-    token: Mapped[str] = mapped_column(String(64), unique=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)   # SHA-256 hex, не сам код
     used: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
@@ -248,3 +266,20 @@ class AuditEvent(Base):
     action: Mapped[str] = mapped_column(String(50))               # напр. "tokens.issue"
     assessment_id: Mapped[int | None] = mapped_column(ForeignKey("cycles.id"), nullable=True)
     details: Mapped[str] = mapped_column(Text, default="{}")      # JSON без чутливих даних
+    # Schema 5: id користувача V2_AUTH_DB (без email та імені); NULL — CLI або демо-заголовок X-Role
+    actor_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# 7. МЕТАДАНІ ЕКЗЕМПЛЯРА
+# ---------------------------------------------------------------------------
+
+class InstanceMeta(Base):
+    """
+    Службові позначки екземпляра БД (schema 5), напр. ('dataset', 'synthetic') від seed.
+    Аналітика демо в release працює лише на БД з цією позначкою (routes/analytics.py).
+    """
+    __tablename__ = "instance_meta"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text)

@@ -10,10 +10,11 @@ from sqlalchemy import create_engine, inspect
 from app.database import SessionLocal, engine
 from app.main import app
 from app.migrations import check_schema, migrate
-from app.models import AccessToken, Question, ResponseSet
+from app.models import AccessToken, Question, ResponseSet, hash_access_code
 
 client = TestClient(app)
 ADMIN = {"X-Role": "admin"}
+DATA_OFFICER = {"X-Role": "data_officer"}
 
 
 def new_cycle():
@@ -27,7 +28,7 @@ def new_cycle():
 
 
 def issue(cycle_id, count=1):
-    response = client.post(f"/api/assessments/{cycle_id}/tokens", headers=ADMIN,
+    response = client.post(f"/api/assessments/{cycle_id}/tokens", headers=DATA_OFFICER,
                            params={"count": count, "category": "cadets"})
     assert response.status_code == 201
     return response.json()["tokens"]
@@ -52,11 +53,11 @@ def test_small_participation_cannot_be_reconstructed_from_token_counts():
         assert stats["tokens_unused"] is None
         assert stats["responses_total"] is None
         assert stats["participation_percent"] is None
-        assert stats["groups"] is None
+        assert stats["groups"] is None and stats["suppressed"] is True and stats["counts_exact"] is False
     assert client.post(path + "/close", headers=ADMIN).status_code == 200
     closed = client.get(path + "/participation", headers=ADMIN).json()
     assert closed["tokens_unused"] is None and closed["responses_total"] is None
-    assert closed["groups"] is None
+    assert closed["groups"] is None and closed["suppressed"] is True and closed["counts_exact"] is True
     assert client.get(path + "/participation?by_unit=true", headers=ADMIN).json()["groups"] is None
 
 
@@ -85,7 +86,7 @@ def test_close_and_submit_race_preserves_transaction_and_blocks_later_submission
         saved = db.query(ResponseSet).filter_by(cycle_id=cycle_id).count()
         used = db.query(AccessToken).filter_by(cycle_id=cycle_id, used=True).count()
         assert saved == used == (1 if submit_status == 201 else 0)
-        assert db.query(AccessToken).filter_by(token=later).one().used is False
+        assert db.query(AccessToken).filter_by(token_hash=hash_access_code(later)).one().used is False
 
 
 def _snapshot(path):
@@ -95,7 +96,7 @@ def _snapshot(path):
                 con.execute("SELECT COUNT(*) FROM cycles").fetchone()[0])
 
 
-def test_schema_2_to_3_keeps_synthetic_results_and_is_idempotent(tmp_path):
+def test_schema_2_to_current_keeps_synthetic_results_and_is_idempotent(tmp_path):
     source = engine.url.database
     target = tmp_path / "synthetic-v2.db"
     with sqlite3.connect(source) as original, sqlite3.connect(target) as copy:

@@ -1,11 +1,13 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import api_docs, audit, settings
 from .database import engine
 from .migrations import check_schema, migrate
+from .request_limits import BodySizeLimitMiddleware, max_body_bytes, validation_error_handler
 from .routes import analytics, assessments, results, v2_admin, v2_auth, v2_user
 from .routes import tracker  # Recommendations Tracker
 from .v2_auth import check_auth_schema, migrate_auth_db
@@ -38,6 +40,7 @@ def prepare_databases() -> None:
 
 def create_app() -> FastAPI:
     settings.validate_release_config()
+    max_body_bytes()                          # некоректний V2_MAX_BODY_BYTES — сервер не стартує
     prepare_databases()
 
     access_log = logging.getLogger("uvicorn.access")
@@ -46,6 +49,10 @@ def create_app() -> FastAPI:
 
     # Стандартні /docs, /redoc, /openapi.json вимкнено: Swagger і схема — лише для адміністратора (api_docs.py)
     application = FastAPI(title="Integrity Dashboard API", docs_url=None, redoc_url=None, openapi_url=None)
+    # D2: 422 без input/ctx; ліміт тіла до маршрутизації й автентифікації (request_limits.py).
+    # Ліміт додається ДО CORS, тож CORS лишається зовнішнім і 413 отримує CORS-заголовки.
+    application.add_exception_handler(RequestValidationError, validation_error_handler)
+    application.add_middleware(BodySizeLimitMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=sorted(settings.frontend_origins()),

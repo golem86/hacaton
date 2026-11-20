@@ -27,7 +27,7 @@ import re
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..database import get_db
 from ..models import Cycle, CycleConfig, RecommendationAction
+from ..request_limits import MAX_ID, BoundedId
 from ..roles import ANALYTICS_ROLES, require_role
 from ..services.recommendations import generate_recommendations
 from ..services.tracker import TRANSITIONS, is_overdue, transition
@@ -89,7 +90,7 @@ class TransitionIn(BaseModel):
     status: Literal["in_progress", "completed", "verified"]
     reason: str = Field(min_length=1, max_length=REASON_MAX)
     evidence_refs: list[str] = Field(default_factory=list, max_length=EVIDENCE_MAX_ITEMS)
-    verified_in_assessment_id: StrictInt | None = Field(default=None, ge=1)
+    verified_in_assessment_id: StrictInt | None = Field(default=None, ge=1, le=MAX_ID)
 
 
 def _now() -> datetime:
@@ -205,7 +206,7 @@ def _summary(actions: list[dict]) -> dict:
 
 
 @router.get("/assessments/{assessment_id}/tracker", dependencies=[Depends(require_role(*ANALYTICS_ROLES))])
-def read_tracker(assessment_id: int, db: Session = Depends(get_db)):
+def read_tracker(assessment_id: BoundedId, db: Session = Depends(get_db)):
     """Рішення і заходи циклу; «прострочено» — похідна ознака на дату `as_of`, а не статус."""
     cycle = get_assessment(assessment_id, db)
     today = date.today()
@@ -217,7 +218,7 @@ def read_tracker(assessment_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/assessments/{assessment_id}/tracker/decisions", status_code=201)
-def decide_recommendation(assessment_id: int, body: DecisionIn,
+def decide_recommendation(assessment_id: BoundedId, body: DecisionIn, request: Request,
                           role: str = Depends(require_role("admin")),
                           _demo: None = Depends(demo_enabled),
                           db: Session = Depends(get_db)):
@@ -258,7 +259,8 @@ def decide_recommendation(assessment_id: int, body: DecisionIn,
         history_json=json.dumps([_history_entry(decided["history"][-1], now)], ensure_ascii=False),
         created_at=now, updated_at=now)
     db.add(row)
-    audit.record(db, role, f"tracker.{decided['status']}", assessment_id)
+    audit.record(db, role, f"tracker.{decided['status']}", assessment_id,
+                 actor_user_id=audit.actor_user_id(request))
     try:
         db.commit()
     except IntegrityError as exc:          # паралельне рішення щодо тієї самої пропозиції
@@ -268,7 +270,7 @@ def decide_recommendation(assessment_id: int, body: DecisionIn,
 
 
 @router.post("/tracker/{action_id}/transition")
-def transition_action(action_id: int, body: TransitionIn,
+def transition_action(action_id: BoundedId, body: TransitionIn, request: Request,
                       role: str = Depends(require_role("admin")), db: Session = Depends(get_db)):
     """
     Змінює статус прийнятого заходу: недозволений перехід — 409; без обґрунтування, без доказів
@@ -318,6 +320,7 @@ def transition_action(action_id: int, body: TransitionIn,
     if changed != 1:
         db.rollback()
         raise HTTPException(409, "Захід щойно змінено іншим запитом. Оновіть дані й повторіть дію")
-    audit.record(db, role, f"tracker.{body.status}", row.assessment_id)
+    audit.record(db, role, f"tracker.{body.status}", row.assessment_id,
+                 actor_user_id=audit.actor_user_id(request))
     db.commit()
     return _action_dict(db.get(RecommendationAction, action_id), today)

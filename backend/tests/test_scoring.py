@@ -136,9 +136,10 @@ def test_real_api_database_formula_and_suppression(enabled):
     expected=sum(Fraction(str(c['score']))*Fraction(str(c['weight'])) for c in upstream['components'])
     assert actual.json()['index_exact']==str(expected)
     assert actual.json()==calculate_index(upstream)
-    hidden={c['category'] for c in upstream['categories'] if c['hidden']}
-    assert hidden=={'staff','mgmt'}
-    assert all(c['index'] is None for c in actual.json()['by_category'] if c['category'] in hidden)
+    # D4: приховані категорії (staff, mgmt) у /results не перелічуються взагалі
+    assert {c['category'] for c in upstream['categories']}=={'cadets','npp'} and upstream['suppressed'] is True
+    assert {c['category'] for c in actual.json()['by_category']}=={'cadets','npp'}
+    assert all(c['index'] is not None for c in actual.json()['by_category'])
 
 def test_api_recommendations_no_database_writes(enabled):
     with SessionLocal() as db:before=db.query(Recommendation).count()

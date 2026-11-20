@@ -39,7 +39,9 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 # engine — «двигун», який вміє говорити з базою.
 # check_same_thread=False потрібне лише для SQLite, щоб FastAPI міг працювати з базою з різних потоків.
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# hide_parameters=True (D6): значення параметрів SQL (хеші кодів, відповіді) не потрапляють
+# у текст винятків SQLAlchemy, а отже і в журнали помилок сервера.
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}, hide_parameters=True)
 
 # Фабрика сесій: кожен запит до API отримує свою окрему сесію.
 SessionLocal = sessionmaker(bind=engine, autoflush=False)

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
 from app import seed
-from app.anonymity import suppress_small_groups
+from app.anonymity import suppress_small_groups, visible_groups
 from app.database import SessionLocal, engine
 from app.main import app
 from app.models import ResponseSet
@@ -18,7 +18,8 @@ def test_all_tables_created():
     tables = set(inspect(engine).get_table_names())
     assert tables == {"components", "questions", "cycles", "units", "response_sets", "answers",
                       "access_tokens", "access_token_policies", "cycle_configs",
-                      "objective_indicators", "recommendations", "recommendation_actions", "audit_events"}
+                      "objective_indicators", "recommendations", "recommendation_actions", "audit_events",
+                      "instance_meta"}
 
 
 def test_demo_data_loaded():
@@ -100,25 +101,39 @@ def test_suppress_small_groups_hides_everything_but_label():
     assert result[3] == {"category": "staff", "responses": None, "avg": None, "hidden": True}
 
 
-MANAGER = {"X-Role": "manager"}
+# Участь бачать admin і data_officer (V2_HARDENING_CONTRACT, розділ 1); manager — ні
+MANAGER = {"X-Role": "admin"}
+
+
+def test_visible_groups_drop_hidden_groups_entirely():
+    groups = [{"category": "cadets", "responses": 210}, {"category": "npp", "responses": 48},
+              {"category": "mgmt", "responses": 6}, {"category": "staff", "responses": 4}]
+    shown, suppressed = visible_groups(groups, k=5)
+    assert shown == [{"category": "cadets", "responses": 210, "hidden": False},
+                     {"category": "npp", "responses": 48, "hidden": False}]
+    assert suppressed is True
+    assert visible_groups(groups[:2], k=5) == ([{**g, "hidden": False} for g in groups[:2]], False)
 
 
 def test_participation_hides_small_category():
+    """D4: прихована категорія не перелічується взагалі — навіть назва підтвердила б участь."""
     response = client.get("/api/assessments/1/participation", headers=MANAGER)
     assert response.status_code == 200
-    staff = next(g for g in response.json()["groups"] if g["category"] == "staff")
-    assert staff == {"category": "staff", "responses": None, "hidden": True}
+    data = response.json()
+    assert {g["category"] for g in data["groups"]} == {"cadets", "npp"}
+    assert all(g["hidden"] is False for g in data["groups"])
+    assert data["suppressed"] is True and data["counts_exact"] is True
 
 
 def test_participation_by_unit_never_shows_group_below_k():
-    """Навіть при розбитті категорія + підрозділ жодна видима група не менша за 5."""
-    groups = client.get("/api/assessments/1/participation", params={"by_unit": True},
-                        headers=MANAGER).json()["groups"]
-    visible = [g for g in groups if not g["hidden"]]
-    hidden = [g for g in groups if g["hidden"]]
-    assert all(g["responses"] >= 5 for g in visible)
-    assert hidden, "у демо-даних мають бути малі групи, щоб перевірити приховування"
-    assert all(g["responses"] is None for g in hidden)
+    """Навіть при розбитті категорія + підрозділ жодна видима група не менша за 5, приховані не віддаються."""
+    data = client.get("/api/assessments/1/participation", params={"by_unit": True}, headers=MANAGER).json()
+    groups = data["groups"]
+    assert groups and all(g["hidden"] is False and g["responses"] >= 5 for g in groups)
+    true_cells = true_counts(1, by_unit=True)
+    assert any(n < 5 for n in true_cells.values()), "у демо-даних мають бути малі групи"
+    assert len(groups) < len(true_cells) and data["suppressed"] is True
+    assert {g["category"] for g in groups} <= {"cadets", "npp"}       # клітинок прихованих категорій немає
 
 
 def true_counts(assessment_id: int, by_unit: bool = False) -> dict:
@@ -136,8 +151,10 @@ def test_hidden_group_cannot_be_recovered_from_total():
     """РЕГРЕСІЯ: «підсумок − сума видимих» не повинен давати розмір групи < k."""
     data = client.get("/api/assessments/1/participation", headers=MANAGER).json()
     assert "tokens_used" not in data
-    leftover = data["responses_total"] - sum(g["responses"] for g in data["groups"] if not g["hidden"])
+    leftover = data["responses_total"] - sum(g["responses"] for g in data["groups"])
     assert leftover == 0 or leftover >= 5
+    # залишок — сума кількох прихованих груп, а не розмір однієї малої
+    assert leftover not in {n for n in true_counts(1).values() if n < 5}
 
 
 def test_hidden_unit_cell_cannot_be_recovered_from_category_total():
@@ -148,26 +165,25 @@ def test_hidden_unit_cell_cannot_be_recovered_from_category_total():
                        headers=MANAGER).json()["groups"]
     true_cat = true_counts(1)
     for cat in categories:
-        visible_cells = [c for c in cells if c["category"] == cat["category"] and not c["hidden"]]
-        if cat["hidden"]:
-            # категорію, приховану в загальній розбивці, не можна «зібрати» з підрозділів
-            assert visible_cells == []
-        else:
-            leftover = cat["responses"] - sum(c["responses"] for c in visible_cells)
-            assert leftover == 0 or leftover >= k
+        visible_cells = [c for c in cells if c["category"] == cat["category"]]
+        leftover = cat["responses"] - sum(c["responses"] for c in visible_cells)
+        assert leftover == 0 or leftover >= k
+    # категорію, приховану в загальній розбивці, не можна «зібрати» з підрозділів
+    hidden_categories = set(true_cat) - {c["category"] for c in categories}
+    assert hidden_categories == {"mgmt", "staff"}
+    assert not [c for c in cells if c["category"] in hidden_categories]
     # і жодна видима клітинка не збігається з малою справжньою групою
     true_cells = true_counts(1, by_unit=True)
     for c in cells:
-        if not c["hidden"]:
-            assert true_cells[(c["category"], c["unit"])] >= k
-    assert set(true_cat) == {c["category"] for c in categories}
+        assert true_cells[(c["category"], c["unit"])] >= k
 
 
 def test_open_assessment_shows_no_breakdown():
     """Поки цикл відкритий — лише загальна кількість, без розбивки (захист від порівняння «до/після»)."""
     data = client.get("/api/assessments/3/participation", headers=MANAGER).json()
     assert data["status"] == "open"
-    assert data["groups"] is None
+    assert data["groups"] is None and data["counts_exact"] is False
+    assert data["responses_total"] % 5 == 0 and data["tokens_unused"] % 5 == 0   # D7: округлено до 5
     data_by_unit = client.get("/api/assessments/3/participation", params={"by_unit": True},
                               headers=MANAGER).json()
     assert data_by_unit["groups"] is None

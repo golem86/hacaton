@@ -322,49 +322,73 @@ def _guard(conn: sqlite3.Connection, db_path: Path, *, explicit: bool) -> None:
         raise ValueError("Synthetic schema-3 sentinel rows are missing")
 
 
+# Структура INTEGRITY_DB версії 3 (так її створювали моделі до schema 4/5), зафіксована тут:
+# прототип працює саме з копією schema 3, а поточні моделі app.models уже новіші
+# (schema 5: access_tokens.token_hash, audit_events.actor_user_id, instance_meta).
+SCHEMA3_DDL = """
+CREATE TABLE components (id INTEGER NOT NULL, code VARCHAR(10) NOT NULL, name VARCHAR(200) NOT NULL,
+    weight FLOAT NOT NULL, PRIMARY KEY (id), UNIQUE (code));
+CREATE TABLE cycles (id INTEGER NOT NULL, name VARCHAR(50) NOT NULL, start_date DATE NOT NULL,
+    status VARCHAR(20) NOT NULL, min_group_size INTEGER NOT NULL, PRIMARY KEY (id));
+CREATE TABLE units (id INTEGER NOT NULL, name VARCHAR(100) NOT NULL, PRIMARY KEY (id), UNIQUE (name));
+CREATE TABLE questions (id INTEGER NOT NULL, component_id INTEGER NOT NULL, text TEXT NOT NULL,
+    scale_min INTEGER NOT NULL, scale_max INTEGER NOT NULL, kind VARCHAR(20) NOT NULL, PRIMARY KEY (id),
+    FOREIGN KEY(component_id) REFERENCES components (id));
+CREATE TABLE cycle_configs (cycle_id INTEGER NOT NULL, description TEXT NOT NULL, scope VARCHAR(200) NOT NULL,
+    categories_json TEXT NOT NULL, questionnaire_version VARCHAR(50) NOT NULL, end_date DATE,
+    PRIMARY KEY (cycle_id), FOREIGN KEY(cycle_id) REFERENCES cycles (id));
+CREATE TABLE response_sets (id INTEGER NOT NULL, cycle_id INTEGER NOT NULL,
+    respondent_category VARCHAR(30) NOT NULL, unit VARCHAR(100) NOT NULL, PRIMARY KEY (id),
+    FOREIGN KEY(cycle_id) REFERENCES cycles (id), FOREIGN KEY(unit) REFERENCES units (name));
+CREATE TABLE access_tokens (id INTEGER NOT NULL, cycle_id INTEGER NOT NULL, token VARCHAR(64) NOT NULL,
+    used BOOLEAN NOT NULL, PRIMARY KEY (id), FOREIGN KEY(cycle_id) REFERENCES cycles (id), UNIQUE (token));
+CREATE TABLE objective_indicators (id INTEGER NOT NULL, cycle_id INTEGER NOT NULL, component_id INTEGER NOT NULL,
+    name VARCHAR(200) NOT NULL, value FLOAT NOT NULL, entered_by_role VARCHAR(50) NOT NULL,
+    confirmed_by_role VARCHAR(50), confirmed BOOLEAN NOT NULL, PRIMARY KEY (id),
+    FOREIGN KEY(cycle_id) REFERENCES cycles (id), FOREIGN KEY(component_id) REFERENCES components (id));
+CREATE TABLE recommendations (id INTEGER NOT NULL, cycle_id INTEGER NOT NULL, component_id INTEGER NOT NULL,
+    text TEXT NOT NULL, basis TEXT NOT NULL, status VARCHAR(20) NOT NULL, owner_role VARCHAR(100), due_date DATE,
+    PRIMARY KEY (id), FOREIGN KEY(cycle_id) REFERENCES cycles (id),
+    FOREIGN KEY(component_id) REFERENCES components (id));
+CREATE TABLE audit_events (id INTEGER NOT NULL, created_at DATETIME NOT NULL, actor_role VARCHAR(50) NOT NULL,
+    action VARCHAR(50) NOT NULL, assessment_id INTEGER, details TEXT NOT NULL, PRIMARY KEY (id),
+    FOREIGN KEY(assessment_id) REFERENCES cycles (id));
+CREATE TABLE answers (id INTEGER NOT NULL, response_set_id INTEGER NOT NULL, question_id INTEGER NOT NULL,
+    value INTEGER NOT NULL, PRIMARY KEY (id), UNIQUE (response_set_id, question_id),
+    FOREIGN KEY(response_set_id) REFERENCES response_sets (id), FOREIGN KEY(question_id) REFERENCES questions (id));
+CREATE TABLE access_token_policies (token_id INTEGER NOT NULL, category VARCHAR(30) NOT NULL,
+    expires_at DATETIME NOT NULL, PRIMARY KEY (token_id), FOREIGN KEY(token_id) REFERENCES access_tokens (id));
+"""
+
+
 def create_synthetic_schema3_source(source_path: Path) -> Path:
     """Create an actual schema-3-shaped SQLite DB with deterministic synthetic rows."""
     if not source_path.name.endswith(".schema3-synthetic.sqlite"):
         raise ValueError("Synthetic source filename must end in .schema3-synthetic.sqlite")
     source_path = _require_test_temp_path(source_path, must_not_exist=True)
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-    from app.database import Base
-    from app.models import (AccessToken, AccessTokenPolicy, Answer as NumericAnswer, AuditEvent,
-                            Component, Cycle, CycleConfig, Question, ResponseSet, Unit)
-    from datetime import date, datetime, timedelta, timezone
+    from datetime import datetime, timedelta, timezone
 
     source_path.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(f"sqlite:///{source_path.as_posix()}")
-    Base.metadata.create_all(engine)
-    with engine.begin() as con:
-        con.exec_driver_sql("PRAGMA user_version=3")
-    with Session(engine) as db:
-        cycle = Cycle(name="Synthetic schema3 cycle", start_date=date(2026, 1, 1),
-                      status="draft", min_group_size=5)
-        component = Component(code="SYN", name="Synthetic", weight=1.0)
-        unit = Unit(name="Synthetic Unit")
-        db.add_all([cycle, component, unit])
-        db.flush()
-        question = Question(component_id=component.id, text="Synthetic numeric question",
-                            scale_min=1, scale_max=5, kind="survey")
-        db.add(question)
-        db.flush()
-        db.add(CycleConfig(cycle_id=cycle.id, description="synthetic", scope="test",
-                           categories_json='["staff"]', questionnaire_version="demo-v1"))
-        response = ResponseSet(cycle_id=cycle.id, respondent_category="staff", unit=unit.name)
-        db.add(response)
-        db.flush()
-        db.add(NumericAnswer(response_set_id=response.id, question_id=question.id, value=4))
-        token = AccessToken(cycle_id=cycle.id, token="synthetic-assessment-code", used=False)
-        db.add(token)
-        db.flush()
-        db.add(AccessTokenPolicy(token_id=token.id, category="staff",
-                                 expires_at=datetime.now(timezone.utc) + timedelta(days=2)))
-        db.add(AuditEvent(created_at=datetime.now(timezone.utc), actor_role="admin", action="synthetic.seed",
-                          assessment_id=cycle.id, details='{"synthetic":true}'))
-        db.commit()
-    engine.dispose()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stamp = "%Y-%m-%d %H:%M:%S.%f"          # формат DateTime SQLAlchemy для SQLite
+    with closing(sqlite3.connect(source_path)) as con:
+        con.execute("PRAGMA foreign_keys=ON")
+        con.executescript(SCHEMA3_DDL)
+        with con:
+            con.execute("INSERT INTO cycles VALUES (1, 'Synthetic schema3 cycle', '2026-01-01', 'draft', 5)")
+            con.execute("INSERT INTO components VALUES (1, 'SYN', 'Synthetic', 1.0)")
+            con.execute("INSERT INTO units VALUES (1, 'Synthetic Unit')")
+            con.execute("INSERT INTO questions VALUES (1, 1, 'Synthetic numeric question', 1, 5, 'survey')")
+            con.execute("INSERT INTO cycle_configs VALUES (1, 'synthetic', 'test', '[\"staff\"]', 'demo-v1', NULL)")
+            con.execute("INSERT INTO response_sets VALUES (1, 1, 'staff', 'Synthetic Unit')")
+            con.execute("INSERT INTO answers VALUES (1, 1, 1, 4)")
+            con.execute("INSERT INTO access_tokens VALUES (1, 1, 'synthetic-assessment-code', 0)")
+            con.execute("INSERT INTO access_token_policies VALUES (1, 'staff', ?)",
+                        ((now + timedelta(days=2)).strftime(stamp),))
+            con.execute("INSERT INTO audit_events VALUES (1, ?, 'admin', 'synthetic.seed', 1, ?)",
+                        (now.strftime(stamp), '{"synthetic":true}'))
+        con.execute("PRAGMA user_version=3")
+        con.commit()
     with closing(sqlite3.connect(source_path)) as con:
         con.execute("PRAGMA foreign_keys=ON")
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
