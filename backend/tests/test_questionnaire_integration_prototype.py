@@ -12,15 +12,17 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.migrations import SCHEMA_VERSION
+from app.models import hash_access_code
 from app.request_security import session_csrf_token
 from app.v2_auth import (create_session, create_user, delete_session, migrate_auth_db,
                          rotate_session_after_2fa, session_cookie_name)
 from prototypes.official_expert import CATALOG
 from prototypes.questionnaire_integration import (
-    DDL, GUARD_TABLE, MIGRATION_TABLES, ExpertAnswers, InMemoryRateLimiter,
+    DDL, GUARD_TABLE, MIGRATION_TABLES, PROTOTYPE_SCHEMA_VERSION, ExpertAnswers, InMemoryRateLimiter,
     IntegrationError, IntegrationStore, SyntheticSubmission,
     apply_questionnaire_migration, core_snapshot, create_integration_test_app,
-    create_synthetic_schema3_copy, create_synthetic_schema3_source,
+    create_synthetic_schema5_copy, create_synthetic_schema5_source,
     restore_synthetic_backup, suppress_cells, SQLiteRateLimiter,
 )
 
@@ -30,14 +32,14 @@ VERSION = "2.0.0"
 SYNTHETIC_CODE = "synthetic-assessment-code"
 
 
-def fixture_questions() -> list[dict]:
+def fixture_questions(form: str = FORM1, version: str = VERSION) -> list[dict]:
     questions = []
-    for index, (question_id, option_ids) in enumerate(CATALOG[(FORM1, VERSION)].items(), start=1):
+    for index, (question_id, option_ids) in enumerate(CATALOG[(form, version)].items(), start=1):
         questions.append({
             "id": question_id,
             "section": f"section-{1 if index <= 5 else 2}",
             "text": f"Synthetic prompt {index}",
-            "source_duplicate": index in {4, 5},
+            "source_duplicate": form == FORM1 and index in {4, 5},
             "options": [{"id": option_id, "text": f"Synthetic option {option_id}"}
                         for option_id in sorted(option_ids)],
         })
@@ -51,18 +53,17 @@ def answer_payload() -> list[dict[str, str]]:
 
 @pytest.fixture
 def migrated_db(tmp_path: Path):
-    source = create_synthetic_schema3_source(tmp_path / "seed.schema3-synthetic.sqlite")
+    source = create_synthetic_schema5_source(tmp_path / "seed.schema5-synthetic.sqlite")
     source_digest = __import__("hashlib").sha256(source.read_bytes()).hexdigest()
     target = tmp_path / "integration.prototype.sqlite"
-    create_synthetic_schema3_copy(source, target)
+    create_synthetic_schema5_copy(source, target)
     before = core_snapshot(target)
     migration = apply_questionnaire_migration(target, allow_test_migration=True)
     assert migration["action"] == "migrated"
     store = IntegrationStore(target)
     store.seed_template(FORM1, VERSION, 1, fixture_questions())
     store.bind_cycle(1, FORM1, VERSION)
-    with sqlite3.connect(target) as con:
-        con.execute("UPDATE cycles SET status='open' WHERE id=1")
+    store.activate_cycle(1)
     return target, store, before, migration, source, source_digest
 
 
@@ -81,7 +82,8 @@ def _official_body(code: str = SYNTHETIC_CODE, *, category="staff", version=VERS
 
 def _seed_additional_code(db_path: Path, code: str, *, expires="2030-01-01 00:00:00", category="staff"):
     with sqlite3.connect(db_path) as con:
-        token_id = con.execute("INSERT INTO access_tokens(cycle_id,token,used) VALUES (1,?,0)", (code,)).lastrowid
+        token_id = con.execute("INSERT INTO access_tokens(cycle_id,token_hash,used) VALUES (1,?,0)",
+                               (hash_access_code(code),)).lastrowid
         con.execute("INSERT INTO access_token_policies(token_id,category,expires_at) VALUES (?,?,?)",
                     (token_id, category, expires))
 
@@ -109,7 +111,7 @@ def _auth_headers(token: str, *, csrf=True, origin="http://testserver") -> dict[
     return result
 
 
-def test_schema3_migration_backup_preservation_constraints_and_idempotency(migrated_db):
+def test_schema5_migration_backup_preservation_constraints_and_idempotency(migrated_db):
     db_path, _store, before, migration, source, source_digest = migrated_db
     assert migration["core_tables_preserved"] == len(before) == len(CORE_TABLES_FOR_TEST)
     assert Path(migration["backup"]).exists()
@@ -121,7 +123,7 @@ def test_schema3_migration_backup_preservation_constraints_and_idempotency(migra
     assert current["cycles"][0] == before["cycles"][0]
     assert __import__("hashlib").sha256(source.read_bytes()).hexdigest() == source_digest
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 5
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
         assert MIGRATION_TABLES <= {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -139,69 +141,73 @@ def test_schema3_migration_backup_preservation_constraints_and_idempotency(migra
     assert apply_questionnaire_migration(db_path, allow_test_migration=True)["action"] == "already_applied"
 
 
+def test_prototype_pins_current_integrity_schema_version():
+    assert PROTOTYPE_SCHEMA_VERSION == SCHEMA_VERSION == 5
+
+
 CORE_TABLES_FOR_TEST = (
     "components", "questions", "cycles", "units", "response_sets", "answers",
     "access_tokens", "access_token_policies", "cycle_configs", "objective_indicators",
-    "recommendations", "audit_events",
+    "recommendations", "recommendation_actions", "audit_events", "instance_meta",
 )
 
 
 def test_migration_refuses_without_explicit_synthetic_guard(tmp_path: Path):
-    source = create_synthetic_schema3_source(tmp_path / "guard.schema3-synthetic.sqlite")
+    source = create_synthetic_schema5_source(tmp_path / "guard.schema5-synthetic.sqlite")
     target = tmp_path / "guarded.prototype.sqlite"
-    create_synthetic_schema3_copy(source, target)
+    create_synthetic_schema5_copy(source, target)
     with pytest.raises(ValueError, match="Explicit permission"):
         apply_questionnaire_migration(target)
-    with pytest.raises(ValueError, match="synthetic schema-3 copy"):
+    with pytest.raises(ValueError, match="synthetic schema-5 copy"):
         apply_questionnaire_migration(tmp_path / "ordinary.prototype.sqlite", allow_test_migration=True)
 
 
 def test_synthetic_database_helpers_fail_closed_on_protected_or_non_temp_paths(tmp_path, monkeypatch):
-    protected = tmp_path / "would-be-integrity.schema3-synthetic.sqlite"
+    protected = tmp_path / "would-be-integrity.schema5-synthetic.sqlite"
     monkeypatch.setenv("INTEGRITY_DB", str(protected))
     with pytest.raises(ValueError, match="Production/shared"):
-        create_synthetic_schema3_source(protected)
+        create_synthetic_schema5_source(protected)
     assert not protected.exists()
 
     monkeypatch.delenv("INTEGRITY_DB")
-    protected_auth = tmp_path / "would-be-auth.schema3-synthetic.sqlite"
+    protected_auth = tmp_path / "would-be-auth.schema5-synthetic.sqlite"
     monkeypatch.setenv("V2_AUTH_DB", str(protected_auth))
     with pytest.raises(ValueError, match="Production/shared"):
-        create_synthetic_schema3_source(protected_auth)
+        create_synthetic_schema5_source(protected_auth)
     assert not protected_auth.exists()
     monkeypatch.delenv("V2_AUTH_DB")
-    outside_temp = Path(__file__).resolve().parents[2] / "must-not-create.schema3-synthetic.sqlite"
+    outside_temp = Path(__file__).resolve().parents[2] / "must-not-create.schema5-synthetic.sqlite"
     with pytest.raises(ValueError, match="temp directory"):
-        create_synthetic_schema3_source(outside_temp)
+        create_synthetic_schema5_source(outside_temp)
     assert not outside_temp.exists()
 
-    bogus_source = tmp_path / "unverified.schema3-synthetic.sqlite"
+    bogus_source = tmp_path / "unverified.schema5-synthetic.sqlite"
     with sqlite3.connect(bogus_source) as con:
-        con.execute("PRAGMA user_version=3")
+        con.execute("PRAGMA user_version=5")
         con.execute("CREATE TABLE made_up(value TEXT)")
     copy_path = tmp_path / "unverified.prototype.sqlite"
-    with pytest.raises(ValueError, match="expected schema-3 synthetic"):
-        create_synthetic_schema3_copy(bogus_source, copy_path)
+    with pytest.raises(ValueError, match="expected schema-5 synthetic"):
+        create_synthetic_schema5_copy(bogus_source, copy_path)
     assert not copy_path.exists()
 
 
 def test_synthetic_source_symbolic_link_is_rejected(tmp_path):
-    source = create_synthetic_schema3_source(tmp_path / "safe.schema3-synthetic.sqlite")
-    alias = tmp_path / "alias.schema3-synthetic.sqlite"
+    source = create_synthetic_schema5_source(tmp_path / "safe.schema5-synthetic.sqlite")
+    alias = tmp_path / "alias.schema5-synthetic.sqlite"
     try:
         alias.symlink_to(source)
     except OSError as error:
         pytest.skip(f"Windows symlink creation unavailable in this environment: {error}")
     with pytest.raises(ValueError, match="Symbolic-link"):
-        create_synthetic_schema3_copy(alias, tmp_path / "alias-copy.prototype.sqlite")
+        create_synthetic_schema5_copy(alias, tmp_path / "alias-copy.prototype.sqlite")
     assert not (tmp_path / "alias-copy.prototype.sqlite").exists()
 
 
 @pytest.mark.parametrize("fail_at", ["ddl_1", "after_templates", "before_meta"])
 def test_migration_failure_injection_rolls_back_and_backup_restores(fail_at, tmp_path: Path):
-    source = create_synthetic_schema3_source(tmp_path / f"{fail_at}.schema3-synthetic.sqlite")
+    source = create_synthetic_schema5_source(tmp_path / f"{fail_at}.schema5-synthetic.sqlite")
     target = tmp_path / f"{fail_at}.prototype.sqlite"
-    create_synthetic_schema3_copy(source, target)
+    create_synthetic_schema5_copy(source, target)
     before = core_snapshot(target)
     with pytest.raises(RuntimeError, match="Injected migration failure"):
         apply_questionnaire_migration(target, allow_test_migration=True, fail_at=fail_at)
@@ -209,7 +215,7 @@ def test_migration_failure_injection_rolls_back_and_backup_restores(fail_at, tmp
     with sqlite3.connect(target) as con:
         tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert not (MIGRATION_TABLES & tables)
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 5
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     backups = list(tmp_path.glob("*.verified-backup-*.sqlite"))
     assert len(backups) == 1
@@ -224,7 +230,7 @@ def test_restore_removes_prototype_tables_and_preserves_synthetic_legacy_rows(mi
     with sqlite3.connect(db_path) as con:
         tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert not (MIGRATION_TABLES & tables)
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 5
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
@@ -233,7 +239,7 @@ def test_official_adapter_atomically_uses_existing_access_token_without_linking_
     response = client.post("/prototype/integration/cycles/1/official-submissions", json=_official_body())
     assert response.status_code == 201 and response.json() == {"accepted": True}, response.text
     with sqlite3.connect(db_path) as con:
-        assert con.execute("SELECT used FROM access_tokens WHERE token=?", (SYNTHETIC_CODE,)).fetchone()[0] == 1
+        assert con.execute("SELECT used FROM access_tokens WHERE token_hash=?", (hash_access_code(SYNTHETIC_CODE),)).fetchone()[0] == 1
         assert con.execute("SELECT COUNT(*) FROM official_response_sets").fetchone()[0] == 1
         assert con.execute("SELECT COUNT(*) FROM official_answers").fetchone()[0] == 12
         assert con.execute("SELECT COUNT(*) FROM response_sets").fetchone()[0] == 1
@@ -242,9 +248,11 @@ def test_official_adapter_atomically_uses_existing_access_token_without_linking_
         token_columns = {r[1] for r in con.execute("PRAGMA table_info(access_tokens)")}
         assert not ({"respondent_id", "user_id", "token", "ip", "created_at", "timestamp"} & set_columns)
         assert "response_set_id" not in token_columns
-        # Schema 3 stores the one-time value as plaintext; the prototype does not change that contract.
-        assert "token" in token_columns and "token_digest" not in token_columns
-        assert con.execute("SELECT token FROM access_tokens WHERE token=?", (SYNTHETIC_CODE,)).fetchone()[0] == SYNTHETIC_CODE
+        # Schema 5 stores only the SHA-256 of the one-time code; plaintext is never persisted.
+        assert "token_hash" in token_columns and "token" not in token_columns
+        assert con.execute("SELECT COUNT(*) FROM access_tokens WHERE token_hash=?", (SYNTHETIC_CODE,)).fetchone()[0] == 0
+        assert con.execute("SELECT token_hash FROM access_tokens WHERE token_hash=?",
+                           (hash_access_code(SYNTHETIC_CODE),)).fetchone()[0] == hash_access_code(SYNTHETIC_CODE)
         assert con.execute("SELECT COUNT(*) FROM official_answers a JOIN answers n ON 1=1").fetchone()[0] == 12
     assert core_snapshot(db_path)["answers"] == before["answers"]
     assert __import__("hashlib").sha256(source.read_bytes()).hexdigest() == source_digest
@@ -260,13 +268,12 @@ def test_official_sets_are_isolated_by_cycle_and_version(integration):
                     "VALUES (2,'Synthetic second cycle','2026-02-01','draft',5)")
         con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,questionnaire_version) "
                     "VALUES (2,'synthetic second','test','[\"staff\"]','demo-v1')")
-        token_id = con.execute("INSERT INTO access_tokens(cycle_id,token,used) "
-                               "VALUES (2,'synthetic-cycle-2-code',0)").lastrowid
+        token_id = con.execute("INSERT INTO access_tokens(cycle_id,token_hash,used) VALUES (2,?,0)",
+                               (hash_access_code("synthetic-cycle-2-code"),)).lastrowid
         con.execute("INSERT INTO access_token_policies(token_id,category,expires_at) "
                     "VALUES (?,?,datetime('now','+1 day'))", (token_id, "staff"))
     store.bind_cycle(2, FORM1, VERSION)
-    with sqlite3.connect(db_path) as con:
-        con.execute("UPDATE cycles SET status='open' WHERE id=2")
+    store.activate_cycle(2)
     wrong_cycle = client.post("/prototype/integration/cycles/2/official-submissions", json=_official_body())
     wrong_version = client.post("/prototype/integration/cycles/2/official-submissions",
                                 json=_official_body(code="synthetic-cycle-2-code", version="1.0.0"))
@@ -277,8 +284,53 @@ def test_official_sets_are_isolated_by_cycle_and_version(integration):
     with sqlite3.connect(db_path) as con:
         sets = con.execute("SELECT cycle_id,template_id,version FROM official_response_sets ORDER BY cycle_id").fetchall()
         assert sets == [(2, FORM1, VERSION)]
-        assert con.execute("SELECT used FROM access_tokens WHERE token='synthetic-cycle-2-code'").fetchone()[0] == 1
+        assert con.execute("SELECT used FROM access_tokens WHERE token_hash=?", (hash_access_code("synthetic-cycle-2-code"),)).fetchone()[0] == 1
 
+
+
+@pytest.mark.parametrize(("cycle_id", "form", "code"), [
+    (2, "appendix-v-form-1", "synthetic-form1-v21-code"),
+    (3, "appendix-v-form-2", "synthetic-form2-v21-code"),
+])
+def test_full_2_1_catalog_submission_persists_after_reopening_sqlite(
+        migrated_db, cycle_id, form, code):
+    db_path, store, before, *_ = migrated_db
+    store.seed_template(form, "2.1.0", 1 if form.endswith("1") else 2, fixture_questions(form, "2.1.0"))
+    with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO cycles(id,name,start_date,status,min_group_size) "
+                    "VALUES (?,?,'2026-02-01','draft',5)", (cycle_id, f"Synthetic cycle {cycle_id}"))
+        con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,questionnaire_version) "
+                    "VALUES (?,?,?,'[\"staff\"]','demo-v1')", (cycle_id, "synthetic", "test"))
+        token_id = con.execute("INSERT INTO access_tokens(cycle_id,token_hash,used) VALUES (?,?,0)",
+                               (cycle_id, hash_access_code(code))).lastrowid
+        con.execute("INSERT INTO access_token_policies(token_id,category,expires_at) "
+                    "VALUES (?,?,datetime('now','+1 day'))", (token_id, "staff"))
+    store.bind_cycle(cycle_id, form, "2.1.0")
+    store.activate_cycle(cycle_id)
+    app, _ = create_integration_test_app(db_path, store)
+    client = TestClient(app)
+    payload = _official_body(code=code, template=form, version="2.1.0",
+                             answers=[{"question_id": q, "option_id": sorted(options)[0]}
+                                      for q, options in CATALOG[(form, "2.1.0")].items()])
+    response = client.post(f"/prototype/integration/cycles/{cycle_id}/official-submissions", json=payload)
+    assert response.status_code == 201, response.text
+    # Verify durable state from a fresh SQLite connection, as after process restart.
+    with sqlite3.connect(db_path) as reopened:
+        assert reopened.execute("PRAGMA user_version").fetchone()[0] == 5
+        stored = reopened.execute("SELECT cycle_id,template_id,version,category "
+                                  "FROM official_response_sets").fetchall()
+        assert stored == [(cycle_id, form, "2.1.0", "staff")]
+        count = len(CATALOG[(form, "2.1.0")])
+        assert count == (12 if form.endswith("1") else 10)
+        assert reopened.execute("SELECT COUNT(*) FROM official_answers").fetchone()[0] == count
+        assert reopened.execute("SELECT used FROM access_tokens WHERE token_hash=?",
+                                (hash_access_code(code),)).fetchone()[0] == 1
+        assert reopened.execute("SELECT COUNT(*) FROM access_tokens WHERE token_hash=?", (code,)).fetchone()[0] == 0
+        columns = {r[1] for r in reopened.execute("PRAGMA table_info(official_response_sets)")}
+        assert not ({"user_id", "respondent_id", "token", "token_hash", "created_at", "timestamp"} & columns)
+    assert client.post(f"/prototype/integration/cycles/{cycle_id}/official-submissions",
+                       json=payload).status_code == 403
+    assert core_snapshot(db_path)["answers"] == before["answers"]
 
 def test_expert_scope_is_limited_to_assigned_cycle_and_assessment(migrated_db, monkeypatch, tmp_path):
     db_path, store, *_ = migrated_db
@@ -288,8 +340,7 @@ def test_expert_scope_is_limited_to_assigned_cycle_and_assessment(migrated_db, m
         con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,questionnaire_version) "
                     "VALUES (2,'synthetic expert','test','[\"staff\"]','demo-v1')")
     store.bind_cycle(2, FORM1, VERSION)
-    with sqlite3.connect(db_path) as con:
-        con.execute("UPDATE cycles SET status='open' WHERE id=2")
+    store.activate_cycle(2)
     admin, expert_a, expert_b, _admin_token, _pending, token_a, token_b = \
         _auth_admin_and_expert(monkeypatch, tmp_path)
     store.grant_expert(str(expert_a["id"]), str(admin["id"]))
@@ -326,7 +377,7 @@ def test_adapter_rejects_wrong_cycle_category_version_or_answers(integration, bo
     assert response.status_code == expected
     assert SYNTHETIC_CODE not in response.text
     with sqlite3.connect(db_path) as con:
-        assert con.execute("SELECT used FROM access_tokens WHERE token=?", (SYNTHETIC_CODE,)).fetchone()[0] == 0
+        assert con.execute("SELECT used FROM access_tokens WHERE token_hash=?", (hash_access_code(SYNTHETIC_CODE),)).fetchone()[0] == 0
         assert con.execute("SELECT COUNT(*) FROM official_response_sets").fetchone()[0] == 0
 
 
@@ -347,7 +398,7 @@ def test_expiry_closed_cycle_cookie_and_authorization_are_rejected(integration):
                          json=_official_body(code="synthetic-after-close"))
     assert closed.status_code == 409
     with sqlite3.connect(db_path) as con:
-        assert con.execute("SELECT used FROM access_tokens WHERE token='synthetic-after-close'").fetchone()[0] == 0
+        assert con.execute("SELECT used FROM access_tokens WHERE token_hash=?", (hash_access_code("synthetic-after-close"),)).fetchone()[0] == 0
         assert con.execute("SELECT COUNT(*) FROM official_response_sets").fetchone()[0] == 0
 
 
@@ -387,7 +438,7 @@ def test_competing_submit_and_close_are_serialized(integration):
         store.submit(1, SyntheticSubmission(**_official_body(code="synthetic-late-code")))
     assert late.value.status == 409
     with sqlite3.connect(db_path) as con:
-        assert con.execute("SELECT used FROM access_tokens WHERE token='synthetic-late-code'").fetchone()[0] == 0
+        assert con.execute("SELECT used FROM access_tokens WHERE token_hash=?", (hash_access_code("synthetic-late-code"),)).fetchone()[0] == 0
 
 
 def test_same_code_race_and_mid_submit_failure_are_atomic(integration):
@@ -407,7 +458,7 @@ def test_same_code_race_and_mid_submit_failure_are_atomic(integration):
         outcomes = [result.result(timeout=15) for result in results]
     assert outcomes.count("accepted") == 1
     with sqlite3.connect(db_path) as con:
-        assert con.execute("SELECT used FROM access_tokens WHERE token=?", (SYNTHETIC_CODE,)).fetchone()[0] == 1
+        assert con.execute("SELECT used FROM access_tokens WHERE token_hash=?", (hash_access_code(SYNTHETIC_CODE),)).fetchone()[0] == 1
         assert con.execute("SELECT COUNT(*) FROM official_response_sets").fetchone()[0] == 1
         assert con.execute("SELECT COUNT(*) FROM official_answers").fetchone()[0] == 12
 
@@ -419,7 +470,7 @@ def test_same_code_race_and_mid_submit_failure_are_atomic(integration):
     with pytest.raises(sqlite3.IntegrityError):
         store.submit(1, SyntheticSubmission(**_official_body(code="synthetic-failure-code")))
     with sqlite3.connect(db_path) as con:
-        assert con.execute("SELECT used FROM access_tokens WHERE token='synthetic-failure-code'").fetchone()[0] == 0
+        assert con.execute("SELECT used FROM access_tokens WHERE token_hash=?", (hash_access_code("synthetic-failure-code"),)).fetchone()[0] == 0
         assert con.execute("SELECT COUNT(*) FROM official_response_sets").fetchone()[0] == 1
         assert con.execute("SELECT COUNT(*) FROM official_answers").fetchone()[0] == 12
         con.execute("DROP TRIGGER reject_official_answer")
@@ -498,7 +549,7 @@ def test_sqlite_rate_limit_storage_failure_fails_closed(integration):
     assert response.status_code == 503
     assert SYNTHETIC_CODE not in response.text
     with sqlite3.connect(db_path) as con:
-        assert con.execute("SELECT used FROM access_tokens WHERE token=?", (SYNTHETIC_CODE,)).fetchone()[0] == 0
+        assert con.execute("SELECT used FROM access_tokens WHERE token_hash=?", (hash_access_code(SYNTHETIC_CODE),)).fetchone()[0] == 0
         assert con.execute("SELECT COUNT(*) FROM official_response_sets").fetchone()[0] == 0
         con.execute("DROP TRIGGER reject_limit_bucket")
 
@@ -515,7 +566,7 @@ def test_sqlite_rate_limit_http_response_is_generic_429(integration):
     assert limited.status_code == 429
     assert "synthetic-assessment-code" not in limited.text
     with sqlite3.connect(db_path) as con:
-        assert con.execute("SELECT used FROM access_tokens WHERE token=?", (SYNTHETIC_CODE,)).fetchone()[0] == 0
+        assert con.execute("SELECT used FROM access_tokens WHERE token_hash=?", (hash_access_code(SYNTHETIC_CODE),)).fetchone()[0] == 0
         assert con.execute("SELECT COUNT(*) FROM official_response_sets").fetchone()[0] == 0
 
 
@@ -843,6 +894,50 @@ def test_published_template_binding_and_version_isolation(migrated_db):
                 (FORM1, VERSION)).fetchone()
             con.execute("DELETE FROM questionnaire_options WHERE template_id=? AND version=? AND question_id=? AND option_id=?",
                         (FORM1, VERSION, question_id, option_id))
+    with sqlite3.connect(db_path) as con:
+        with pytest.raises(sqlite3.IntegrityError, match="requires draft"):
+            con.execute("INSERT INTO cycle_questionnaires VALUES (1,?,?)", (FORM1, VERSION))
+    with pytest.raises(IntegrationError) as late_bind:
+        store.bind_cycle(1, FORM1, VERSION)
+    assert late_bind.value.status == 409
     with pytest.raises(IntegrationError) as mismatch:
         store.submit(1, SyntheticSubmission(**_official_body(version="9.9.9")))
     assert mismatch.value.status in {409, 422}
+
+
+def test_cycle_bind_and_activation_are_serialized_and_never_open_unbound(migrated_db):
+    db_path, store, *_ = migrated_db
+    with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO cycles(id,name,start_date,status,min_group_size) "
+                    "VALUES (2,'Synthetic binding race','2026-02-01','draft',5)")
+        con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,questionnaire_version) "
+                    "VALUES (2,'synthetic','test','[\"staff\"]','demo-v1')")
+    barrier = threading.Barrier(2)
+
+    def bind():
+        barrier.wait()
+        try:
+            store.bind_cycle(2, FORM1, VERSION)
+            return "bound"
+        except IntegrationError as error:
+            return error.status
+
+    def activate():
+        barrier.wait()
+        try:
+            store.activate_cycle(2)
+            return "open"
+        except IntegrationError as error:
+            return error.status
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        results = [pool.submit(bind), pool.submit(activate)]
+        outcomes = [future.result(timeout=15) for future in results]
+    with sqlite3.connect(db_path) as con:
+        status = con.execute("SELECT status FROM cycles WHERE id=2").fetchone()[0]
+        bindings = con.execute("SELECT COUNT(*) FROM cycle_questionnaires WHERE cycle_id=2").fetchone()[0]
+    assert outcomes in (["bound", "open"], ["bound", 409]), outcomes
+    assert (status, bindings) in {("open", 1), ("draft", 1)}
+    if status == "open":
+        with sqlite3.connect(db_path) as con, pytest.raises(sqlite3.IntegrityError, match="requires draft"):
+            con.execute("INSERT INTO cycle_questionnaires VALUES (2,?,?)", (FORM1, VERSION))
