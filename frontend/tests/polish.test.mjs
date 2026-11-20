@@ -22,7 +22,8 @@ const events = [
 
 test('every backend audit action has a Ukrainian label and unknown codes stay raw', async () => {
   const source = await readFile(new URL('../../backend/app/audit.py', import.meta.url), 'utf8')
-  const allowlist = source.match(/ALLOWED_ACTIONS\s*=\s*\{([\s\S]*?)\}/)?.[1] ?? ''
+  // Коментарі Python (# …) відкидаємо: у них можуть бути слова в лапках, що не є діями журналу.
+  const allowlist = (source.match(/ALLOWED_ACTIONS\s*=\s*\{([\s\S]*?)\}/)?.[1] ?? '').replace(/#[^\n]*/g, '')
   const actions = [...allowlist.matchAll(/"([a-z_.]+)"/g)].map(match => match[1])
   assert.ok(actions.length >= 6, 'ALLOWED_ACTIONS parsed from backend/app/audit.py')
   for (const action of actions) {

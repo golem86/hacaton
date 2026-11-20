@@ -32,6 +32,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   'objective.create': 'Внесено об’єктивний показник',
   'objective.confirm': 'Підтверджено об’єктивний показник',
   'report.narrative': 'Чернетка тексту звіту (локальна ШІ)',
+  'demo.cycle_generated': 'Згенеровано синтетичний демо-цикл',
 }
 
 /** Ролі виконавця: сесійні ролі V2 (admin, user, data_officer) і демонстраційні ролі V1 з backend/app/roles.py. */
@@ -71,6 +72,7 @@ const ACTION_KINDS: Readonly<Record<string, string>> = {
   'objective.create': 'maturity',
   'objective.confirm': 'maturity',
   'report.narrative': 'cycle',
+  'demo.cycle_generated': 'cycle',
 }
 
 const ALL = 'all'
