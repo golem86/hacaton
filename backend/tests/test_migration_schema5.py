@@ -23,6 +23,10 @@ from app.main import app
 from app.migrations import SCHEMA_VERSION, MigrationError, check_schema, migrate
 from legacy_schemas import LEGACY_CODES, make_legacy_db, table_rows
 
+# Таблиці schema 6 (зрілість за Додатком В) — нові й порожні після міграції старої БД
+SCHEMA6_TABLES = {"annex_v_responses", "annex_v_answers", "annex_v_expert_assessments", "checklist_entries",
+                  "maturity_indicators"}
+
 
 def sha(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
@@ -47,8 +51,8 @@ def legacy(request, tmp_path):
     engine.dispose()
 
 
-def test_schema_5_version():
-    assert SCHEMA_VERSION == 5
+def test_schema_version_is_6():
+    assert SCHEMA_VERSION == 6
 
 
 def test_legacy_database_is_migrated_to_5_without_data_loss(legacy):
@@ -60,7 +64,7 @@ def test_legacy_database_is_migrated_to_5_without_data_loss(legacy):
     report = migrate(engine)
 
     assert report["action"] == "migrated" and report["access_tokens_hashed"] == len(LEGACY_CODES)
-    assert version(path) == 5
+    assert version(path) == SCHEMA_VERSION
     # Резервна копія — точна копія вихідної бази (і перевірена)
     backup = Path(report["backup"])
     assert backup.exists() and version(backup) == old_version and table_rows(backup) == before
@@ -79,7 +83,7 @@ def test_legacy_database_is_migrated_to_5_without_data_loss(legacy):
     assert not any(code in dump for _, _, code, _ in LEGACY_CODES)     # відкритих кодів у БД більше немає
     after = table_rows(path)
     assert {t: rows for t, rows in after.items() if t in before} == before
-    assert set(after) - set(before) <= {"instance_meta", "recommendation_actions"}
+    assert set(after) - set(before) <= {"instance_meta", "recommendation_actions", *SCHEMA6_TABLES}
     assert "actor_user_id" in columns(path, "audit_events")
     check_schema(engine)
 
@@ -188,5 +192,5 @@ def test_explicit_cli_migration_reaches_schema_5(tmp_path):
     result = subprocess.run([sys.executable, "-m", "app.migrations", "--apply", "--confirm-verified-backup"],
                             cwd=backend, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert result.returncode == 0, result.stderr
-    assert version(path) == 5
+    assert version(path) == SCHEMA_VERSION
     assert columns(path, "access_tokens") == ["id", "cycle_id", "token_hash", "used"]

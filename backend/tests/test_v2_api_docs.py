@@ -25,6 +25,7 @@ PUBLIC = {
     ("GET", "/api/assessments"), ("GET", "/api/assessments/{assessment_id}"),
     ("GET", "/api/assessments/{assessment_id}/questionnaires"), ("GET", "/api/units"),
     ("POST", "/api/assessments/{assessment_id}/submissions"),            # анонімно, лише за одноразовим кодом
+    ("POST", "/api/assessments/{assessment_id}/annex-v/responses"),      # анкета Додатка В, теж за кодом
 }
 # Swagger UI 5.17.14 з офіційного npm-пакета swagger-ui-dist (integrity tarball звірено з реєстром npm)
 VENDORED_SHA256 = {
@@ -43,6 +44,12 @@ EXPECTED_CSRF = {
     ("POST", "/api/assessments/{assessment_id}/close"): "session",
     ("POST", "/api/assessments/{assessment_id}/tracker/decisions"): "session",
     ("POST", "/api/tracker/{action_id}/transition"): "session",
+    ("POST", "/api/assessments/{assessment_id}/annex-v/responses"): None,    # публічна анонімна анкета Додатка В
+    ("POST", "/api/assessments/{assessment_id}/annex-v/expert"): "session",
+    ("PUT", "/api/assessments/{assessment_id}/checklist/{code}"): "session",
+    ("POST", "/api/assessments/{assessment_id}/checklist/{code}/confirm"): "session",
+    ("POST", "/api/assessments/{assessment_id}/objective-indicators"): "session",
+    ("POST", "/api/objective-indicators/{indicator_id}/confirm"): "session",
     ("POST", "/v2/auth/register"): "preauth",
     ("POST", "/v2/auth/login"): "preauth",
     ("POST", "/v2/auth/password-reset/request"): "preauth",
@@ -59,7 +66,7 @@ EXPECTED_CSRF = {
     ("POST", "/v2/user/attempts/{attempt_id}/complete"): "session",
 }
 PATH_VALUES = {"assessment_id": str(OPEN_ID), "attempt_id": "nonexistent", "version": "team-results-demo-0.1",
-               "action_id": "1", "user_id": "1"}
+               "action_id": "1", "user_id": "1", "code": "B-01", "indicator_id": "1"}
 
 
 @pytest.fixture(autouse=True)
@@ -185,6 +192,11 @@ def test_operations_marked_csrf_really_reject_requests_without_token(method, pat
 
 def test_public_anonymous_submission_is_not_blocked_by_csrf():
     response = TestClient(app).post(concrete("/api/assessments/{assessment_id}/submissions"), json={})
+    assert response.status_code == 422                                # перевірка даних анкети, а не CSRF
+
+
+def test_public_annex_v_submission_is_not_blocked_by_csrf():
+    response = TestClient(app).post(concrete("/api/assessments/{assessment_id}/annex-v/responses"), json={})
     assert response.status_code == 422                                # перевірка даних анкети, а не CSRF
 
 
