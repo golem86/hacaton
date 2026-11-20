@@ -14,6 +14,8 @@
 
 **Фактично реалізована тестова підмножина:** сесії з expiry зберігаються тільки в пам’яті тестового застосунку; в окремій `.prototype.sqlite` БД є `expert_permissions`, `expert_assignments`, `expert_assessments`, `expert_answers`, `expert_audit_events`. Оцінку й призначення створює лише fixture, не клієнт. Реалізовано `GET /prototype/expert/assessments/{id}`, `PUT /prototype/expert/assessments/{id}/answers` і `POST /prototype/expert/assessments/{id}/finalize`. Для мутацій потрібні завершена 2FA, допустимий Origin/Referer і CSRF. Ця фабрика не встановлює production cookie, не реалізує session rotation, reviewer, workflow видачі/відкликання призначень або production audit. Відкликання дозволу тестується через серверний fixture.
 
+**Оновлення після рішення №5:** prototype `expert_audit_events` має `created_at` (Unix time); аудит записується транзакційно разом із відповідями/revision та фіналізацією. Permission/assignment перевіряється у сховищі на кожному запиті, але сам prototype assignment не має active/revoked state. У production пропозиції потрібні atomic server-side grant/revoke, active assignment check для кожного запиту, прив’язка до чинної V2 сесії й доказу 2FA, визначене відкликання сесій, аудит-час UTC та allowlist подій, CSRF/Origin і optimistic concurrency. Ці інтеграційні вимоги не є реалізованими лише завдяки prototype fixture.
+
 Наведена далі таблиця — **цільова модель для технічного затвердження №5**, а не список уже створених таблиць.
 
 | Сутність цільової моделі | Поля та обмеження |

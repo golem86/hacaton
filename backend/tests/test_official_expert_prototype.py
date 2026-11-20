@@ -247,9 +247,10 @@ def test_expert_draft_revision_finalization_and_audit_isolation(prototype):
         assert db.execute("SELECT COUNT(*) FROM expert_answers").fetchone()[0] == 12
         assert db.execute("SELECT COUNT(*) FROM official_answers").fetchone()[0] == 0
         audit_columns = {row[1] for row in db.execute("PRAGMA table_info(expert_audit_events)")}
-        assert audit_columns == {"id", "assessment_id", "actor_id", "action"}
+        assert audit_columns == {"id", "assessment_id", "actor_id", "action", "created_at"}
         assert [row[0] for row in db.execute("SELECT action FROM expert_audit_events")] == [
             "answers_updated", "answers_updated", "finalized"]
+        assert all(row[0] > 0 for row in db.execute("SELECT created_at FROM expert_audit_events"))
 
 
 def test_expert_rejects_wrong_template_duplicate_and_foreign_option(prototype):

@@ -1,4 +1,4 @@
-import { fullTemplates } from './catalog-v2'
+import { fullTemplates, reviewedTemplates } from './catalog-v2'
 
 export type OfficialOption = { id: string; text: string }
 export type OfficialQuestion = {
@@ -6,6 +6,7 @@ export type OfficialQuestion = {
   kind: 'single_choice'
   required: true
   wording?: 'adapted'
+  source_duplicate?: true
   text: string
   source: { appendix: 'В'; form?: 1 | 2; page: number; section: string; number: number }
   options: readonly OfficialOption[]
@@ -97,6 +98,7 @@ export const officialTemplates: readonly OfficialTemplate[] = [
     }],
   },
   ...fullTemplates,
+  ...reviewedTemplates,
 ]
 
 for (const template of officialTemplates) {

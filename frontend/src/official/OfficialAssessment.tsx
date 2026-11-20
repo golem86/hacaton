@@ -70,7 +70,7 @@ export default function OfficialAssessment({ mode }: { mode: Mode }) {
       </div>)}
       <button type="button" className="v2-button" onClick={() => jump(index)}>Повернутися до питань</button>
     </div> : <div aria-live="polite">
-      <p>Питання {index + 1} з {questions.length} · {question.source.section} · Додаток {question.source.appendix}, с. {question.source.page}, № {question.source.number}{question.wording === 'adapted' ? ' · адаптоване формулювання' : ''}</p>
+      <p>Питання {index + 1} з {questions.length} · {question.source.section} · Додаток {question.source.appendix}, с. {question.source.page}, № {question.source.number}{question.wording === 'adapted' ? ' · адаптоване формулювання' : ''}{question.source_duplicate ? ' · дублікат у джерелі' : ''}</p>
       <fieldset aria-invalid={showErrors && !!errors[question.id]} aria-describedby={showErrors && errors[question.id] ? 'official-question-error' : undefined}>
         <legend>{question.text} <span className="official-required">(обов’язково)</span></legend>
         {question.options.map(option => <label key={option.id} className="official-option"><input type="radio" name={question.id} value={option.id} checked={answers[question.id] === option.id}

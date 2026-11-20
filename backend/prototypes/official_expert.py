@@ -13,6 +13,8 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from contextlib import contextmanager
+from collections.abc import Iterator
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
@@ -115,9 +117,18 @@ class PrototypeStore:
         conn.execute("PRAGMA busy_timeout=10000")
         return conn
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _init_schema(self) -> None:
         # Test-app schema lives only at the explicit path supplied by a test fixture.
-        with self._connect() as db:
+        with self._connection() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS prototype_cycles (
                     id TEXT PRIMARY KEY, template_id TEXT NOT NULL, version TEXT NOT NULL,
@@ -155,7 +166,8 @@ class PrototypeStore:
                 );
                 CREATE TABLE IF NOT EXISTS expert_audit_events (
                     id INTEGER PRIMARY KEY, assessment_id TEXT NOT NULL,
-                    actor_id TEXT NOT NULL, action TEXT NOT NULL
+                    actor_id TEXT NOT NULL, action TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
                 );
             """)
 
@@ -166,16 +178,16 @@ class PrototypeStore:
     def seed_cycle(self, cycle_id: str, template_id: str, version: str = "2.0.0") -> None:
         if (template_id, version) not in CATALOG:
             raise ValueError("Unknown fixture template")
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("INSERT INTO prototype_cycles VALUES (?,?,?,'open')", (cycle_id, template_id, version))
 
     def seed_code(self, cycle_id: str, category: str, token: str, *, expires_at: int | None = None) -> None:
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("INSERT INTO prototype_codes VALUES (?,?,?,?,0)",
                        (self._digest(token), cycle_id, category, expires_at or int(time.time()) + 3600))
 
     def seed_expert(self, principal_id: str, *, enabled: bool = True) -> None:
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("""INSERT INTO expert_permissions VALUES (?,?)
                 ON CONFLICT(principal_id) DO UPDATE SET enabled=excluded.enabled""",
                        (principal_id, int(enabled)))
@@ -184,7 +196,7 @@ class PrototypeStore:
                         principal_id: str, version: str = "2.0.0") -> None:
         if (template_id, version) not in CATALOG:
             raise ValueError("Unknown fixture template")
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("INSERT INTO expert_assessments VALUES (?,?,?,?,'draft',0)",
                        (assessment_id, cycle_id, template_id, version))
             db.execute("INSERT INTO expert_assignments VALUES (?,?)", (assessment_id, principal_id))
@@ -197,14 +209,14 @@ class PrototypeStore:
         return session_id, csrf
 
     def close_cycle(self, cycle_id: str) -> None:
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE prototype_cycles SET status='closed' WHERE id=?", (cycle_id,))
             db.commit()
 
     def submit(self, payload: OfficialSubmission) -> None:
         validate_answers(payload.template_id, payload.version, payload.answers, complete=True)
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 cycle = db.execute("SELECT * FROM prototype_cycles WHERE id=?", (payload.cycle_id,)).fetchone()
@@ -237,7 +249,7 @@ class PrototypeStore:
         return row
 
     def get_expert(self, assessment_id: str, principal_id: str) -> dict:
-        with self._connect() as db:
+        with self._connection() as db:
             row = self._assigned(db, assessment_id, principal_id)
             answers = db.execute("SELECT question_id,option_id FROM expert_answers WHERE assessment_id=? ORDER BY question_id",
                                  (assessment_id,)).fetchall()
@@ -247,7 +259,7 @@ class PrototypeStore:
 
     def update_expert(self, assessment_id: str, principal_id: str, payload: ExpertUpdate) -> int:
         validate_answers(payload.template_id, payload.version, payload.answers, complete=False)
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 row = self._assigned(db, assessment_id, principal_id)
@@ -261,8 +273,8 @@ class PrototypeStore:
                 db.executemany("INSERT INTO expert_answers VALUES (?,?,?)",
                                [(assessment_id, a.question_id, a.option_id) for a in payload.answers])
                 db.execute("UPDATE expert_assessments SET revision=revision+1 WHERE id=?", (assessment_id,))
-                db.execute("INSERT INTO expert_audit_events(assessment_id,actor_id,action) VALUES (?,?,?)",
-                           (assessment_id, principal_id, "answers_updated"))
+                db.execute("INSERT INTO expert_audit_events(assessment_id,actor_id,action,created_at) VALUES (?,?,?,?)",
+                           (assessment_id, principal_id, "answers_updated", int(time.time())))
                 db.commit()
                 return row["revision"] + 1
             except Exception:
@@ -270,7 +282,7 @@ class PrototypeStore:
                 raise
 
     def finalize_expert(self, assessment_id: str, principal_id: str) -> None:
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 row = self._assigned(db, assessment_id, principal_id)
@@ -280,8 +292,8 @@ class PrototypeStore:
                     "SELECT question_id,option_id FROM expert_answers WHERE assessment_id=?", (assessment_id,))]
                 validate_answers(row["template_id"], row["version"], answers, complete=True)
                 db.execute("UPDATE expert_assessments SET status='finalized',revision=revision+1 WHERE id=?", (assessment_id,))
-                db.execute("INSERT INTO expert_audit_events(assessment_id,actor_id,action) VALUES (?,?,?)",
-                           (assessment_id, principal_id, "finalized"))
+                db.execute("INSERT INTO expert_audit_events(assessment_id,actor_id,action,created_at) VALUES (?,?,?,?)",
+                           (assessment_id, principal_id, "finalized", int(time.time())))
                 db.commit()
             except Exception:
                 db.rollback()
