@@ -10,7 +10,8 @@ from sqlalchemy import create_engine, inspect
 from app.database import SessionLocal, engine
 from app.main import app
 from app.migrations import check_schema, migrate
-from app.models import AccessToken, Question, ResponseSet, hash_access_code
+from app.models import AccessToken, AuditEvent, Cycle, Question, ResponseSet, hash_access_code
+from app.routes import assessments as assessments_routes
 
 client = TestClient(app)
 ADMIN = {"X-Role": "admin"}
@@ -88,6 +89,35 @@ def test_close_and_submit_race_preserves_transaction_and_blocks_later_submission
         assert saved == used == (1 if submit_status == 201 else 0)
         assert db.query(AccessToken).filter_by(token_hash=hash_access_code(later)).one().used is False
 
+
+def test_close_between_status_read_and_token_write_issues_nothing(monkeypatch):
+    """Закриття після першого читання статусу, але до запису кодів: 409, жодного коду й аудиту видачі."""
+    cycle_id = new_cycle()
+    original = assessments_routes.get_assessment
+    closed = []
+
+    def read_then_close(assessment_id, db):
+        cycle = original(assessment_id, db)       # issue_tokens бачить status == "open"
+        if not closed:
+            with SessionLocal() as other:          # паралельний admin закриває цикл і фіксує зміну
+                other.get(Cycle, assessment_id).status = "closed"
+                other.commit()
+            closed.append(True)
+        return cycle
+
+    with SessionLocal() as db:
+        issued_before = db.query(AuditEvent).filter_by(assessment_id=cycle_id, action="tokens.issue").count()
+    monkeypatch.setattr(assessments_routes, "get_assessment", read_then_close)
+    response = client.post(f"/api/assessments/{cycle_id}/tokens", headers=DATA_OFFICER,
+                           params={"count": 3, "category": "cadets"})
+    monkeypatch.undo()
+    assert closed and response.status_code == 409
+    assert "tokens" not in response.json()
+    with SessionLocal() as db:
+        assert db.get(Cycle, cycle_id).status == "closed"
+        assert db.query(AccessToken).filter_by(cycle_id=cycle_id).count() == 0
+        assert db.query(AuditEvent).filter_by(assessment_id=cycle_id,
+                                              action="tokens.issue").count() == issued_before == 0
 
 def _snapshot(path):
     with sqlite3.connect(path) as con:

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { getOfficialTemplate, officialTemplates } from './catalog'
+import { getOfficialTemplate, officialTemplates, type OfficialTemplate } from './catalog'
 import { validateOfficialAnswers, type OfficialAnswers } from './validation'
 
 type Mode = 'self' | 'expert'
@@ -9,8 +9,29 @@ export function presentableText(text: string) {
   return text.replace(/\s*Це WIP Preview без серверного збереження\./g, '').replace(/\bpreview\b/gi, 'перегляд')
 }
 
+/** 1.x — часткові версії (піднабір питань); повні версії анкети починаються з 2.0.0. */
+export function isPartialVersion(version: string) {
+  return Number.parseInt(version, 10) < 2
+}
+
+const keyOf = (template: Pick<OfficialTemplate, 'id' | 'version'>) => `${template.id}@${template.version}`
+/** У списку: новіша версія вище, у межах версії — Анкета 1, потім Анкета 2. */
+const newestFirst = (a: OfficialTemplate, b: OfficialTemplate) =>
+  b.version.localeCompare(a.version, undefined, { numeric: true }) || a.id.localeCompare(b.id)
+const fullTemplates = officialTemplates.filter(template => !isPartialVersion(template.version)).sort(newestFirst)
+const partialTemplates = officialTemplates.filter(template => isPartialVersion(template.version)).sort(newestFirst)
+
+/** За замовчуванням — найновіша повна версія першої анкети (зараз 2.1.0), а не частковий 1.0.0. */
+export const defaultTemplateKey = keyOf(
+  fullTemplates.find(template => template.id === officialTemplates[0].id) ?? officialTemplates[0])
+
+/** Кількість питань у повній версії тієї самої анкети — для позначки покриття часткової версії. */
+function fullQuestionCount(id: string) {
+  return fullTemplates.find(template => template.id === id)?.questions.length
+}
+
 export default function OfficialAssessment({ mode }: { mode: Mode }) {
-  const [templateKey, setTemplateKey] = useState(`${officialTemplates[0].id}@${officialTemplates[0].version}`)
+  const [templateKey, setTemplateKey] = useState(defaultTemplateKey)
   const [answers, setAnswers] = useState<OfficialAnswers>({})
   const [index, setIndex] = useState(0)
   const [showErrors, setShowErrors] = useState(false)
@@ -21,6 +42,8 @@ export default function OfficialAssessment({ mode }: { mode: Mode }) {
   if (!template) return <section className="v2-card" role="alert">Версію анкети не знайдено.</section>
 
   const questions = template.questions
+  const partial = isPartialVersion(template.version)
+  const fullCount = fullQuestionCount(template.id)
   const question = questions[index]
   const errors = validateOfficialAnswers(template, answers)
   const answered = questions.length - Object.keys(errors).length
@@ -42,13 +65,21 @@ export default function OfficialAssessment({ mode }: { mode: Mode }) {
 
   return <section className="v2-card official-assessment" aria-label={mode === 'expert' ? 'Експертне оцінювання' : 'Офіційна анкета'}>
     <h2>{mode === 'expert' ? 'Експертне оцінювання — демонстраційний перегляд' : 'Офіційна анкета (Додаток В) — демонстраційний перегляд'}</h2>
-    <p>Джерело: Додаток В, друковані с. 53–66. У PDF: Анкета 1 — 12 питань, Анкета 2 — 10 питань. {Number.parseInt(template.version, 10) >= 2 ? 'Ця версія охоплює всі питання відповідної анкети в адаптованому викладі.' : 'Ця версія охоплює лише піднабір питань.'}</p>
+    <p>Джерело: Додаток В, друковані с. 53–66. У PDF: Анкета 1 — 12 питань, Анкета 2 — 10 питань. {partial ? 'Ця версія охоплює лише піднабір питань.' : 'Ця версія охоплює всі питання відповідної анкети в адаптованому викладі.'}</p>
     <p className="official-demo-note" role="status">У цій версії відповіді не зберігаються на сервері — перегляд призначений для демонстрації структури анкети.</p>
     {mode === 'expert' && <p className="official-demo-note">Окрема роль експерта та сховище експертних оцінок у цій версії не передбачені: адміністратор переглядає структуру експертної анкети.</p>}
     <label htmlFor="official-template">Шаблон і версія</label>
     <select id="official-template" value={templateKey} onChange={event => selectTemplate(event.target.value)}>
-      {officialTemplates.map(item => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{presentableText(item.title)} · v{item.version}</option>)}
+      <optgroup label="Повні версії">
+        {fullTemplates.map(item => <option key={keyOf(item)} value={keyOf(item)}>{presentableText(item.title)} · v{item.version}</option>)}
+      </optgroup>
+      <optgroup label="Часткові версії (1.x)">
+        {partialTemplates.map(item => <option key={keyOf(item)} value={keyOf(item)}>{presentableText(item.title)} · v{item.version} · часткова версія</option>)}
+      </optgroup>
     </select>
+    {partial && <p className="official-partial-note" role="note">
+      <strong>Часткова версія {template.version}</strong>: {questions.length} з {fullCount ?? '?'} питань анкети. Для повного перегляду оберіть версію 2.1.0.
+    </p>}
     <p>{template.audienceNote}</p>
     {template.contentNote && <p>{presentableText(template.contentNote)}</p>}
     {template.sourceUrl && <p><a href={template.sourceUrl} target="_blank" rel="noreferrer">Офіційне джерело (PDF)</a></p>}

@@ -279,6 +279,14 @@ def issue_tokens(assessment_id: BoundedId, request: Request, count: int = Query(
     config = db.get(CycleConfig, assessment_id)
     if config and (category is None or category not in json.loads(config.categories_json)):
         raise HTTPException(422, "Оберіть дозволену категорію для коду")
+    # Повторна перевірка `open` у транзакції запису: умовний UPDATE бере блокування запису SQLite
+    # і перевіряє статус атомарно. Якщо цикл закрили після першого читання — жодного коду й аудиту.
+    still_open = db.execute(
+        update(Cycle).where(Cycle.id == assessment_id, Cycle.status == "open").values(status="open")
+    ).rowcount
+    if still_open != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Оцінювання закрите")
     tokens = [secrets.token_hex(16) for _ in range(count)]
     rows = [AccessToken(cycle_id=assessment_id, token_hash=hash_access_code(t), used=False) for t in tokens]
     db.add_all(rows)
