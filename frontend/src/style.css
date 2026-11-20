@@ -15,7 +15,7 @@
   --canvas: #f3f6f4;
 }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
+body { margin: 0; }
 button, select { font: inherit; }
 .page { width: min(100% - 3rem, 1160px); margin: 0 auto; padding: clamp(2rem, 5vw, 4.25rem) 0 5rem; }
 .page-header { max-width: 800px; padding-bottom: .5rem; }

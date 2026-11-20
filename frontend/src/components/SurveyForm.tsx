@@ -36,6 +36,7 @@ export default function SurveyForm({ assessmentId, questionnaire, units, version
   const [submissionError, setSubmissionError] = useState('')
   const questions = questionnaire.flatMap(component => component.questions)
   const invalidQuestion = questions.find(question => !isValidAnswer(question, selected[question.id]))
+  const answeredCount = questions.filter(question => isValidAnswer(question, selected[question.id])).length
   const locked = outcome !== 'editing'
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -79,7 +80,15 @@ export default function SurveyForm({ assessmentId, questionnaire, units, version
 
   return (
     <form className="survey-api-form" onSubmit={handleSubmit} noValidate>
-      <p>Оберіть категорію й підрозділ, введіть одноразовий код та дайте одну відповідь на кожне питання.</p>
+      <div className="survey-form-heading">
+        <div><p className="survey-eyebrow">Крок 2 з 2</p><h2>Відповіді на запитання</h2><p>Усі поля анкети заповнюються за даними вибраного циклу.</p></div>
+        <span className="survey-answer-count">{answeredCount} із {questions.length}</span>
+      </div>
+      <div className="survey-progress" aria-label={`Заповнено ${answeredCount} із ${questions.length} запитань`}>
+        <div><span>Заповнення анкети</span><strong>{questions.length ? Math.round(answeredCount / questions.length * 100) : 0}%</strong></div>
+        <progress max={Math.max(questions.length, 1)} value={answeredCount} />
+      </div>
+      <p className="survey-form-intro">Укажіть категорію, підрозділ та одноразовий код. Потім виберіть одну відповідь для кожного запитання.</p>
       <div className="survey-api-fields">
         <div>
           <label htmlFor={`${formId}-category`}>Категорія респондента</label>
@@ -118,7 +127,7 @@ export default function SurveyForm({ assessmentId, questionnaire, units, version
             const values = Array.from({ length: Math.max(0, question.scale[1] - question.scale[0] + 1) }, (_, index) => question.scale[0] + index)
             return (
               <fieldset key={question.id} className="survey-api-question" aria-invalid={invalid}>
-                <legend>{question.text}</legend>
+                <legend><span className="survey-question-number">Запитання {questions.findIndex(item => item.id === question.id) + 1}</span>{question.text}</legend>
                 <div className="survey-api-options">
                   {values.map((value, index) => (
                     <label key={value}>

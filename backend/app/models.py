@@ -194,6 +194,40 @@ class Recommendation(Base):
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)          # строк
 
 
+class RecommendationAction(Base):
+    """
+    Recommendations Tracker: рішення посадової особи щодо пропозиції і контроль виконання.
+
+    Пропозиції генеруються детерміновано й не зберігаються; тут — лише ухвалене людиною
+    рішення (прийнято / відхилено) зі знімком тексту, взятим із серверної пропозиції.
+    Одне рішення на пропозицію в циклі (унікальність перевіряє сама база).
+
+    Персональних даних немає: відповідальний — посада чи підрозділ (не ПІБ),
+    в історії — роль того, хто змінив статус, а не ім'я.
+    """
+    __tablename__ = "recommendation_actions"
+    __table_args__ = (UniqueConstraint("assessment_id", "recommendation_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assessment_id: Mapped[int] = mapped_column(ForeignKey("cycles.id"))
+    recommendation_id: Mapped[str] = mapped_column(String(64))       # відбиток пропозиції (fingerprint)
+    rule_id: Mapped[str] = mapped_column(String(50))
+    component_code: Mapped[str] = mapped_column(String(10))
+    text: Mapped[str] = mapped_column(Text)                          # знімок тексту пропозиції
+    methodology_version: Mapped[str] = mapped_column(String(50))
+    # accepted / rejected / in_progress / completed / verified (автомат у services/tracker.py)
+    status: Mapped[str] = mapped_column(String(20))
+    owner: Mapped[str | None] = mapped_column(String(120), nullable=True)   # посада/підрозділ, не ПІБ
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    decision_reason: Mapped[str] = mapped_column(Text)
+    evidence_refs_json: Mapped[str] = mapped_column(Text, default="[]")     # JSON-список посилань на докази
+    # пізніше закрите оцінювання, яке перевірило результат (для статусу verified)
+    verified_in_assessment_id: Mapped[int | None] = mapped_column(ForeignKey("cycles.id"), nullable=True)
+    history_json: Mapped[str] = mapped_column(Text, default="[]")           # JSON: from/to/reason/at/роль
+    created_at: Mapped[datetime] = mapped_column(DateTime)                  # час сервера (UTC)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 # ---------------------------------------------------------------------------
 # 6. ЖУРНАЛ ДІЙ (Audit Trail)
 # ---------------------------------------------------------------------------

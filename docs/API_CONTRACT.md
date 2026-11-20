@@ -25,9 +25,9 @@
 | Executive Dashboard | `GET /api/assessments/{assessment_id}/dashboard` | `DashboardSummary` | Заплановано |
 | Comparative Analytics | `GET /api/analytics/comparisons` | `Comparison` | Реалізовано у пропозиції №4, synthetic opt-in |
 | Recommendations Engine | `GET /api/assessments/{assessment_id}/recommendations` | `RecommendationProposal` | Реалізовано у пропозиції №4, GET лише пропонує |
-| Recommendations Tracker | `GET /api/recommendations`; `PATCH /api/recommendations/{recommendation_id}` | `TrackedRecommendation` | Заплановано |
+| Recommendations Tracker | `GET /api/assessments/{assessment_id}/tracker`; `POST /api/assessments/{assessment_id}/tracker/decisions`; `POST /api/tracker/{action_id}/transition` | `TrackedRecommendation` | Реалізовано (розділ «Recommendations Tracker» нижче) |
 | Audit Trail | `GET /api/audit-events` | `AuditEvent` | Реалізовано (backend-audit) |
-| Reporting Module | `GET /api/assessments/{assessment_id}/reports`; `GET /api/reports/{report_id}/export` | `Report`, файл експорту | Заплановано |
+| Reporting Module V2 | `GET /v2/admin/reports/{id}`; `GET /v2/admin/reports/{id}/export?format=pdf\|xlsx` | Дозволені агрегати, PDF або XLSX | Локальна реалізація V2, [контракт](V2_INTEGRATION_CONTRACT.md#33-analytics-формати-без-змін) |
 
 Шляхи зі статусом «Заплановано» є пропозицією для обговорення. Жоден з них зараз не повинен вважатися доступним API. Зовнішні інтеграції та формат експорту команда визначить окремо.
 
@@ -278,6 +278,22 @@ curl -H 'X-Role: manager' 'http://127.0.0.1:8000/api/assessments/1/index?methodo
 
 Фактичні показники повертаються окремим context_only. Непідтверджене значення — null; навіть підтверджені не віднімаються від бала зрілості, бо `/results` не надає погоджених metric_id, одиниць та посилань на докази. Індекс фактами не коригується.
 
-Детерміновані GET-маршрути не записують пропозиції у recommendations, не приймають їх і не призначають строки. Доменний Tracker у services/tracker.py вимагає явного людського рішення; збереження історії й майбутній PATCH-маршрут — окремий інтеграційний крок. Наявні seed-статуси done/overdue не змінюються автоматично.
+Детерміновані GET-маршрути не записують пропозиції у recommendations, не приймають їх і не призначають строки. Рішення посадової особи й історію заходів зберігає окремий Tracker (розділ «Recommendations Tracker» нижче) у таблиці `recommendation_actions`; застаріла seed-таблиця recommendations зі статусами done/overdue ним не використовується й автоматично не змінюється.
 
 Tracker порівнює ID циклів після приведення числа та його десяткового рядка до одного значення і відхиляє перевірку тією ж оцінкою. Він **не перевіряє хронологію циклів**: числовий порядок ID не гарантує часовий порядок. Перед реальним статусом `verified` інтеграційний сервіс має окремо перевірити дати та незмінну версію оцінювання в БД.
+
+## Recommendations Tracker
+
+Рішення щодо рекомендацій ухвалює посадова особа, а не система. Пропозиції не зберігаються: сервер щоразу заново формує їх правилами `team-results-demo-0.1` і приймає рішення лише щодо `recommendation_id`, який є серед актуальних пропозицій закритого циклу. Текст, правило й компонент бере сервер, а не клієнт. Заходи зберігаються в таблиці `recommendation_actions` (схема БД версії 4). Відповідальним вказують посаду або підрозділ, не ПІБ і не контакти. Кожна зміна записується в журнал дій (`tracker.accepted`, `tracker.rejected`, `tracker.in_progress`, `tracker.completed`, `tracker.verified`) лише з роллю й циклом.
+
+| Метод | Маршрут | Доступ | Призначення |
+|---|---|---|---|
+| GET | `/api/assessments/{id}/tracker` | ролі аналітики | Заходи циклу, історія рішень, дозволені переходи, підсумок і ознака прострочення |
+| POST | `/api/assessments/{id}/tracker/decisions` | admin, сесія + CSRF, `INTEGRITY_ANALYTICS_DEMO=1` | Прийняти або відхилити пропозицію |
+| POST | `/api/tracker/{action_id}/transition` | admin, сесія + CSRF | Змінити статус прийнятого заходу |
+
+Тіло рішення: `{recommendation_id, decision: accepted|rejected, owner?, due_date?, reason}`. Для `accepted` потрібні `owner` (3–120 символів, посада чи підрозділ) і `due_date` (РРРР-ММ-ДД, не раніше сьогодні й не далі ніж за 5 років); для `rejected` вони заборонені. `reason` обов'язкове (до 1000 символів). Відповіді: 201 — створено захід; 404 — циклу немає або пропозиції немає серед актуальних; 409 — цикл відкритий або рішення щодо пропозиції вже ухвалено; 422 — дані не пройшли перевірку; 503 — аналітичний демо-режим вимкнено.
+
+Тіло переходу: `{status: in_progress|completed|verified, reason, evidence_refs?, verified_in_assessment_id?}`. Дозволені переходи: прийнято → в роботі → виконано → перевірено; з «виконано» можна повернути «в роботу». Для «виконано» й «перевірено» потрібні посилання на докази (до 10, кожне до 200 символів). «Перевірено» вказує пізніше закрите оцінювання з тією самою версією анкети: результат заходу перевіряє наступний цикл. Відповіді: 200 — оновлений захід; 404 — заходу немає; 409 — перехід недозволений або захід щойно змінено іншим запитом; 422 — дані не пройшли перевірку.
+
+Прострочення не є окремим статусом: захід прострочений, якщо строк минув, а статус не «виконано» чи «перевірено».

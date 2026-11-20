@@ -27,7 +27,11 @@ ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "ass
                    "auth.login",          # успішний вхід після 2FA: лише роль, без email і пароля
                    "auth.logout", "auth.logout_all", "auth.password_reset", "auth.2fa_lockout",
                    "user.role_change", "user.sessions_revoke",   # docs/V2_HARDENING_CONTRACT.md, розділ 4
-                   "user.create_admin"}   # створення адміністратора CLI-командою
+                   "user.create_admin",   # створення адміністратора CLI-командою
+                   # Recommendations Tracker: рішення посадової особи і зміни статусу
+                   # (лише роль і цикл; відповідальний, обґрунтування й докази — не в журналі)
+                   "tracker.accepted", "tracker.rejected", "tracker.in_progress",
+                   "tracker.completed", "tracker.verified"}
 # Роль auditor не вводиться до рішення №5 — журнал бачить лише admin (S12)
 AUDIT_ROLES = ("admin",)
 

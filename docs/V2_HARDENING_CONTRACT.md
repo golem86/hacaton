@@ -1,7 +1,7 @@
-# V2 Hardening — спільний контракт змін (auth schema 2, integrity schema 4)
+# V2 Hardening — спільний контракт змін (auth schema 2, integrity schema 5)
 
 Статус: робочий контракт для паралельних потоків виправлень за аудитом backend 20.11.2026.
-База: `feature/integration` після коміту «синхронізувати Git зі станом сервера TLSFIX5».
+База: `feature/integration` = стан сервера TLSFIX5 + злиття `integration/main-final` (frontend, Recommendations Tracker, звіти PDF/XLSX).
 Після інтеграції зміст переноситься в `docs/API_CONTRACT.md`. Потоки самі `API_CONTRACT.md` не редагують.
 
 ## 1. Ролі
@@ -25,11 +25,12 @@
 - Міграція 1→2 виконується лише явно: `python -m app.migrations --apply --confirm-verified-backup`. `init_auth_db()` та bootstrap у release існуючу БД не мігрують.
 - Захист від майбутньої схеми: версія > 2 → відмова без змін.
 
-### INTEGRITY_DB → `user_version = 4`
-- `access_tokens.token` → `access_tokens.token_hash` (SHA-256 hex коду). Наявні коди хешуються під час міграції 3→4.
+### INTEGRITY_DB → `user_version = 5`
+- Версія 4 уже зайнята гілкою `integration/main-final` (таблиця `recommendation_actions`, Recommendations Tracker, створюється через create_all). Посилення — це крок 4→5; ланцюжок 0→1→2→3→4→5 має працювати.
+- `access_tokens.token` → `access_tokens.token_hash` (SHA-256 hex коду). Наявні коди хешуються під час міграції 4→5.
 - `audit_events.actor_user_id INTEGER NULL` (id з V2_AUTH_DB, без email та імені).
 - Нова таблиця `instance_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)`. Seed пише `('dataset','synthetic')`.
-- Міграція 3→4: резервна копія, одна транзакція, перевірки кількості рядків, FK та integrity, відкат при помилці.
+- Міграція 4→5: резервна копія, одна транзакція, перевірки кількості рядків, FK та integrity, відкат при помилці.
 
 ## 3. API
 
@@ -106,3 +107,10 @@
 - Модулі bootstrap не розгортаються в `app\`.
 - Каталоги покинутої спроби та TLS-staging: доступ лише для Administrators і SYSTEM (без видалення).
 - Секрети лишаються в XML служби із суворим ACL; додається процедура ротації. Обґрунтування відмови від DPAPI — у документації інсталятора.
+
+## 6. Recommendations Tracker і звіти (з `integration/main-final`)
+- `GET /api/assessments/{id}/tracker` — ролі аналітики (admin). Зміни `POST …/tracker/decisions` і `POST /api/tracker/{action_id}/transition` — лише admin + CSRF (як і раніше).
+- Цілі параметри шляху цих маршрутів також обмежуються `1..2^63-1` (потік даних).
+- Події трекера в журналі передають `actor_user_id`, якщо principal — сесія.
+- `GET /v2/admin/reports/{id}/export?format=pdf|xlsx` — admin (потік auth зберігає цю поведінку під час змін `v2_admin.py`).
+- Нові залежності backend: `reportlab==5.1.0`, `xlsxwriter==3.3.3`. Їх треба встановити у venv сервера з перевіреними хешами.

@@ -9,8 +9,12 @@
   0 — попередня версія (підрозділ — довільний текст, без унікальності відповідей);
   1 — довідник units, response_sets.unit → units.name,
       answers унікальні за (response_set_id, question_id).
-  2 — поточна: додано таблицю журналу дій audit_events. Зміна лише додає нову
+  2 — додано таблицю журналу дій audit_events. Зміна лише додає нову
       таблицю (наявні не змінюються), тому виконується через create_all без перебудови.
+  3 — додано cycle_configs і access_token_policies (Assessment Manager).
+  4 — поточна: додано recommendation_actions (Recommendations Tracker: рішення
+      посадової особи, відповідальний, строк, статус, історія). Як і для версій 2–3:
+      лише нова таблиця, тож резервна копія + create_all без перебудови наявних.
 
 Що робить migrate() для старої бази:
   1. Робить резервну копію файлу бази (integrity.backup-<дата-час>.db).
@@ -30,7 +34,7 @@ from sqlalchemy.schema import CreateTable
 from .database import Base
 from .models import Answer, ResponseSet, Unit
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class MigrationError(RuntimeError):

@@ -1,4 +1,7 @@
 """Персональний контур V2: власник лише з сесії, CSRF, незмінність завершених спроб, Reporting."""
+from io import BytesIO
+from zipfile import ZipFile
+
 from v2_helpers import login, make_user
 
 ALL_ANSWERS = {f"q{i}": 3 for i in range(1, 8)}
@@ -39,9 +42,25 @@ def test_admin_report_exposes_only_allowed_aggregates():
     client, _ = login(make_user("admin"))
     report = client.get("/v2/admin/reports/1")
     assert report.status_code == 200
+    assert report.headers["cache-control"] == "no-store"
     assert report.json()["official_index"] is None
-    assert report.json()["exports"] == {"pdf": "unavailable", "xlsx": "unavailable"}
-    assert client.get("/v2/admin/reports/1/export?format=pdf").status_code == 501
+    assert report.json()["aggregates"] == client.get("/api/assessments/1/results").json()
+    assert report.json()["exports"] == {"pdf": "available", "xlsx": "available"}
+    for format, media_type, signature in (
+        ("pdf", "application/pdf", b"%PDF"),
+        ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b"PK"),
+    ):
+        file = client.get(f"/v2/admin/reports/1/export?format={format}")
+        assert file.status_code == 200
+        assert file.headers["content-type"] == media_type
+        assert file.headers["content-disposition"] == f'attachment; filename="integrity-report-1.{format}"'
+        assert file.headers["cache-control"] == "no-store"
+        assert file.content.startswith(signature)
+        if format == "xlsx":
+            with ZipFile(BytesIO(file.content)) as xlsx:
+                assert xlsx.testzip() is None
+                strings = xlsx.read("xl/sharedStrings.xml").decode()
+                assert "Бали компонентів" in strings and "Приховано" in strings
 
 
 def test_prototype_duplicate_admin_routes_are_removed():

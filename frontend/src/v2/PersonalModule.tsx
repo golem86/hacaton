@@ -11,7 +11,7 @@ import {
   type PersonalStats,
 } from '../api/v2User'
 
-export type PersonalView = 'profile' | 'available' | 'attempt' | 'history' | 'stats'
+export type PersonalView = 'profile' | 'available' | 'attempt' | 'history' | 'stats' | 'unit-results'
 
 interface Props {
   view: PersonalView
@@ -27,6 +27,23 @@ function formatDate(value: string) {
 
 function formatDeadline(value: string) {
   return new Intl.DateTimeFormat('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+}
+
+/** Порядковий номер тестування у списку: 01, 02, …, 10, 11. */
+export function formatTestNumber(index: number) {
+  return String(index + 1).padStart(2, '0')
+}
+
+/** Середня відповідь з одним знаком після коми за українським форматом (3,5). */
+export function formatAverage(value: number | null | undefined) {
+  return value == null ? '—' : value.toLocaleString('uk-UA', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+}
+
+const pluralRules = new Intl.PluralRules('uk-UA')
+
+export function recordsLabel(count: number) {
+  const form = pluralRules.select(count)
+  return `${count} ${form === 'one' ? 'запис' : form === 'many' ? 'записів' : 'записи'}`
 }
 
 function averageAnswer(attempt: PersonalAttempt): number | null {
@@ -60,6 +77,11 @@ export function PersonalModule({ view, userName, onStart, onFinish }: Props) {
   const [retry, setRetry] = useState(0)
 
   useEffect(() => {
+    if (view === 'unit-results') {
+      setLoading(false)
+      setError('')
+      return
+    }
     const controller = new AbortController()
     setLoading(true)
     setError('')
@@ -75,7 +97,7 @@ export function PersonalModule({ view, userName, onStart, onFinish }: Props) {
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [retry])
+  }, [retry, view])
 
   const activeAssessment = activeAttempt ? assessments.find((assessment) => assessment.id === activeAttempt.assessment_id) : null
   const questions = activeAssessment?.questions ?? []
@@ -145,7 +167,7 @@ export function PersonalModule({ view, userName, onStart, onFinish }: Props) {
   }
 
   if (view === 'available') {
-    return <section className="v2-card"><div className="v2-section-heading"><div><p className="v2-overline">Особисті тестування</p><h2>Доступні тестування</h2></div><span className="v2-pill">Особистий простір</span></div><div className="v2-test-list">{assessments.map((assessment, index) => { const draft = attempts.find((attempt) => attempt.assessment_id === assessment.id && attempt.status === 'draft'); return <article className="v2-test-item" key={assessment.id}><div><span className="v2-test-number">0{index + 1}</span><h3>{assessment.name}</h3><p className="v2-muted">{assessment.duration}</p><p className="v2-deadline">{assessment.status === 'open' ? `Доступне до ${formatDeadline(assessment.closes_at)}` : `Недоступне · період ${formatDeadline(assessment.opens_at)} — ${formatDeadline(assessment.closes_at)}`}</p></div><button className="v2-button" disabled={assessment.status !== 'open'} type="button" onClick={() => void startAttempt(assessment.id)}>{draft ? 'Продовжити' : assessment.status === 'open' ? 'Розпочати' : 'Недоступне'}</button></article> })}</div></section>
+    return <section className="v2-card"><div className="v2-section-heading"><div><p className="v2-overline">Особисті тестування</p><h2>Доступні тестування</h2></div><span className="v2-pill">Особистий простір</span></div><div className="v2-test-list">{assessments.map((assessment, index) => { const draft = attempts.find((attempt) => attempt.assessment_id === assessment.id && attempt.status === 'draft'); return <article className="v2-test-item" key={assessment.id}><div><span className="v2-test-number">{formatTestNumber(index)}</span><h3>{assessment.name}</h3><p className="v2-muted">{assessment.duration}</p><p className="v2-deadline">{assessment.status === 'open' ? `Доступне до ${formatDeadline(assessment.closes_at)}` : `Недоступне · період ${formatDeadline(assessment.opens_at)} — ${formatDeadline(assessment.closes_at)}`}</p></div><button className="v2-button" disabled={assessment.status !== 'open'} type="button" onClick={() => void startAttempt(assessment.id)}>{draft ? 'Продовжити' : assessment.status === 'open' ? 'Розпочати' : 'Недоступне'}</button></article> })}</div></section>
   }
 
   if (view === 'attempt') {
@@ -156,11 +178,19 @@ export function PersonalModule({ view, userName, onStart, onFinish }: Props) {
 
   if (view === 'history') {
     const completed = attempts.filter((attempt) => attempt.status === 'completed')
-    return <section className="v2-card"><div className="v2-section-heading"><div><p className="v2-overline">Історія проходжень</p><h2>Завершені проходження</h2></div><span className="v2-pill">{completed.length} записів</span></div>{completed.length ? <div className="v2-history-list">{completed.map((attempt) => <article className="v2-history-item" key={attempt.id}><div><strong>{attempt.assessment_name}</strong><p className="v2-muted">{attempt.completed_at ? formatDate(attempt.completed_at) : 'Чернетка'}</p></div><span className="v2-score-chip">{averageAnswer(attempt)?.toFixed(1) ?? '—'} / 5</span></article>)}</div> : <div className="v2-empty"><strong>Історія поки порожня</strong><p className="v2-muted">Завершіть тестування, щоб побачити запис.</p></div>}</section>
+    return <section className="v2-card"><div className="v2-section-heading"><div><p className="v2-overline">Історія проходжень</p><h2>Завершені проходження</h2></div><span className="v2-pill">{recordsLabel(completed.length)}</span></div>{completed.length ? <div className="v2-history-list">{completed.map((attempt) => <article className="v2-history-item" key={attempt.id}><div><strong>{attempt.assessment_name}</strong><p className="v2-muted">{attempt.completed_at ? formatDate(attempt.completed_at) : 'Чернетка'}</p></div><span className="v2-score-chip">{formatAverage(averageAnswer(attempt))} / 5</span></article>)}</div> : <div className="v2-empty"><strong>Історія поки порожня</strong><p className="v2-muted">Завершіть тестування, щоб побачити запис.</p></div>}</section>
   }
 
   if (view === 'stats') {
-    return <section className="v2-card"><div className="v2-section-heading"><div><p className="v2-overline">Персональна статистика</p><h2>Персональний прогрес</h2></div><span className="v2-pill">Без Integrity Index</span></div><div className="v2-stat-grid"><div><span>Завершено тестів</span><strong>{stats?.completed_tests ?? 0}</strong></div><div><span>Відповідей</span><strong>{stats?.responses_total ?? 0}</strong></div><div><span>Середня відповідь</span><strong>{stats?.average_response?.toFixed(1) ?? '—'}<small> / 5</small></strong></div></div><p className="v2-muted">Показано лише фактичні відповіді та прогрес. Офіційний індекс доброчесності не розраховується без затвердженої методики.</p>{latest && <div className="v2-component-mini">{(assessments.find((assessment) => assessment.id === latest.assessment_id)?.questions ?? []).map((question) => <div key={question.id}><span>{question.component}</span><div className="v2-mini-track"><i style={{ width: `${(latest.answers[question.id] ?? 0) * 20}%` }} /></div><strong>{latest.answers[question.id] ?? '—'}</strong></div>)}</div>}</section>
+    return <section className="v2-card"><div className="v2-section-heading"><div><p className="v2-overline">Персональна статистика</p><h2>Персональний прогрес</h2></div><span className="v2-pill">Без індексу доброчесності</span></div><div className="v2-stat-grid"><div><span>Завершено тестів</span><strong>{stats?.completed_tests ?? 0}</strong></div><div><span>Відповідей</span><strong>{stats?.responses_total ?? 0}</strong></div><div><span>Середня відповідь</span><strong>{formatAverage(stats?.average_response)}<small> / 5</small></strong></div></div><p className="v2-muted">Показано лише фактичні відповіді та прогрес. Офіційний індекс доброчесності не розраховується без затвердженої методики.</p>{latest && <div className="v2-component-mini">{(assessments.find((assessment) => assessment.id === latest.assessment_id)?.questions ?? []).map((question) => <div key={question.id}><span>{question.component}</span><div className="v2-mini-track"><i style={{ width: `${(latest.answers[question.id] ?? 0) * 20}%` }} /></div><strong>{latest.answers[question.id] ?? '—'}</strong></div>)}</div>}</section>
+  }
+
+  if (view === 'unit-results') {
+    return <section className="v2-card v2-unit-results-blocked" aria-labelledby="unit-results-heading">
+      <div className="v2-section-heading"><div><p className="v2-overline">Захищені агрегати</p><h2 id="unit-results-heading">Результати підрозділу</h2></div><span className="v2-pill v2-pill-warm">Очікує погодження</span></div>
+      <div className="v2-blocked-banner" role="status"><strong>Функція наразі заблокована</strong><p>Сервер поки не надає користувачу підтверджений підрозділ і захищені агреговані результати підрозділу. Цей екран не завантажує та не показує організаційні, персональні чи індивідуальні відповіді.</p></div>
+      <p className="v2-muted">Потрібне окреме погодження контракту №5 і серверна перевірка ролі, членства в підрозділі та мінімального розміру групи.</p>
+    </section>
   }
 
   return <section className="v2-content-grid"><div className="v2-card v2-welcome-card"><p className="v2-overline">Особистий кабінет</p><h2>Контролюйте власний прогрес</h2><p className="v2-muted">Проходьте персональні тестування, зберігайте чернетки та переглядайте власну історію у захищеному персональному сховищі.</p><div className="v2-card-actions"><button className="v2-button v2-button-primary" type="button" onClick={() => void startAttempt(assessments[0]?.id)}>Розпочати тестування</button><span className="v2-muted">{activeAttempt ? 'Є збережена чернетка' : 'Чернеток немає'}</span></div></div><div className="v2-card"><p className="v2-overline">Швидкий огляд</p><div className="v2-stat-grid v2-stat-grid-compact"><div><span>Прогрес</span><strong>{activeAttempt ? `${Math.round((answered / (questions.length || 1)) * 100)}%` : '—'}</strong></div><div><span>Історія</span><strong>{attempts.filter((attempt) => attempt.status === 'completed').length}</strong></div></div><p className="v2-muted">{notice || 'Оберіть розділ у меню, щоб продовжити.'}</p></div></section>
