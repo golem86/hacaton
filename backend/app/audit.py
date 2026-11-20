@@ -25,6 +25,8 @@ ALLOWED_DETAILS: dict[str, type] = {"count": int}
 # Дозволені дії журналу
 ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "assessment.activate",
                    "auth.login",          # успішний вхід після 2FA: лише роль, без email і пароля
+                   "auth.logout", "auth.logout_all", "auth.password_reset", "auth.2fa_lockout",
+                   "user.role_change", "user.sessions_revoke",   # docs/V2_HARDENING_CONTRACT.md, розділ 4
                    "user.create_admin"}   # створення адміністратора CLI-командою
 # Роль auditor не вводиться до рішення №5 — журнал бачить лише admin (S12)
 AUDIT_ROLES = ("admin",)
@@ -43,8 +45,12 @@ def _validate(action: str, details: dict) -> None:
 
 
 def record(db: Session, actor_role: str, action: str, assessment_id: int | None = None,
-           **details) -> None:
-    """Додає запис у поточну транзакцію. Зберігається разом із db.commit() самої дії."""
+           actor_user_id: int | None = None, **details) -> None:
+    """
+    Додає запис у поточну транзакцію. Зберігається разом із db.commit() самої дії.
+    actor_user_id — id користувача V2_AUTH_DB (без email та імені). ТИМЧАСОВО приймається,
+    але не зберігається: колонку audit_events.actor_user_id додає міграція schema 4 (потік даних).
+    """
     _validate(action, details)
     db.add(AuditEvent(created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                       actor_role=actor_role, action=action, assessment_id=assessment_id,
