@@ -126,14 +126,17 @@ def test_mig1_release_does_not_migrate_old_integrity_db(tmp_path, monkeypatch):
 
 
 def test_mig1_explicit_migration_requires_confirmed_backup(tmp_path):
-    env = {**os.environ, "INTEGRITY_DB": str(tmp_path / "i.db"), "V2_AUTH_DB": str(tmp_path / "a.db")}
+    # Дочірній процес пише UTF-8 незалежно від кодової сторінки консолі (cp866/cp1251 у Windows)
+    env = {**os.environ, "INTEGRITY_DB": str(tmp_path / "i.db"), "V2_AUTH_DB": str(tmp_path / "a.db"),
+           "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     backend = Path(__file__).resolve().parents[1]
-    refused = subprocess.run([sys.executable, "-m", "app.migrations", "--apply"], cwd=backend, env=env,
+    refused = subprocess.run([sys.executable, "-X", "utf8", "-m", "app.migrations", "--apply"], cwd=backend, env=env,
                              capture_output=True, text=True, encoding="utf-8")
     assert refused.returncode != 0 and "--confirm-verified-backup" in (refused.stdout + refused.stderr)
     assert not (tmp_path / "i.db").exists() or (tmp_path / "i.db").stat().st_size == 0
-    applied = subprocess.run([sys.executable, "-m", "app.migrations", "--apply", "--confirm-verified-backup"],
+    applied = subprocess.run([sys.executable, "-X", "utf8", "-m", "app.migrations", "--apply",
+                              "--confirm-verified-backup"],
                              cwd=backend, env=env, capture_output=True, text=True, encoding="utf-8")
     assert applied.returncode == 0, applied.stderr
     with sqlite3.connect(tmp_path / "i.db") as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 5

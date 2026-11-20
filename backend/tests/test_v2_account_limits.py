@@ -106,6 +106,7 @@ def test_reset_confirm_is_atomic_and_revokes_everything():
         event = db.query(AuditEvent).filter(AuditEvent.action == "auth.password_reset") \
             .order_by(AuditEvent.id.desc()).first()
     assert event.actor_role == "user" and event.details == "{}" and "@" not in event.details
+    assert event.actor_user_id == user_id
 
 
 @pytest.mark.parametrize("existing", [True, False])

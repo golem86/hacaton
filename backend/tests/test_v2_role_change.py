@@ -79,6 +79,7 @@ def test_role_change_revokes_all_target_sessions_codes_and_is_journaled():
     events = audit_events("user.role_change")
     assert len(events) == events_before + 1
     assert events[-1].actor_role == "admin" and events[-1].details == "{}"
+    assert events[-1].actor_user_id == actor_id                         # id актора, без email цілі
 
 
 def test_pending_verify_after_role_change_gets_no_session():
@@ -236,6 +237,7 @@ def test_admin_revokes_all_sessions_of_a_user():
     assert authenticate(target_email, PASSWORD)["role"] == "user"        # роль не змінено
     events = audit_events("user.sessions_revoke")
     assert len(events) == before + 1 and events[-1].details == '{"count": 2}'
+    assert events[-1].actor_user_id == actor_id
     assert admin.post(f"/v2/admin/users/{target_id}/revoke-sessions", headers=csrf).json() == {"revoked": 0}
     assert admin.post(f"/v2/admin/users/{MAX_ID}/revoke-sessions", headers=csrf).status_code == 404
     assert admin.post(f"/v2/admin/users/{MAX_ID + 1}/revoke-sessions", headers=csrf).status_code == 422
@@ -260,11 +262,12 @@ def test_logout_all_ends_every_session_of_the_user():
     assert query("SELECT COUNT(*) FROM v2_sessions WHERE user_id = ?", find_user_id(email)) == [(0,)]
     events = audit_events("auth.logout_all")
     assert len(events) == before + 1 and events[-1].actor_role == "user" and events[-1].details == '{"count": 3}'
+    assert events[-1].actor_user_id == find_user_id(email)
 
 
 # --- Перегляд користувачів і журналу змін ролей ------------------------------------------------------------
 
-def test_users_list_masks_emails_and_exact_lookup_returns_one():
+def test_users_list_masks_emails_and_ignores_email_query():
     admin, _, _ = admin_session()
     email = make_user()
     listing = admin.get("/v2/admin/users")
@@ -274,13 +277,29 @@ def test_users_list_masks_emails_and_exact_lookup_returns_one():
     assert all(set(row) == {"id", "name", "role", "email_masked", "created_at"} for row in rows)
     assert all(row["email_masked"].count("***") == 2 for row in rows)
     assert not any(email in str(row) for row in rows)
-    exact = admin.get("/v2/admin/users", params={"email": email.upper()})
-    assert exact.status_code == 200
-    assert exact.json() == {"id": find_user_id(email), "name": "Test user", "email": email, "role": "user",
-                            "created_at": exact.json()["created_at"]}
-    assert admin.get("/v2/admin/users", params={"email": email.split("@")[1]}).status_code == 404      # не пошук
-    assert admin.get("/v2/admin/users", params={"email": new_email()}).status_code == 404
-    assert admin.get("/v2/admin/users", params={"email": ""}).status_code == 422
+    filtered = admin.get("/v2/admin/users", params={"email": email})      # email у URL не підтримується
+    assert filtered.status_code == 200 and filtered.json() == rows and email not in filtered.text
+
+
+def test_exact_lookup_takes_email_from_body_only():
+    admin, csrf, _ = admin_session()
+    email = make_user()
+    lookup = admin.post("/v2/admin/users/lookup", headers=csrf, json={"email": email.upper()})
+    assert lookup.status_code == 200 and lookup.headers["cache-control"] == "no-store"
+    assert lookup.json() == {"id": find_user_id(email), "name": "Test user", "email": email, "role": "user",
+                             "created_at": lookup.json()["created_at"]}
+    assert admin.post("/v2/admin/users/lookup", headers=csrf,
+                      json={"email": email.split("@")[1]}).status_code == 404                        # не пошук
+    assert admin.post("/v2/admin/users/lookup", headers=csrf, json={"email": new_email()}).status_code == 404
+    assert admin.post("/v2/admin/users/lookup", headers=csrf, json={"email": ""}).status_code == 422
+    assert admin.post("/v2/admin/users/lookup", headers=csrf,
+                      json={"email": email, "role": "admin"}).status_code == 422                     # forbid
+    assert admin.post("/v2/admin/users/lookup", json={"email": email}).status_code == 403            # CSRF
+    assert admin.post("/v2/admin/users/lookup", json={"email": email},
+                      headers={**csrf, "Origin": "https://evil.example"}).status_code == 403          # Origin
+    user, user_csrf = login(make_user())
+    assert user.post("/v2/admin/users/lookup", headers=user_csrf, json={"email": email}).status_code == 403
+    assert TestClient(app).post("/v2/admin/users/lookup", json={"email": email}).status_code == 401
 
 
 def test_role_changes_listing_is_admin_only_and_bounded():

@@ -51,6 +51,7 @@ EXPECTED_CSRF = {
     ("POST", "/v2/auth/2fa/resend"): "session",
     ("POST", "/v2/auth/logout"): "session",
     ("POST", "/v2/auth/logout-all"): "session",                          # docs/V2_HARDENING_CONTRACT.md, розділ 3
+    ("POST", "/v2/admin/users/lookup"): "session",                      # email у тілі, не в URL
     ("POST", "/v2/admin/users/{user_id}/role"): "session",
     ("POST", "/v2/admin/users/{user_id}/revoke-sessions"): "session",
     ("POST", "/v2/user/attempts"): "session",
@@ -174,7 +175,9 @@ def test_operations_marked_csrf_really_reject_requests_without_token(method, pat
     if path.startswith("/v2/auth/"):
         client = TestClient(app)
     else:
-        client, _ = login(make_user("user" if path.startswith("/v2/user/") else "admin"))
+        role = ("user" if path.startswith("/v2/user/") else
+                "data_officer" if path.endswith("/tokens") else "admin")          # коди видає лише data_officer
+        client, _ = login(make_user(role))
     response = client.request(method, concrete(path), json={})
     assert response.status_code == 403, f"{method} {path} → {response.status_code}"
     assert "CSRF" in response.json()["detail"]
@@ -215,13 +218,18 @@ def test_personal_endpoints_forbidden_for_admin_session(method, path):
     assert response.status_code == 403, f"{method} {path} → {response.status_code}"
 
 
-def test_execute_write_without_csrf_is_rejected_for_admin_session():
-    client, _ = login(make_user("admin"))
-    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 1}).status_code == 403
+def test_execute_write_without_csrf_is_rejected_for_session_with_the_right_role():
+    client, _ = login(make_user("data_officer"))                     # роль дозволяє /tokens, CSRF — ні
+    response = client.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 1})
+    assert response.status_code == 403 and "CSRF" in response.json()["detail"]
 
 
-def test_execute_write_with_session_csrf_succeeds_for_admin():
+def test_execute_write_with_session_csrf_succeeds_only_for_allowed_role():
     client, csrf = login(make_user("admin"))
     token = client.get("/v2/auth/csrf").json()["csrf_token"]          # як «Authorize» у Swagger
     assert {"X-CSRF-Token": token} == csrf
-    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 1}, headers=csrf).status_code == 201
+    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 1}, headers=csrf).status_code == 403
+    officer, officer_csrf = login(make_user("data_officer"))         # коди видає лише data_officer
+    assert officer.get("/v2/auth/csrf").json()["csrf_token"] == officer_csrf["X-CSRF-Token"]
+    assert officer.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 1},
+                        headers=officer_csrf).status_code == 201

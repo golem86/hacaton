@@ -289,8 +289,9 @@ def test_explicit_migration_command_brings_auth_db_to_2(tmp_path):
     auth = tmp_path / "a.db"
     make_schema1(auth)
     env = {**os.environ, "INTEGRITY_DB": str(tmp_path / "i.db"), "V2_AUTH_DB": str(auth), "APP_ENV": "release",
-           "V2_AUTH_DEV_MAIL": "0"}
-    applied = subprocess.run([sys.executable, "-m", "app.migrations", "--apply", "--confirm-verified-backup"],
+           "V2_AUTH_DEV_MAIL": "0", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+    applied = subprocess.run([sys.executable, "-X", "utf8", "-m", "app.migrations", "--apply",
+                              "--confirm-verified-backup"],
                              cwd=BACKEND, env=env, capture_output=True, text=True, encoding="utf-8", timeout=120)
     assert applied.returncode == 0, applied.stderr
     assert version(auth) == 2

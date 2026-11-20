@@ -7,23 +7,22 @@
 щоб на ті самі дані не було двох контрактів.
 """
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Path, Response
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..request_limits import BoundedId
 from ..routes.results import assessment_results
 from ..services.reporting import render_pdf, render_xlsx, report_tables
 from .v2_auth import require_v2_role
 
 router = APIRouter(prefix="/v2/admin", tags=["Dashboard V2 Admin — Reporting"])
-# id циклу в межах 1..2^63-1: інакше SQLite не може зв'язати параметр і відповідь була б 500
-AssessmentId = Annotated[int, Path(ge=1, le=2 ** 63 - 1)]
 
 
 @router.get("/reports/{assessment_id}")
-def admin_report(assessment_id: AssessmentId, response: Response,
+def admin_report(assessment_id: BoundedId, response: Response,
                  _: dict = Depends(require_v2_role("admin")), db: Session = Depends(get_db)):
     results = assessment_results(assessment_id, db)
     response.headers["Cache-Control"] = "no-store"
@@ -44,7 +43,7 @@ XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 @router.get("/reports/{assessment_id}/export", response_class=Response,
             responses={200: {"content": {PDF_TYPE: {}, XLSX_TYPE: {}}}})
-def admin_report_export(assessment_id: AssessmentId, format: Literal["pdf", "xlsx"],
+def admin_report_export(assessment_id: BoundedId, format: Literal["pdf", "xlsx"],
                         _: dict = Depends(require_v2_role("admin")), db: Session = Depends(get_db)):
     results = assessment_results(assessment_id, db)
     tables = report_tables(results, datetime.now(timezone.utc))

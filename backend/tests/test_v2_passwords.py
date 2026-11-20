@@ -35,7 +35,7 @@ def test_production_scrypt_parameters_without_test_override():
             "h = a.hash_password('synthetic-password-1'); "
             "print(a.SCRYPT_N, a.SCRYPT_R, a.SCRYPT_P, a.SCRYPT_MAXMEM, h.rsplit('$', 2)[0], "
             "a.verify_password('synthetic-password-1', h), a.needs_rehash(h))")
-    result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(BACKEND)], capture_output=True,
+    result = subprocess.run([sys.executable, "-I", "-B", "-X", "utf8", "-c", code, str(BACKEND)], capture_output=True,
                             text=True, encoding="utf-8", timeout=120)
     assert result.returncode == 0, result.stderr
     assert result.stdout.split() == ["131072", "8", "1", str(256 * 1024 * 1024), "scrypt$131072$8$1",

@@ -6,7 +6,8 @@ include_router у main.py не потрібно. Усі маршрути — req
 точна роль із v2_users, для запитів зміни — CSRF сесії й перевірка Origin.
 
   GET  /v2/admin/users                         — до 500 записів: id, name, role, email_masked, created_at
-  GET  /v2/admin/users?email=<точний email>    — один запис із повним email або 404
+  POST /v2/admin/users/lookup                  — {"email"} → один запис із повним email або 404
+                                                 (email у тілі, а не в URL: query потрапляє в журнали й історію)
   POST /v2/admin/users/{user_id}/role          — {"expected_role", "new_role"}; 403 self_change, 404, 409
   POST /v2/admin/users/{user_id}/revoke-sessions → {"revoked": n}
   GET  /v2/admin/role-changes                  — до 500 останніх записів append-only журналу v2_role_changes
@@ -15,19 +16,18 @@ include_router у main.py не потрібно. Усі маршрути — req
 перевіркою актора; подія основного журналу (user.role_change, user.sessions_revoke) пишеться після коміту
 лише з роллю й id актора. Зайнята БД → 503 (AuthRoute); id поза 1..2^63-1 → 422.
 """
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
 
+from ..request_limits import BoundedId
 from ..request_security import delete_cookie
 from ..v2_auth import (RoleChangeError, change_user_role, find_user_by_email, list_role_changes, list_users,
                        revoke_user_sessions, session_cookie_name)
 from .v2_auth import AuthRoute, record_auth_event, require_v2_role
 
-MAX_ID = 2 ** 63 - 1
 LIST_LIMIT = 500
-UserId = Annotated[int, Path(ge=1, le=MAX_ID, description="id користувача V2_AUTH_DB")]
 RoleName = Literal["user", "admin", "data_officer"]
 
 # Без власного префікса: маршрути отримують /v2/admin від роутера v2_admin, до якого підключаються.
@@ -49,27 +49,35 @@ class RoleChangeBody(BaseModel):
     new_role: RoleName
 
 
+class LookupBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=320)
+
+
 def _http_error(error: RoleChangeError) -> HTTPException:
     status, detail = _ERRORS.get(error.code, (409, error.code))
     return HTTPException(status_code=status, detail=detail)
 
 
 @router.get("/users")
-def users(response: Response,
-          email: str | None = Query(default=None, min_length=3, max_length=320,
-                                    description="Точний email: повертає один запис або 404"),
-          _: dict[str, Any] = Depends(admin)) -> Any:
+def users(response: Response, _: dict[str, Any] = Depends(admin)) -> list[dict[str, Any]]:
+    """Без повних email; будь-які параметри запиту (зокрема email) ігноруються."""
     response.headers["Cache-Control"] = "no-store"
-    if email is None:
-        return list_users(LIST_LIMIT)
-    user = find_user_by_email(email)
+    return list_users(LIST_LIMIT)
+
+
+@router.post("/users/lookup")
+def lookup_user(body: LookupBody, response: Response, _: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+    """Точний (без урахування регістру) email → повний запис; часткових збігів і пошуку немає."""
+    response.headers["Cache-Control"] = "no-store"
+    user = find_user_by_email(body.email)
     if user is None:
         raise HTTPException(status_code=404, detail="user_not_found")
     return user
 
 
 @router.post("/users/{user_id}/role")
-def change_role(user_id: UserId, body: RoleChangeBody, request: Request,
+def change_role(user_id: BoundedId, body: RoleChangeBody, request: Request,
                 actor: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
     if user_id == actor["id"]:
         raise HTTPException(status_code=403, detail="self_change")
@@ -83,7 +91,7 @@ def change_role(user_id: UserId, body: RoleChangeBody, request: Request,
 
 
 @router.post("/users/{user_id}/revoke-sessions")
-def revoke_sessions(user_id: UserId, request: Request, response: Response,
+def revoke_sessions(user_id: BoundedId, request: Request, response: Response,
                     actor: dict[str, Any] = Depends(admin)) -> dict[str, int]:
     try:
         revoked = revoke_user_sessions(actor["id"], request.cookies.get(session_cookie_name()), user_id)
