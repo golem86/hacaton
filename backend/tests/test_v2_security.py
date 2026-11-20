@@ -141,6 +141,8 @@ def release_env(monkeypatch):
     monkeypatch.setenv("V2_SECRET_KEY", "x" * 40)
     monkeypatch.setenv("V2_AUTH_DEV_MAIL", "0")
     monkeypatch.setenv("INTEGRITY_DEMO_XROLE", "0")
+    monkeypatch.setenv("TRUSTED_PROXIES", "127.0.0.1")          # A15: у release обов'язковий
+    monkeypatch.delenv("V2_CATALOG_NOW", raising=False)          # A15: у release заборонений
     monkeypatch.delenv("V2_AUTH_SECURE_COOKIE", raising=False)
     monkeypatch.delenv("V2_SMTP_HOST", raising=False)
 

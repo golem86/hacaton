@@ -50,6 +50,7 @@ EXPECTED_CSRF = {
     ("POST", "/v2/auth/2fa/verify"): "session",                              # pending-сесія до 2FA
     ("POST", "/v2/auth/2fa/resend"): "session",
     ("POST", "/v2/auth/logout"): "session",
+    ("POST", "/v2/auth/logout-all"): "session",                          # docs/V2_HARDENING_CONTRACT.md, розділ 3
     ("POST", "/v2/user/attempts"): "session",
     ("PATCH", "/v2/user/attempts/{attempt_id}"): "session",
     ("POST", "/v2/user/attempts/{attempt_id}/complete"): "session",
