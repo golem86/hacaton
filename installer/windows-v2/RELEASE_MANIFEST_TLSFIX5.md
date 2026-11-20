@@ -1,6 +1,6 @@
 # V2 schema-3 Clean Install TLSFIX5 candidate, 2026-11-20
 
-Production DNS resolves only to 100.111.221.74; installer production target pins this IPv4 address. INPUTFIX3 also reads absent optional transcription policy without a StrictMode exception.
+Production DNS resolves only to 100.64.0.10; installer production target pins this IPv4 address. INPUTFIX3 also reads absent optional transcription policy without a StrictMode exception.
 
 Caddy runs from caddy/bin, where its service SID already has Read and Execute. Caddy uses a separately issued trusted pair in a TLS directory with a direct RX ACE and read-only file ACEs. No key or certificate is part of this ZIP.
 

@@ -25,7 +25,7 @@ $why = New-Object System.Collections.Generic.List[string]
 if (-not $IAmOnIsolatedTestHost) { $why.Add('не підтверджено ізольований тестовий хост (-IAmOnIsolatedTestHost)') }
 if (-not $ApprovalRef.Trim()) { $why.Add('немає посилання на погодження №5') }
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { $why.Add('потрібні права адміністратора') }
-if ($env:COMPUTERNAME -ieq 'DESKTOP-JTGC2SG') { $why.Add('це production-хост V2 — заборонено') }
+if ($env:COMPUTERNAME -ieq 'V2-HOST') { $why.Add('це production-хост V2 — заборонено') }
 if (Test-Path -LiteralPath 'C:\srv') { $why.Add('існує C:\srv — хост схожий на production') }
 foreach ($svc in 'HacatonBackend', 'integrity-v2-backend', 'integrity-v2-caddy', 'integrity-v2-jobtest') {
   try { if (Get-V2Service $svc) { $why.Add("існує служба $svc") } }

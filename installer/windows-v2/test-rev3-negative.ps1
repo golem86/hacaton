@@ -1006,15 +1006,15 @@ try {
   Set-Item function:Get-V2UdpEndpoints { param([int[]]$Ports) @($global:Fake.Udp | Where-Object { $Ports -contains $_.LocalPort }) }
   $cfgBase = Join-Path $tmp 'target-config-test'; $null = New-Item -ItemType Directory -Path $cfgBase
   $cfgSource = Join-Path $cfgBase 'Caddyfile.source'
-  [IO.File]::WriteAllText($cfgSource, "desktop-jtgc2sg.taild5c033.ts.net:443 {`n bind 100.111.221.74 [fd7a:115c:a1e0::ef01:dddc]`n}", [Text.Encoding]::GetEncoding(1251))
+  [IO.File]::WriteAllText($cfgSource, "v2-host.example.ts.net:443 {`n bind 100.64.0.10 [fd7a:115c:a1e0::10]`n}", [Text.Encoding]::GetEncoding(1251))
   $cfgDest = Join-Path $cfgBase 'out'
   $cfgResult = @(New-V2TargetConfig -CaddySource $cfgSource -BackendSource (Join-Path $PSScriptRoot 'integrity-v2-backend.xml.template') -Destination $cfgDest -HostName 'vm-v2.example.test' -Addresses @('10.8.0.9', 'fd7a::9'))
   $cfgCaddy = [IO.File]::ReadAllText((Join-Path $cfgDest 'Caddyfile')); $cfgXml = [IO.File]::ReadAllText((Join-Path $cfgDest 'integrity-v2-backend.xml'))
-  Add-Res 'CI.target-staging' ($cfgResult[-1] -like 'PASS*target config*' -and $cfgCaddy.Contains('vm-v2.example.test:443') -and $cfgCaddy.Contains('bind 10.8.0.9 [fd7a::9]') -and $cfgXml.Contains('value="https://vm-v2.example.test"') -and -not $cfgXml.Contains('desktop-jtgc2sg') -and (Test-Path (Join-Path $cfgDest 'TARGET-CONFIG-MANIFEST.txt'))) 'окремий test-host Caddyfile/XML і SHA manifest; release source не змінено'
+  Add-Res 'CI.target-staging' ($cfgResult[-1] -like 'PASS*target config*' -and $cfgCaddy.Contains('vm-v2.example.test:443') -and $cfgCaddy.Contains('bind 10.8.0.9 [fd7a::9]') -and $cfgXml.Contains('value="https://vm-v2.example.test"') -and -not $cfgXml.Contains('v2-host') -and (Test-Path (Join-Path $cfgDest 'TARGET-CONFIG-MANIFEST.txt'))) 'окремий test-host Caddyfile/XML і SHA manifest; release source не змінено'
   Add-Res 'CI.target-manifest' ((Assert-V2TargetConfigManifest -Directory $cfgDest -HostName 'vm-v2.example.test' -Addresses @('10.8.0.9', 'fd7a::9')) -like 'PASS*target config manifest*') 'target config manifest підтверджує host/bind і hashes'
   [IO.File]::AppendAllText((Join-Path $cfgDest 'Caddyfile'), "`n# tampered")
   Add-Res 'CI.target-tamper' (Test-Stop { Assert-V2TargetConfigManifest -Directory $cfgDest -HostName 'vm-v2.example.test' -Addresses @('10.8.0.9', 'fd7a::9') } '*SHA256 Caddyfile невірний*') 'зміна staged Caddyfile після генерації → STOP'
-  Add-Res 'CI.target-prod-reject' (Test-Stop { Assert-V2TargetIdentity -HostName 'desktop-jtgc2sg.taild5c033.ts.net' -Addresses @('100.111.221.74') -TestHost } '*test host не може використовувати production DNS/IP*') 'test-host із production DNS/IP → STOP до будь-якої зміни'
+  Add-Res 'CI.target-prod-reject' (Test-Stop { Assert-V2TargetIdentity -HostName 'v2-host.example.ts.net' -Addresses @('100.64.0.10') -TestHost } '*test host не може використовувати production DNS/IP*') 'test-host із production DNS/IP → STOP до будь-якої зміни'
   $oldDns = (Get-Item function:Get-V2TargetDns).ScriptBlock; $oldLocal = (Get-Item function:Get-V2TargetLocalIps).ScriptBlock
   Set-Item function:Get-V2TargetDns { param($HostName) @('10.8.0.10') }
   Set-Item function:Get-V2TargetLocalIps { @('10.8.0.9') }

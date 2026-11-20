@@ -41,33 +41,33 @@ function Invoke-Native([string]$Exe, [string[]]$A) {
 $K = $PSScriptRoot
 $tpl = Join-Path $K 'deploy\Caddyfile'
 $xmlTpl = Join-Path $K 'integrity-v2-backend.xml.template'
-$prodHost = 'desktop-jtgc2sg.taild5c033.ts.net'
+$prodHost = 'v2-host.example.ts.net'
 $tmp = Join-Path $env:TEMP ('v2-caddy-cfg-' + [guid]::NewGuid().ToString('N').Substring(0, 8)); $null = New-Item -ItemType Directory $tmp
 $utf8 = New-Object Text.UTF8Encoding($false, $true)
 try {
   # C1: шаблон — UTF-8 без BOM, LF, рівно одне ім'я хоста і один рядок bind (вхід New-V2TargetConfig)
   $tb = [IO.File]::ReadAllBytes($tpl); $tt = $utf8.GetString($tb)
   Add-Res 'C1.template' (-not ($tb[0] -eq 0xEF -and $tb[1] -eq 0xBB) -and -not $tt.Contains("`r") -and [regex]::Matches($tt, [regex]::Escape($prodHost)).Count -eq 1 -and
-                         [regex]::Matches($tt, [regex]::Escape('bind 100.111.221.74 [fd7a:115c:a1e0::ef01:dddc]')).Count -eq 1) 'шаблон Caddyfile: UTF-8 без BOM, LF, 1 хост, 1 bind'
+                         [regex]::Matches($tt, [regex]::Escape('bind 100.64.0.10 [fd7a:115c:a1e0::10]')).Count -eq 1) 'шаблон Caddyfile: UTF-8 без BOM, LF, 1 хост, 1 bind'
 
   # C2: New-V2TargetConfig (production, -UseFileTls) → форма TLSFIX5; кирилиця коментарів побайтово збережена (I2)
   $out = Join-Path $tmp 'target'
-  $null = New-V2TargetConfig -CaddySource $tpl -BackendSource $xmlTpl -Destination $out -HostName $prodHost -Addresses @('100.111.221.74') -UseFileTls
+  $null = New-V2TargetConfig -CaddySource $tpl -BackendSource $xmlTpl -Destination $out -HostName $prodHost -Addresses @('100.64.0.10') -UseFileTls
   $gen = [IO.File]::ReadAllBytes((Join-Path $out 'Caddyfile')); $gt = $utf8.GetString($gen)
   $commentsSame = (($tt -split "`n" | Where-Object { $_ -match '^\s*#' }) -join "`n") -eq (($gt -split "`n" | Where-Object { $_ -match '^\s*#' }) -join "`n")
-  Add-Res 'C2.tlsfix5' ($gt.Contains("`tauto_https off`n") -and $gt.Contains("`tbind 100.111.221.74`n`ttls C:/srv/integrity-v2/caddy/tls/site.crt C:/srv/integrity-v2/caddy/tls/site.key`n") -and
+  Add-Res 'C2.tlsfix5' ($gt.Contains("`tauto_https off`n") -and $gt.Contains("`tbind 100.64.0.10`n`ttls C:/srv/integrity-v2/caddy/tls/site.crt C:/srv/integrity-v2/caddy/tls/site.key`n") -and
                         -not $gt.Contains('fd7a:') -and -not $gt.Contains('disable_redirects') -and $commentsSame -and -not ($gen[0] -eq 0xEF)) 'цільова форма: auto_https off, лише IPv4, файлова TLS-пара; коментарі UTF-8 без змін'
 
   # C3: регресія I2 — кирилиця в UTF-8 не перекодовується (раніше cp1251 → подвійне кодування «вЂ”»)
   $src3 = Join-Path $tmp 'utf8.Caddyfile'
-  [IO.File]::WriteAllText($src3, "# Коментар — тире й «лапки» (UTF-8)`n{`n`tauto_https disable_redirects`n}`n${prodHost}:443 {`n`tbind 100.111.221.74 [fd7a:115c:a1e0::ef01:dddc]`n}`n", $utf8)
-  $null = New-V2TargetConfig -CaddySource $src3 -BackendSource $xmlTpl -Destination (Join-Path $tmp 't3') -HostName $prodHost -Addresses @('100.111.221.74') -UseFileTls
+  [IO.File]::WriteAllText($src3, "# Коментар — тире й «лапки» (UTF-8)`n{`n`tauto_https disable_redirects`n}`n${prodHost}:443 {`n`tbind 100.64.0.10 [fd7a:115c:a1e0::10]`n}`n", $utf8)
+  $null = New-V2TargetConfig -CaddySource $src3 -BackendSource $xmlTpl -Destination (Join-Path $tmp 't3') -HostName $prodHost -Addresses @('100.64.0.10') -UseFileTls
   $o3 = [IO.File]::ReadAllText((Join-Path $tmp 't3\Caddyfile'), $utf8)
   Add-Res 'C3.utf8' ($o3.StartsWith('# Коментар — тире й «лапки» (UTF-8)') -and -not $o3.Contains('вЂ')) 'I2: коментар з кирилицею й «—» після генерації побайтово той самий'
   $bom = Join-Path $tmp 'bom.Caddyfile'; [IO.File]::WriteAllBytes($bom, [byte[]](0xEF, 0xBB, 0xBF) + [IO.File]::ReadAllBytes($src3))
   $cp = Join-Path $tmp 'cp1251.Caddyfile'; [IO.File]::WriteAllBytes($cp, [Text.Encoding]::GetEncoding(1251).GetBytes([IO.File]::ReadAllText($src3, $utf8)))
-  Add-Res 'C3.reject' ((Test-Stop { New-V2TargetConfig -CaddySource $bom -BackendSource $xmlTpl -Destination (Join-Path $tmp 'tb') -HostName $prodHost -Addresses @('100.111.221.74') -UseFileTls } '*без BOM*') -and
-                       (Test-Stop { New-V2TargetConfig -CaddySource $cp -BackendSource $xmlTpl -Destination (Join-Path $tmp 'tc') -HostName $prodHost -Addresses @('100.111.221.74') -UseFileTls } '*не є коректним UTF-8*')) 'I2: BOM або не-UTF-8 (cp1251) → STOP до запису'
+  Add-Res 'C3.reject' ((Test-Stop { New-V2TargetConfig -CaddySource $bom -BackendSource $xmlTpl -Destination (Join-Path $tmp 'tb') -HostName $prodHost -Addresses @('100.64.0.10') -UseFileTls } '*без BOM*') -and
+                       (Test-Stop { New-V2TargetConfig -CaddySource $cp -BackendSource $xmlTpl -Destination (Join-Path $tmp 'tc') -HostName $prodHost -Addresses @('100.64.0.10') -UseFileTls } '*не є коректним UTF-8*')) 'I2: BOM або не-UTF-8 (cp1251) → STOP до запису'
 
   # C4: preflight -PrintTargetCaddyfile дає побайтово той самий цільовий текст, що й New-V2TargetConfig
   $pf = Invoke-Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $K 'deploy\V2-release-preflight.ps1'), '-PrintTargetCaddyfile', $tpl)
@@ -91,8 +91,8 @@ try {
     $logs = Prop $cfg 'logging', 'logs', 'default'
     $glob = @($hs | Where-Object { (Prop $_.H 'response', 'set', 'Strict-Transport-Security') })
     Add-Res 'C5.adapt' ($a0.Code -eq 0 -and $a1.Code -eq 0) "caddy adapt: шаблон exit $($a0.Code), цільова форма exit $($a1.Code)"
-    Add-Res 'C5.listen' ((@($srv | ForEach-Object { Prop $_ 'listen' }) -join ',') -eq '100.111.221.74:443' -and (Prop $srv[0] 'automatic_https', 'disable') -eq $true -and (Prop $cfg 'admin', 'disabled') -eq $true -and
-                         (@(Prop $srv[0] 'protocols') -join ',') -eq 'h1,h2' -and -not (Prop $srv[0] 'logs') -and (Prop $cfg 'apps', 'tls', 'certificates', 'load_files')) 'лише 100.111.221.74:443, auto_https off, admin off, h1/h2, без access log, файлова TLS-пара'
+    Add-Res 'C5.listen' ((@($srv | ForEach-Object { Prop $_ 'listen' }) -join ',') -eq '100.64.0.10:443' -and (Prop $srv[0] 'automatic_https', 'disable') -eq $true -and (Prop $cfg 'admin', 'disabled') -eq $true -and
+                         (@(Prop $srv[0] 'protocols') -join ',') -eq 'h1,h2' -and -not (Prop $srv[0] 'logs') -and (Prop $cfg 'apps', 'tls', 'certificates', 'load_files')) 'лише 100.64.0.10:443, auto_https off, admin off, h1/h2, без access log, файлова TLS-пара'
     Add-Res 'C5.logs' ((@(Prop $logs 'exclude') -join ',') -eq 'http.log.error,http.handlers.reverse_proxy,http.stdlib' -and -not (Prop $logs 'include') -and (@((Prop $cfg 'logging', 'logs').PSObject.Properties).Count -eq 1)) 'журнал default виключає http.log.error, reverse_proxy, http.stdlib (IP/URI)'
     Add-Res 'C5.proxy' $rpOk 'усі 4 reverse_proxy: 127.0.0.1:8100, keepalive 4s, header_up -X-Role'
     Add-Res 'C5.body' (($rb -join ';') -eq '/api/*=256000;/v2/*=256000') "request_body max_size: $($rb -join '; ')"
@@ -178,7 +178,7 @@ try {
       @($r.Out -split "`r?`n" | Where-Object { $_ -match '^(BLOCKED|INFO): ' })
     }
     $good = & $runPf 'good' $tt
-    Add-Res 'C9.preflight' (-not @($good | Where-Object { $_ -match '^BLOCKED: Caddy' }).Count -and @($good | Where-Object { $_ -like 'INFO: Caddy: v2.11.9*TLSFIX5 OK*100.111.221.74:443' }).Count -eq 1) 'розділ Caddy без BLOCKED; цільова форма TLSFIX5 OK (вивід дочірнього preflight — кодова сторінка консолі, порівнюються ASCII-фрагменти)'
+    Add-Res 'C9.preflight' (-not @($good | Where-Object { $_ -match '^BLOCKED: Caddy' }).Count -and @($good | Where-Object { $_ -like 'INFO: Caddy: v2.11.9*TLSFIX5 OK*100.64.0.10:443' }).Count -eq 1) 'розділ Caddy без BLOCKED; цільова форма TLSFIX5 OK (вивід дочірнього preflight — кодова сторінка консолі, порівнюються ASCII-фрагменти)'
     $bad = & $runPf 'nolog' ($tt.Replace(' http.stdlib', '').Replace("max_size 256KB", "max_size 10MB"))
     Add-Res 'C9.mutation' (@($bad | Where-Object { $_ -like 'BLOCKED: Caddy:*http.log.error*' }).Count -eq 1 -and @($bad | Where-Object { $_ -like 'BLOCKED: Caddy:*request_body max_size*' }).Count -eq 2) 'мутації (http.stdlib не виключено, max_size 10MB) → BLOCKED'
   }

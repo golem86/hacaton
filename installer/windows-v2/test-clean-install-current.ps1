@@ -97,7 +97,7 @@ try {
   # ------------------------------------------------------------- P5: XML служби — workingdirectory релізу, SMTP Gmail / Custom
   $script:V2Root = $prodRoot
   $tc = Join-Path $tmp 'tc'
-  $null = New-V2TargetConfig -CaddySource "$PackageDir\Caddyfile" -BackendSource "$K\integrity-v2-backend.xml.template" -Destination $tc -HostName 'desktop-jtgc2sg.taild5c033.ts.net' -Addresses @('100.111.221.74') -UseFileTls -ReleaseId $ReleaseId
+  $null = New-V2TargetConfig -CaddySource "$PackageDir\Caddyfile" -BackendSource "$K\integrity-v2-backend.xml.template" -Destination $tc -HostName 'v2-host.example.ts.net' -Addresses @('100.64.0.10') -UseFileTls -ReleaseId $ReleaseId
   $xmlPath = "$tc\integrity-v2-backend.xml"
   $plan = Get-V2SmtpPlan -Mode Gmail -User 'project.account@example.com'
   $fakeReader = { param($prompt) ConvertTo-SecureString 'abcd efgh ijkl mnop' -AsPlainText -Force }

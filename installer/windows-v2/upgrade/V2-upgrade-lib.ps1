@@ -14,9 +14,9 @@ $ErrorActionPreference = 'Stop'
 
 $V2UpBackend = 'integrity-v2-backend'
 $V2UpCaddy = 'integrity-v2-caddy'
-$V2UpHostName = 'desktop-jtgc2sg.taild5c033.ts.net'
-$V2UpAddress = '100.111.221.74'
-$V2UpComputer = 'DESKTOP-JTGC2SG'
+$V2UpHostName = if ($env:V2_PROD_HOST) { $env:V2_PROD_HOST } else { 'v2-host.example.ts.net' }   # справжній хост задає оператор (не в репозиторії)
+$V2UpAddress = if ($env:V2_PROD_IPV4) { $env:V2_PROD_IPV4 } else { '100.64.0.10' }
+$V2UpComputer = if ($env:V2_PROD_COMPUTER) { $env:V2_PROD_COMPUTER } else { 'V2-HOST' }
 $V2UpSim = $false
 $V2UpLib = $PSScriptRoot
 $V2UpKit = Split-Path -Parent $PSScriptRoot                      # installer\windows-v2 (v2_db_tool.py, шаблони)

@@ -3,10 +3,10 @@ param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$DecisionRef)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$hostname = 'desktop-jtgc2sg.taild5c033.ts.net'
+$hostname = 'v2-host.example.ts.net'
 $tailscale = 'C:\Program Files\Tailscale\tailscale.exe'
 $python = 'C:\Program Files\Python313\python.exe'
-if ($env:COMPUTERNAME -ine 'DESKTOP-JTGC2SG') { throw 'Wrong host' }
+if ($env:COMPUTERNAME -ine 'V2-HOST') { throw 'Wrong host' }
 $identity = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'An elevated operator is required' }
 $srv = Get-Item -LiteralPath 'C:\srv' -Force

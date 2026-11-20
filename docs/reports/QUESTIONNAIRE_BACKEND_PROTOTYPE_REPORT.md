@@ -8,15 +8,15 @@
 
 Робоче тлумачення №5: Анкета 1 для членів офіційної робочої групи; Анкета 2 — для постійного й змінного особового складу за Додатком Г. Заголовок с. 60 і зіставлення на с. 67 суперечать одне одному; суперечність задокументована в `docs/QUESTIONNAIRE_AUDIENCE_REVIEW.md`. Автоматичного category routing немає.
 
-Підготовлено proposals: [`docs/OFFICIAL_QUESTIONNAIRE_DDL_API_PROPOSAL.md`](docs/OFFICIAL_QUESTIONNAIRE_DDL_API_PROPOSAL.md), [`docs/OFFICIAL_RESPONSE_RETENTION_SUPPRESSION_PROPOSAL.md`](docs/OFFICIAL_RESPONSE_RETENTION_SUPPRESSION_PROPOSAL.md), [`docs/QUESTIONNAIRE_SCHEMA3_COMPATIBILITY_REPORT.md`](docs/QUESTIONNAIRE_SCHEMA3_COMPATIBILITY_REPORT.md) і [`docs/QUESTIONNAIRE_SECURITY_TEST_REPORT.md`](docs/QUESTIONNAIRE_SECURITY_TEST_REPORT.md). Це не production DDL/API чи policy; schema 3 не змінена.
+Підготовлено proposals: [`docs/OFFICIAL_QUESTIONNAIRE_DDL_API_PROPOSAL.md`](../OFFICIAL_QUESTIONNAIRE_DDL_API_PROPOSAL.md), [`docs/OFFICIAL_RESPONSE_RETENTION_SUPPRESSION_PROPOSAL.md`](../OFFICIAL_RESPONSE_RETENTION_SUPPRESSION_PROPOSAL.md), [`docs/QUESTIONNAIRE_SCHEMA3_COMPATIBILITY_REPORT.md`](../QUESTIONNAIRE_SCHEMA3_COMPATIBILITY_REPORT.md) і [`docs/QUESTIONNAIRE_SECURITY_TEST_REPORT.md`](../QUESTIONNAIRE_SECURITY_TEST_REPORT.md). Це не production DDL/API чи policy; schema 3 не змінена.
 
 Prototype expert audit тепер містить `created_at`; його запис залишається в одній транзакції з відповідями/revision або finalize. Відкликання permission впливає на наступний запит через повторну перевірку, але V2 session/2FA інтеграція, persistent session invalidation і lifecycle assignment ще не реалізовані. Вони залишаються блокерами.
 
 ## 1. Методична перевірка
 
-[Таблиця відповідності](docs/OFFICIAL_QUESTIONNAIRE_METHOD_MAPPING.md) охоплює всі 22 питання Додатка В: 12 у формі 1, 10 у формі 2, по чотири розділи. Спосіб відповіді залишається `single_choice`: 20 питань мають 5 варіантів, два питання про викривачів — 6. `2.0.0` — окремий історичний скорочений preview, його не редагували. `2.1.0` — ширша робоча редакція після рішення №5; питання лишаються описовими. Варіанти не є дослівним офіційним транскриптом, а розширені рівні зрілості — перевіреним викладом критеріїв, що потребує фінального методичного підтвердження.
+[Таблиця відповідності](../OFFICIAL_QUESTIONNAIRE_METHOD_MAPPING.md) охоплює всі 22 питання Додатка В: 12 у формі 1, 10 у формі 2, по чотири розділи. Спосіб відповіді залишається `single_choice`: 20 питань мають 5 варіантів, два питання про викривачів — 6. `2.0.0` — окремий історичний скорочений preview, його не редагували. `2.1.0` — ширша робоча редакція після рішення №5; питання лишаються описовими. Варіанти не є дослівним офіційним транскриптом, а розширені рівні зрілості — перевіреним викладом критеріїв, що потребує фінального методичного підтвердження.
 
-[Огляд аудиторії](docs/QUESTIONNAIRE_AUDIENCE_REVIEW.md): №5 прийняв робочу інтерпретацію Анкета 1 — члени робочої групи, Анкета 2 — постійний/змінний особовий склад. Заголовок Анкети 2 на с. 60 суперечить Додатку Г, с. 67; `audience: ambiguous` і відсутність автоматичного призначення збережено до остаточного підтвердження. Коди `mgmt/npp/cadets/staff` не доводять членство у групі; експерт — окремий процес.
+[Огляд аудиторії](../QUESTIONNAIRE_AUDIENCE_REVIEW.md): №5 прийняв робочу інтерпретацію Анкета 1 — члени робочої групи, Анкета 2 — постійний/змінний особовий склад. Заголовок Анкети 2 на с. 60 суперечить Додатку Г, с. 67; `audience: ambiguous` і відсутність автоматичного призначення збережено до остаточного підтвердження. Коди `mgmt/npp/cadets/staff` не доводять членство у групі; експерт — окремий процес.
 
 ## 2. Прототип анонімних описових відповідей
 
@@ -30,7 +30,7 @@ Prototype expert audit тепер містить `created_at`; його запи
 
 Окремі `expert_permissions`, `expert_assignments`, `expert_assessments`, `expert_answers`, `expert_audit_events`. Серверний fixture видає opaque session із expiry, ознакою завершеної 2FA та CSRF; роль і призначення беруться з тестового серверного стану/БД. `X-Role` не надає прав. Експерт бачить лише власну призначену оцінку. Мутації перевіряють Origin/Referer та CSRF. `GET /prototype/expert/assessments/{id}`, `PUT .../{id}/answers` і `POST .../{id}/finalize` працюють тільки в test app. Draft дозволяє часткові валідні відповіді з revision; finalize вимагає повноти, після чого оцінка незмінна. Зміни й audit — одна транзакція, без option ID або відповіді в audit.
 
-[Контракт і негативні сценарії](docs/EXPERT_ROLE_API_CONTRACT.md) розрізняють фактичну тестову підмножину й цільову модель. Не реалізовано production роль, авторизацію браузерного UI як експерта, persistent sessions/cookie policy, lifecycle призначень, reviewer, production audit або інтеграцію з Analytics. Expert answers не мають FK/join до анонімних відповідей.
+[Контракт і негативні сценарії](../EXPERT_ROLE_API_CONTRACT.md) розрізняють фактичну тестову підмножину й цільову модель. Не реалізовано production роль, авторизацію браузерного UI як експерта, persistent sessions/cookie policy, lifecycle призначень, reviewer, production audit або інтеграцію з Analytics. Expert answers не мають FK/join до анонімних відповідей.
 
 ## 4. Перевірки
 
@@ -53,7 +53,7 @@ Prototype expert audit тепер містить `created_at`; його запи
 
 ### Змінені файли цього доповнення
 
-**Змінені:** `OFFICIAL_QUESTIONNAIRE_COVERAGE.md`, `QUESTIONNAIRE_BACKEND_PROTOTYPE_REPORT.md`, `backend/prototypes/official_expert.py`, `backend/tests/test_official_expert_prototype.py`, `docs/EXPERT_ROLE_API_CONTRACT.md`, `docs/OFFICIAL_QUESTIONNAIRE_METHOD_MAPPING.md`, `docs/QUESTIONNAIRE_AUDIENCE_REVIEW.md`, `frontend/e2e/official-assessment.spec.ts`, `frontend/src/official/OfficialAssessment.tsx`, `frontend/src/official/catalog-v2.ts`, `frontend/src/official/catalog.ts`, `frontend/tests/official.test.mjs`.
+**Змінені:** `docs/reports/OFFICIAL_QUESTIONNAIRE_COVERAGE.md`, `docs/reports/QUESTIONNAIRE_BACKEND_PROTOTYPE_REPORT.md`, `backend/prototypes/official_expert.py`, `backend/tests/test_official_expert_prototype.py`, `docs/EXPERT_ROLE_API_CONTRACT.md`, `docs/OFFICIAL_QUESTIONNAIRE_METHOD_MAPPING.md`, `docs/QUESTIONNAIRE_AUDIENCE_REVIEW.md`, `frontend/e2e/official-assessment.spec.ts`, `frontend/src/official/OfficialAssessment.tsx`, `frontend/src/official/catalog-v2.ts`, `frontend/src/official/catalog.ts`, `frontend/tests/official.test.mjs`.
 
 **Нові proposals/reports:** `docs/OFFICIAL_QUESTIONNAIRE_DDL_API_PROPOSAL.md`, `docs/OFFICIAL_RESPONSE_RETENTION_SUPPRESSION_PROPOSAL.md`, `docs/QUESTIONNAIRE_SCHEMA3_COMPATIBILITY_REPORT.md`, `docs/QUESTIONNAIRE_SECURITY_TEST_REPORT.md`.
 

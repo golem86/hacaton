@@ -42,7 +42,7 @@ if ($Simulate) {
   if ($BackupRoot -cne 'C:\srv\integrity-v2\backups') { throw 'STOP: -BackupRoot має бути C:\srv\integrity-v2\backups' }
   if ($Apply) {
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'STOP: потрібні права адміністратора' }
-    if ($env:COMPUTERNAME -ne 'DESKTOP-JTGC2SG') { throw 'STOP: чужий хост' }
+    if ($env:COMPUTERNAME -ne 'V2-HOST') { throw 'STOP: чужий хост' }
   }
 }
 if ($Apply -and (-not $DecisionRef -or -not $DecisionRef.Trim())) { throw 'STOP: потрібен -DecisionRef' }

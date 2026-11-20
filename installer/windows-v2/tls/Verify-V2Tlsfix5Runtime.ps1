@@ -6,7 +6,7 @@
 param([string] $CommonSha256, [string] $DbToolSha256, [string] $Python = 'C:\Program Files\Python313\python.exe')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-if ($env:COMPUTERNAME -ne 'DESKTOP-JTGC2SG') { throw 'Wrong host' }
+if ($env:COMPUTERNAME -ne 'V2-HOST') { throw 'Wrong host' }
 
 $kit = Split-Path -Parent $PSScriptRoot
 $common = Join-Path $kit 'V2-install-common.ps1'
@@ -19,8 +19,8 @@ foreach ($parent in 'C:\', 'C:\srv') {
 }
 $null = Assert-V2Root
 $null = Assert-V2DataReady -DataDir (Join-Path $V2Root 'data')
-$address = '100.111.221.74'
-$hostName = 'desktop-jtgc2sg.taild5c033.ts.net'
+$address = '100.64.0.10'
+$hostName = 'v2-host.example.ts.net'
 $null = Assert-V2TargetIdentity -HostName $hostName -Addresses @($address)
 $serviceEvidence = foreach ($name in 'integrity-v2-backend','integrity-v2-caddy') {
     $service = Get-V2Service $name

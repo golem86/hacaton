@@ -36,7 +36,7 @@ if (-not $Apply) { 'ПЛАН (нічого не змінено; для вико�
 
 if (-not $DecisionRef -or -not $DecisionRef.Trim()) { throw 'STOP: потрібен -DecisionRef' }
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'STOP: потрібні права адміністратора' }
-if ($env:COMPUTERNAME -ne 'DESKTOP-JTGC2SG') { throw 'STOP: чужий хост' }
+if ($env:COMPUTERNAME -ne 'V2-HOST') { throw 'STOP: чужий хост' }
 if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) { throw "STOP: немає $Python" }
 . (Join-Path $K 'V2-install-common.ps1')
 $ErrorActionPreference = 'Stop'

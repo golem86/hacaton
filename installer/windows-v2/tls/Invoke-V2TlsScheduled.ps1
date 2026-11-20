@@ -13,7 +13,7 @@ $state = [ordered]@{ Utc = [DateTime]::UtcNow.ToString('o'); Status = 'Blocked';
 $code = 1
 try {
     $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    if ($env:COMPUTERNAME -ne 'DESKTOP-JTGC2SG' -or $sid -ne 'S-1-5-18') { throw 'Unexpected host or identity' }
+    if ($env:COMPUTERNAME -ne 'V2-HOST' -or $sid -ne 'S-1-5-18') { throw 'Unexpected host or identity' }
     foreach ($entry in @(
         @($common, 'FB19F4D69A8D505CA17007C542387D4C89036BF5B4AC2E70D2E0AEDB4872A56E'),
         @($renew, '62344FAD161B0AA0E45D94CD5F02EC7E0E98FE8D13D145910D1221BF6EF6BFAF'),

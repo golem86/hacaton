@@ -14,7 +14,7 @@ function Invoke-V2Native { param($Exe, $ArgList, $What) $script:NativeCalls.Add(
 $hostName = 'testhost.example.test'
 $approved = @('10.8.0.9')
 
-$script:Answers = @('10.8.0.9', '100.111.221.74')
+$script:Answers = @('10.8.0.9', '100.64.0.10')
 Add-Case 'R01.mixed-production-dns' (Stopped { Assert-V2TargetIdentity -HostName $hostName -Addresses $approved -TestHost })
 $script:Answers = @('10.8.0.9', '10.8.0.10')
 Add-Case 'R01.extra-dns' (Stopped { Assert-V2TargetIdentity -HostName $hostName -Addresses $approved -TestHost })
@@ -23,21 +23,21 @@ Add-Case 'R01.missing-dns' (Stopped { Assert-V2TargetIdentity -HostName $hostNam
 $script:Answers = @('10.8.0.9')
 Add-Case 'R01.exact-dns' ((Assert-V2TargetIdentity -HostName $hostName -Addresses $approved -TestHost) -like 'PASS*')
 
-$script:Answers = @('10.8.0.9', 'fd7a:115c:a1e0::ef01:dddc')
+$script:Answers = @('10.8.0.9', 'fd7a:115c:a1e0::10')
 Add-Case 'R01.mixed-production-ipv6-dns' (Stopped { Assert-V2TargetIdentity -HostName $hostName -Addresses $approved -TestHost })
 $script:Answers = @('10.8.0.9')
-Add-Case 'R01.production-ipv6-testhost-reject' (Stopped { Assert-V2TargetIdentity -HostName $hostName -Addresses @('fd7a:115c:a1e0::ef01:dddc') -TestHost })
+Add-Case 'R01.production-ipv6-testhost-reject' (Stopped { Assert-V2TargetIdentity -HostName $hostName -Addresses @('fd7a:115c:a1e0::10') -TestHost })
 
-$env:COMPUTERNAME = 'DESKTOP-JTGC2SG'
-$script:Answers = @('100.111.221.74')
-function Get-V2TargetLocalIps { @('100.111.221.74') }
-Add-Case 'R01.production-ipv4-only-dns' (-not (Stopped { Assert-V2TargetIdentity -HostName 'desktop-jtgc2sg.taild5c033.ts.net' -Addresses @('100.111.221.74') }))
+$env:COMPUTERNAME = 'V2-HOST'
+$script:Answers = @('100.64.0.10')
+function Get-V2TargetLocalIps { @('100.64.0.10') }
+Add-Case 'R01.production-ipv4-only-dns' (-not (Stopped { Assert-V2TargetIdentity -HostName 'v2-host.example.ts.net' -Addresses @('100.64.0.10') }))
 $env:COMPUTERNAME = 'TESTHOST'
 function Get-V2TargetLocalIps { @('10.8.0.9') }
 
 $script:Answers = @('10.8.0.9')
 $null = Assert-V2TargetIdentity -HostName $hostName -Addresses $approved -TestHost
-$script:Answers = @('10.8.0.9', '100.111.221.74')
+$script:Answers = @('10.8.0.9', '100.64.0.10')
 $script:NativeCalls.Clear()
 Add-Case 'R01.rebinding' ((Stopped { Assert-V2PinnedHttps -HostName $hostName -Addresses $approved -Path '/api/health' -Expected 200 -TestHost }) -and $script:NativeCalls.Count -eq 0)
 

@@ -42,7 +42,7 @@ try {
     if (-not $full.StartsWith($tb, [StringComparison]::OrdinalIgnoreCase)) { throw 'симуляція лише з -Root у %TEMP%' }
   } else {
     if ($full -cne 'C:\srv\integrity-v2') { throw "Root має бути C:\srv\integrity-v2" }
-    if ($env:COMPUTERNAME -ne 'DESKTOP-JTGC2SG') { throw 'чужий хост' }
+    if ($env:COMPUTERNAME -ne 'V2-HOST') { throw 'чужий хост' }
     $me = [Security.Principal.WindowsIdentity]::GetCurrent()
     if ($me.User.Value -ne 'S-1-5-18' -and -not ([Security.Principal.WindowsPrincipal]$me).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'потрібен SYSTEM або адміністратор' }
   }

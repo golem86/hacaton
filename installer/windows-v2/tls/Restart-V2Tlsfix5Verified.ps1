@@ -6,7 +6,7 @@
 param([string] $CommonSha256, [string] $DbToolSha256, [string] $Python = 'C:\Program Files\Python313\python.exe')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-if ($env:COMPUTERNAME -ne 'DESKTOP-JTGC2SG') { throw 'Wrong host' }
+if ($env:COMPUTERNAME -ne 'V2-HOST') { throw 'Wrong host' }
 $kit = Split-Path -Parent $PSScriptRoot
 $common = Join-Path $kit 'V2-install-common.ps1'
 $dbTool = Join-Path $kit 'v2_db_tool.py'
@@ -18,8 +18,8 @@ $data = Join-Path $V2Root 'data'
 $null = Assert-V2DataReady -DataDir $data
 $backendName = 'integrity-v2-backend'
 $caddyName = 'integrity-v2-caddy'
-$address = '100.111.221.74'
-$hostName = 'desktop-jtgc2sg.taild5c033.ts.net'
+$address = '100.64.0.10'
+$hostName = 'v2-host.example.ts.net'
 $pin = @{ HostName = $hostName; Addresses = @($address) }
 $record = [ordered]@{ BeganUtc = [DateTime]::UtcNow.ToString('o'); Before = @(); Backups = @(); After = @(); State = 'InProgress' }
 $trees = @{}

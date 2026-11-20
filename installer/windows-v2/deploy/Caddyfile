@@ -1,6 +1,6 @@
 # Integrity Management Dashboard V2 — Caddy V2 (окремий екземпляр; Caddy V1 не змінюється).
 # ШАБЛОН для New-V2TargetConfig (V2-install-common.ps1): рівно одне ім'я хоста й один рядок bind нижче.
-# З -UseFileTls генератор дає форму TLSFIX5: auto_https off, bind лише 100.111.221.74, файлова TLS-пара.
+# З -UseFileTls генератор дає форму TLSFIX5: auto_https off, bind лише 100.64.0.10, файлова TLS-пара.
 # Посилення V2 (V2_HARDENING_CONTRACT.md, розділ 5): журнали без IP/URI, CSP, Permissions-Policy,
 # ліміт тіла запиту для /api/* і /v2/*, keepalive до backend коротший за keep-alive uvicorn (5 с).
 {
@@ -20,8 +20,8 @@
 	}
 }
 
-desktop-jtgc2sg.taild5c033.ts.net:443 {
-	bind 100.111.221.74 [fd7a:115c:a1e0::ef01:dddc]
+v2-host.example.ts.net:443 {
+	bind 100.64.0.10 [fd7a:115c:a1e0::10]
 
 	request_header -X-Role
 

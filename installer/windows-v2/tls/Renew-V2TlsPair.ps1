@@ -8,8 +8,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$hostName = 'desktop-jtgc2sg.taild5c033.ts.net'
-$address = '100.111.221.74'
+$hostName = 'v2-host.example.ts.net'
+$address = '100.64.0.10'
 $serviceName = 'integrity-v2-caddy'
 $backendName = 'integrity-v2-backend'
 $root = 'C:\srv\integrity-v2'
@@ -275,7 +275,7 @@ function Assert-TlsPair([string]$Dir,[string]$Reader) {
     }
 }
 
-if ($env:COMPUTERNAME -ine 'DESKTOP-JTGC2SG') { throw 'Wrong host' }
+if ($env:COMPUTERNAME -ine 'V2-HOST') { throw 'Wrong host' }
 $operator = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $operator.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Elevated operator required' }
 Assert-TlsPath 'C:\srv'

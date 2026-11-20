@@ -2,7 +2,7 @@
 
 Статус: інструменти для потоку «Caddy, інсталятор, оновлення на місці, резервне копіювання» (V2_HARDENING_CONTRACT.md, розділи 2 і 5).
 Перевірено лише локально: статичний розбір, `caddy adapt/validate`, pytest `v2_db_tool`, сухий прогін `-Simulate` на синтетичному
-стенді. На сервері DESKTOP-JTGC2SG нічого не запускалося.
+стенді. На сервері V2-HOST нічого не запускалося.
 
 Усі скрипти — у `installer\windows-v2\upgrade\`, Windows PowerShell 5.1, від адміністратора, **неінтерактивно** (придатні для SSH):
 жодних `Read-Host`, підтвердження — ключами (`-ConfirmVerifiedBackup`, `-ConfirmRestoreFromBackup`, `-Apply`, `-DecisionRef`).

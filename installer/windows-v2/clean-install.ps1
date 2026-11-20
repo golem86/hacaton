@@ -43,8 +43,8 @@ param(
   [string] $LlamaZip,                                    # -WithLm: llama-b12180-bin-win-cpu-x64.zip (поза C:\srv\integrity-v2)
   [string] $ModelPath,                                   # -WithLm: Qwen3-8B-Q4_K_M.gguf (поза C:\srv\integrity-v2)
   [string] $LmApprovedSums,                              # -WithLm: необов'язкові суми ZIP/моделі окремим каналом
-  [string] $TlsHost = 'desktop-jtgc2sg.taild5c033.ts.net',
-  [string[]] $TlsAddresses = @('100.111.221.74'),
+  [string] $TlsHost = 'v2-host.example.ts.net',
+  [string[]] $TlsAddresses = @('100.64.0.10'),
   [string] $TlsPairDirectory,
   [string] $TlsCertificateSha256,
   [switch] $TestHost,

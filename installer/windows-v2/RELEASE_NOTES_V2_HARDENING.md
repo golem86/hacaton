@@ -7,7 +7,7 @@
 
 | № | Що | Файли |
 |---|---|---|
-| I1 | Caddy: журнал `default` без `http.log.error`, `http.handlers.reverse_proxy`, `http.stdlib`; CSP SPA (`img-src 'self'`, без `unsafe-*` і `data:`), CSP `/docs` із sha256 вбудованого скрипта Swagger (FastAPI 0.163.1), CSP API; Permissions-Policy; `request_body max_size 256KB` для `/api/*`, `/v2/*`; `keepalive 4s` до 127.0.0.1:8100; збережено HSTS, nosniff, DENY, Referrer-Policy, `-Server`, `-X-Role` (×2), `admin off`, лише 100.111.221.74:443, файлову TLS-пару, `/redoc` 404 | `deploy/Caddyfile` |
+| I1 | Caddy: журнал `default` без `http.log.error`, `http.handlers.reverse_proxy`, `http.stdlib`; CSP SPA (`img-src 'self'`, без `unsafe-*` і `data:`), CSP `/docs` із sha256 вбудованого скрипта Swagger (FastAPI 0.163.1), CSP API; Permissions-Policy; `request_body max_size 256KB` для `/api/*`, `/v2/*`; `keepalive 4s` до 127.0.0.1:8100; збережено HSTS, nosniff, DENY, Referrer-Policy, `-Server`, `-X-Role` (×2), `admin off`, лише 100.64.0.10:443, файлову TLS-пару, `/redoc` 404 | `deploy/Caddyfile` |
 | I2 | `New-V2TargetConfig`: Caddyfile — UTF-8 без BOM (раніше cp1251 → подвійне кодування коментарів) | `V2-install-common.ps1` |
 | I3 | `Test-V2WinswXml`: `--no-proxy-headers` вимагає рівно `TRUSTED_PROXIES=127.0.0.1,::1` | `V2-install-common.ps1` |
 | I4 | `runtime-harness.ps1`: версії БД з `$V2DbSet` (3/1), а не закріплене 2 | `runtime-harness.ps1` |

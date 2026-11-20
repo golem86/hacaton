@@ -33,7 +33,7 @@ Unit-тести перевіряють 22 питання, порядок, чот
 
 ## Змінені файли
 
-`frontend/src/official/catalog-v2.ts` (новий), `frontend/src/official/catalog.ts`, `frontend/src/official/OfficialAssessment.tsx`, `frontend/src/v2/v2.css`, `frontend/tests/official.test.mjs`, `frontend/e2e/official-assessment.spec.ts`, `OFFICIAL_QUESTIONNAIRE_COVERAGE.md` (новий), цей звіт. Змін тільки у власному WIP.
+`frontend/src/official/catalog-v2.ts` (новий), `frontend/src/official/catalog.ts`, `frontend/src/official/OfficialAssessment.tsx`, `frontend/src/v2/v2.css`, `frontend/tests/official.test.mjs`, `frontend/e2e/official-assessment.spec.ts`, `docs/reports/OFFICIAL_QUESTIONNAIRE_COVERAGE.md` (новий), цей звіт. Змін тільки у власному WIP.
 
 ## Невирішені рішення №5
 

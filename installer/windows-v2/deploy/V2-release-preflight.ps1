@@ -2,7 +2,7 @@
 # ЛИШЕ ЧИТАННЯ: нічого не створює, не змінює і не запускає служб; налаштування Windows, Firewall, Tailscale, ACL,
 # Caddy V1 і V1 не зачіпає. Єдині зовнішні програми: python.exe -I -B -S (запит версії й модулів) і caddy.exe (version,
 # adapt — лише перетворення Caddyfile у JSON на stdout; цільова форма TLSFIX5 передається через stdin, у файл не пишеться).
-# Hardening (I11): очікування TLSFIX5 — auto_https off, лише IPv4 100.111.221.74, файлова TLS-пара; журнали без IP/URI,
+# Hardening (I11): очікування TLSFIX5 — auto_https off, лише IPv4 100.64.0.10, файлова TLS-пара; журнали без IP/URI,
 # CSP, Permissions-Policy, request_body, keepalive до backend; Machine/User-змінні — лише імена.
 # Окремий режим без перевірок (для звірки з New-V2TargetConfig): -PrintTargetCaddyfile <Caddyfile> → цільовий текст у stdout.
 # Запуск — лише з дозволу №5, до DEPLOYMENT GO, після ручної звірки SHA256 цього файлу із сумою з окремого каналу:
@@ -21,14 +21,14 @@ Set-StrictMode -Version 2
 $ErrorActionPreference = 'Stop'
 $Candidate = 'dde86e68f4405c23ec4aad14db80f0b764fb4556'
 $Short = 'dde86e6'
-$Host4 = '100.111.221.74'                    # TLSFIX5: production DNS → лише IPv4; IPv6 Tailscale не слухається
-$HostName = 'desktop-jtgc2sg.taild5c033.ts.net'
+$Host4 = '100.64.0.10'                    # TLSFIX5: production DNS → лише IPv4; IPv6 Tailscale не слухається
+$HostName = 'v2-host.example.ts.net'
 # Те саме перетворення, що New-V2TargetConfig -UseFileTls (V2-install-common.ps1) для production; результат — лише в пам'яті
 function ConvertTo-TargetCaddyfile([string]$Path) {
   $bytes = [IO.File]::ReadAllBytes($Path)
   if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { throw 'Caddyfile має бути UTF-8 без BOM' }
   $text = (New-Object Text.UTF8Encoding($false, $true)).GetString($bytes)
-  $prodBind = 'bind 100.111.221.74 [fd7a:115c:a1e0::ef01:dddc]'; $bind = "bind $Host4"
+  $prodBind = 'bind 100.64.0.10 [fd7a:115c:a1e0::10]'; $bind = "bind $Host4"
   if ([regex]::Matches($text, [regex]::Escape($HostName)).Count -ne 1 -or [regex]::Matches($text, [regex]::Escape($prodBind)).Count -ne 1 -or
       [regex]::Matches($text, '(?m)^\s*auto_https disable_redirects\s*$').Count -ne 1 -or $text -match '(?m)^\s*tls\s') { throw 'шаблон Caddyfile не відповідає закріпленій формі' }
   $text = $text.Replace($prodBind, $bind)

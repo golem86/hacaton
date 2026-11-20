@@ -1331,7 +1331,7 @@ function New-V2RandomKey { $r = [Security.Cryptography.RandomNumberGenerator]::C
 # =====================================================================================================================
 function Invoke-V2Rehearsal {
   param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $Backend, [Parameter(Mandatory)] [string] $DbTool, [int] $Port = 8199,
-        [string] $FrontendOrigin = 'https://desktop-jtgc2sg.taild5c033.ts.net',
+        [string] $FrontendOrigin = 'https://v2-host.example.ts.net',
         [scriptblock] $PreSteps, [scriptblock] $Launcher, [int] $IntegrityVersion = $V2ReleaseSchema.integrity)
   Assert-V2Exe $Py 'python'
   if (@(Get-V2Listeners @($Port)).Count) { Stop-V2 "порт $Port зайнятий" }
@@ -1622,12 +1622,14 @@ function Get-V2TargetDns([string]$HostName) { @([Net.Dns]::GetHostAddresses($Hos
 function Get-V2TargetLocalIps { @(Get-NetIPAddress -ErrorAction Stop | ForEach-Object IPAddress) }
 function Assert-V2TargetIdentity {
   param([Parameter(Mandatory)][string]$HostName, [Parameter(Mandatory)][string[]]$Addresses, [switch]$TestHost)
-  $prodHost = 'desktop-jtgc2sg.taild5c033.ts.net'
-  $prodAddresses = @('100.111.221.74')
-  $reservedProdAddresses = @('100.111.221.74', 'fd7a:115c:a1e0::ef01:dddc')
+  # Справжній production-хост не зберігається в репозиторії: оператор задає V2_PROD_HOST / V2_PROD_IPV4 / V2_PROD_IPV6 / V2_PROD_COMPUTER.
+  $prodHost = if ($env:V2_PROD_HOST) { $env:V2_PROD_HOST } else { 'v2-host.example.ts.net' }
+  $prodAddresses = @(if ($env:V2_PROD_IPV4) { $env:V2_PROD_IPV4 } else { '100.64.0.10' })
+  $reservedProdAddresses = @($prodAddresses[0], $(if ($env:V2_PROD_IPV6) { $env:V2_PROD_IPV6 } else { 'fd7a:115c:a1e0::10' }))
+  $prodComputer = if ($env:V2_PROD_COMPUTER) { $env:V2_PROD_COMPUTER } else { 'V2-HOST' }
   if ($HostName -notmatch '^[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$' -or -not $Addresses.Count -or @($Addresses | Sort-Object -Unique).Count -ne $Addresses.Count) { Stop-V2 'target DNS/IP: некоректний host або адреси' }
   if ($TestHost -and ($HostName -ieq $prodHost -or @($Addresses | Where-Object { $reservedProdAddresses -contains $_ }).Count)) { Stop-V2 'test host не може використовувати production DNS/IP' }
-  if ($TestHost -and $env:COMPUTERNAME -ieq 'DESKTOP-JTGC2SG') { Stop-V2 'production машина не може бути test host' }
+  if ($TestHost -and $env:COMPUTERNAME -ieq $prodComputer) { Stop-V2 'production машина не може бути test host' }
   if (-not $TestHost -and ($HostName -ine $prodHost -or (@($Addresses | Sort-Object) -join ',') -ne (@($prodAddresses | Sort-Object) -join ','))) { Stop-V2 'production target config відрізняється від закріпленого — потрібне окреме рішення' }
   if ($HostName.Split('.')[0] -ine $env:COMPUTERNAME) { Stop-V2 "target hostname $HostName ≠ локальному $env:COMPUTERNAME" }
   try {
@@ -1678,8 +1680,8 @@ function New-V2TargetConfig {
   param([Parameter(Mandatory)][string]$CaddySource, [Parameter(Mandatory)][string]$BackendSource,
         [Parameter(Mandatory)][string]$Destination, [Parameter(Mandatory)][string]$HostName, [Parameter(Mandatory)][string[]]$Addresses,
         [switch]$UseFileTls, [string]$ReleaseId)              # -ReleaseId: <workingdirectory> backend → app\<ReleaseId>\backend (Clean Install)
-  $prodHost = 'desktop-jtgc2sg.taild5c033.ts.net'
-  $prodBind = 'bind 100.111.221.74 [fd7a:115c:a1e0::ef01:dddc]'
+  $prodHost = 'v2-host.example.ts.net'
+  $prodBind = 'bind 100.64.0.10 [fd7a:115c:a1e0::10]'
   # I2 (hardening): Caddyfile — UTF-8 без BOM; невалідний UTF-8 → виняток (раніше cp1251 давав подвійне кодування коментарів)
   $strictUtf8 = New-Object Text.UTF8Encoding($false, $true)
   $caddyBytes = [IO.File]::ReadAllBytes($CaddySource)

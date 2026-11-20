@@ -66,7 +66,7 @@ if ($Apply) {
   if (-not $DecisionRef -or -not $DecisionRef.Trim()) { throw 'STOP: потрібен -DecisionRef' }
   if (-not $Simulate) {
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'STOP: потрібні права адміністратора' }
-    if ($env:COMPUTERNAME -ne 'DESKTOP-JTGC2SG') { throw 'STOP: чужий хост' }
+    if ($env:COMPUTERNAME -ne 'V2-HOST') { throw 'STOP: чужий хост' }
   }
 }
 $targets = @(Get-ChildItem -LiteralPath $srv -Directory -Force | Where-Object { $n = $_.Name; @($Patterns | Where-Object { $n -match $_ }).Count -and -not @($Never | Where-Object { $n -match $_ }).Count } | Sort-Object Name)

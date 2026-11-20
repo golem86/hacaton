@@ -124,4 +124,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $R\installer\windows-v2\clea
   ним не користуватися — відкат БД через `Rollback-V2InPlace.ps1` або `v2_db_tool restore` (UPGRADE_IN_PLACE.md §6).
 - `Update-V2InPlace.ps1` має значення за замовчуванням 3/1 → 5/2 (історія TLSFIX5); для сервера після цього Clean Install передавати
   версії явно.
-- Інсталятор LM дозволений лише на сервері `DESKTOP-JTGC2SG` (перевірка хоста в `lm\`).
+- Інсталятор LM дозволений лише на сервері `V2-HOST` (перевірка хоста в `lm\`).

@@ -82,8 +82,8 @@ w(os.path.join(ROOT, "caddy", "Caddyfile"), """{
 \t}
 }
 
-desktop-jtgc2sg.taild5c033.ts.net:443 {
-\tbind 100.111.221.74
+v2-host.example.ts.net:443 {
+\tbind 100.64.0.10
 \ttls C:/srv/integrity-v2/caddy/tls/site.crt C:/srv/integrity-v2/caddy/tls/site.key
 \theader {
 \t\t-Server
@@ -139,7 +139,7 @@ shutil.copyfile(pipwhl, os.path.join(site, os.path.basename(pipwhl)))
 w(os.path.join(site, "pip-zip.pth"), os.path.basename(pipwhl) + "\n")
 import trustme  # noqa: E402
 ca = trustme.CA()
-cert = ca.issue_cert("desktop-jtgc2sg.taild5c033.ts.net")
+cert = ca.issue_cert("v2-host.example.ts.net")
 cert.cert_chain_pems[0].write_to_path(os.path.join(ROOT, "caddy", "tls", "site.crt"))
 cert.private_key_pem.write_to_path(os.path.join(ROOT, "caddy", "tls", "site.key"))
 

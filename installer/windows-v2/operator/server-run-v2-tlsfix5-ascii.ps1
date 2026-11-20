@@ -14,7 +14,7 @@ $tools = Join-Path $packageRoot 'artifacts\integrity-v2-tools-winsw2.12.0-caddy2
 $deploy = Join-Path $packageRoot 'artifacts\integrity-v2-schema3-manager-deploy.zip'
 $python = 'C:\Program Files\Python313\python.exe'
 
-if ($env:COMPUTERNAME -ine 'DESKTOP-JTGC2SG') { throw 'Wrong target computer' }
+if ($env:COMPUTERNAME -ine 'V2-HOST') { throw 'Wrong target computer' }
 foreach ($file in @($installer, $common, $tools, $deploy, $python)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing file: $file" }
 }

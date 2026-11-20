@@ -15,7 +15,7 @@
   <env name="APP_ENV" value="release"/>
   <env name="INTEGRITY_DB" value="C:\srv\integrity-v2\data\integrity_v2.db"/>
   <env name="V2_AUTH_DB" value="C:\srv\integrity-v2\data\v2_auth.db"/>
-  <env name="FRONTEND_ORIGINS" value="https://desktop-jtgc2sg.taild5c033.ts.net"/>
+  <env name="FRONTEND_ORIGINS" value="https://v2-host.example.ts.net"/>
   <env name="TRUSTED_PROXIES" value="127.0.0.1,::1"/>
   <env name="INTEGRITY_ANALYTICS_DEMO" value="1"/>
   <env name="V2_SECRET_KEY" value="__V2_SECRET_KEY__"/>

@@ -361,8 +361,8 @@ Grant-V2 "$V2Root\caddy\data" $C '(OI)(CI)M';          Grant-V2 "$V2Root\caddy\c
 Grant-V2 "$V2Root\logs\caddy" $C '(OI)(CI)M';          Grant-V2 "$V2Root\services\caddy" $C '(OI)(CI)RX'
 Assert-V2AclMatrix
 Invoke-V2ServiceStart -Name integrity-v2-caddy -Checks {      # R2-03 / I07: TLS або будь-яка перевірка не пройшла → Caddy V2 зупиняється автоматично
-  Assert-V2ServiceRunning -Name integrity-v2-caddy -Addresses @('100.111.221.74', 'fd7a:115c:a1e0::ef01:dddc')   # 443 лише Tailscale-IP, у дереві PID
-  $code = @(Invoke-V2Native -Exe "$env:SystemRoot\System32\curl.exe" -ArgList @('-sS', '-o', 'NUL', '-w', '%{http_code}', '--max-time', '20', 'https://desktop-jtgc2sg.taild5c033.ts.net/') -What 'HTTPS (без -k)')[-1]
+  Assert-V2ServiceRunning -Name integrity-v2-caddy -Addresses @('100.64.0.10', 'fd7a:115c:a1e0::10')   # 443 лише Tailscale-IP, у дереві PID
+  $code = @(Invoke-V2Native -Exe "$env:SystemRoot\System32\curl.exe" -ArgList @('-sS', '-o', 'NUL', '-w', '%{http_code}', '--max-time', '20', 'https://v2-host.example.ts.net/') -What 'HTTPS (без -k)')[-1]
   if ($code -ne '200') { Stop-V2 "HTTPS → HTTP $code; fallback cert/key — лише за новим дозволом №5" }   # помилка TLS = код curl ≠ 0 → STOP вище
   if (@(Get-NetUDPEndpoint -LocalPort 443 -ErrorAction SilentlyContinue).Count) { Stop-V2 'UDP 443' }
   if (@(Get-NetTCPConnection -State Listen -LocalPort 80 -ErrorAction SilentlyContinue).Count) { Stop-V2 ':80 слухається' }
@@ -379,7 +379,7 @@ Windows Firewall не змінюється. Якщо локально HTTPS пр
 Автоматична частина — на сервері, після етапу 7:
 
 ```powershell
-$H = 'https://desktop-jtgc2sg.taild5c033.ts.net'
+$H = 'https://v2-host.example.ts.net'
 Assert-V2Http -Url "$H/" -Expected 200; Assert-V2Http -Url "$H/login" -Expected 200; Assert-V2Http -Url "$H/api/health" -Expected 200
 Assert-V2Http -Url "$H/docs" -Expected 401; Assert-V2Http -Url "$H/openapi.json" -Expected 401; Assert-V2Http -Url "$H/redoc" -Expected 404
 Assert-V2Http -Url "$H/api/assessments/1/participation" -Headers @{ 'X-Role' = 'manager' } -Expected 401
@@ -392,7 +392,7 @@ Assert-V1Unchanged -Baseline $Base
 
 | # | Крок | PASS |
 | --- | --- | --- |
-| S1 | HTTPS | замок без попереджень; сертифікат на `desktop-jtgc2sg.taild5c033.ts.net` |
+| S1 | HTTPS | замок без попереджень; сертифікат на `v2-host.example.ts.net` |
 | S2 | Login (адміністратор 4.5) | форма OTP; cookie `__Host-v2_session` — `Secure`, `HttpOnly`, `SameSite=Lax` |
 | S3 | 2FA (код у Mailtrap Sandbox) | вхід виконано; у `logs\backend` немає коду й email |
 | S4 | Swagger `/docs` | відкривається; ресурси лише `/docs/swagger-ui/*`; в іншому браузері без входу → 401 |
