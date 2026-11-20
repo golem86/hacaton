@@ -52,6 +52,51 @@ python -I -c "import zipfile,hashlib,sys; z=zipfile.ZipFile(sys.argv[1]); p=sys.
 3. На сервері: обидві служби Running; немає Machine-змінних `UVICORN_*`, `V2_*`, `INTEGRITY_*`, `APP_ENV`, `TRUSTED_PROXIES`,
    `FRONTEND_ORIGINS`, `FORWARDED_ALLOW_IPS`; вільно ≥ 3 ГБ; `C:\Program Files\Python313\python.exe` (для `v2_db_tool`, stdlib, `-I`).
 4. Не чіпати `C:\srv\V2-release-TLSFIX5-20261120` — звідти працює завдання `Integrity-V2-TLS-Renewal` (SYSTEM, 04:15).
+5. Задати ідентичність production-хоста (розділ 2a).
+
+## 2a. Ідентичність production-хоста
+
+Справжні ім'я, адреси й ім'я машини production-сервера **не зберігаються в репозиторії**. `V2-upgrade-lib.ps1`
+(`Assert-V2UpHost`, цільовий Caddyfile) і `V2-install-common.ps1` (`Assert-V2TargetIdentity`, `New-V2TargetConfig`) беруть їх
+зі змінних оточення процесу; без них діють плейсхолдери `v2-host.example.ts.net` / `100.64.0.10` / `fd7a:115c:a1e0::10` / `V2-HOST`,
+і на справжньому сервері оновлення зупиняється (fail-closed: «чужий хост», «production target config відрізняється…»).
+
+| Змінна | Де використовується |
+|---|---|
+| `V2_PROD_HOST` | FQDN сайту: SNI/HTTPS smoke, підстановка в Caddyfile; перша мітка має дорівнювати імені машини |
+| `V2_PROD_IPV4` | адреса для `bind` Caddyfile, `--resolve` HTTPS smoke, звірка DNS і локальних адрес |
+| `V2_PROD_IPV6` | лише `Assert-V2TargetIdentity`: зарезервована production-адреса (заборонена для test host) |
+| `V2_PROD_COMPUTER` | `Assert-V2UpHost` (`Update-`, `Rollback-V2InPlace.ps1`, `Rotate-V2SecretKey.ps1`) і заборона test host на production-машині |
+
+Задаються **лише на рівні процесу** (у тій самій сесії адміністратора, з якої запускається скрипт; дочірній `powershell -File`
+їх успадковує). Machine-змінні `V2_*` заборонені — `preflight.env` зупиняє оновлення. Приклад (значення — **плейсхолдери**,
+підставте справжні з паспорта сервера, у репозиторій їх не записуйте):
+
+```powershell
+$env:V2_PROD_HOST     = 'v2-prod.example.ts.net'   # FQDN; перша мітка = $env:COMPUTERNAME
+$env:V2_PROD_IPV4     = '100.64.0.20'
+$env:V2_PROD_IPV6     = 'fd7a:115c:a1e0::20'
+$env:V2_PROD_COMPUTER = 'V2-PROD'                  # = $env:COMPUTERNAME
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\srv\V2-release-<id>\installer\windows-v2\upgrade\Update-V2InPlace.ps1 `
+  -PackageDir ... -ApprovedSums ... -ReleaseId integrity-v2-<sha7> -DecisionRef '<рішення №5>' -ConfirmVerifiedBackup
+```
+
+Через SSH змінні треба задати в тій самій віддаленій команді/скрипті, що й запуск `Update-V2InPlace.ps1` (окрема SSH-сесія їх
+не бачить).
+
+**Caddyfile пакета — лише ШАБЛОН з репозиторію** (`installer\windows-v2\deploy\Caddyfile` без змін: рівно один
+`v2-host.example.ts.net` і рівно один `bind 100.64.0.10 [fd7a:115c:a1e0::10]`). `New-V2TargetConfig` сам підставляє
+`V2_PROD_HOST` і `bind <V2_PROD_IPV4>` та додає рядок `tls` файлової пари. **Не кладіть у пакет живий Caddyfile сервера** (зі
+справжнім хостом): `stage.caddyfile` зупиниться з «production template не відповідає закріпленій формі». Якщо Caddyfile не
+змінюється — не додавайте його в пакет або передайте `-SkipCaddyfile`.
+
+**Жорстка перевірка імені машини.** Частина скриптів досі порівнює `$env:COMPUTERNAME` з літералом `V2-HOST` і **не** читає
+`V2_PROD_COMPUTER`: `tls\Request-V2TlsPair.ps1`, `tls\Renew-V2TlsPair.ps1`, `tls\Invoke-V2TlsScheduled.ps1`,
+`tls\Restart-V2Tlsfix5Verified.ps1`, `tls\Verify-V2Tlsfix5Runtime.ps1`, `upgrade\Register-V2BackupTask.ps1`,
+`upgrade\Invoke-V2DailyBackup.ps1`, `upgrade\Protect-V2Leftovers.ps1`, `upgrade\Disable-V2InstallLeftoverTasks.ps1`,
+`operator\server-run-v2-tlsfix5-ascii.ps1` (перелік: `grep -rn "V2-HOST" installer/windows-v2`). На сервері з іншим іменем
+вони зупиняються («Wrong host» / «чужий хост»), зокрема щоденне резервне копіювання й TLS-поновлення, тож **потребують
+адаптації** окремою зміною коду (зараз код заморожено).
 
 ## 3. Запуск через SSH (неінтерактивно)
 
@@ -71,9 +116,11 @@ ssh <admin>@<сервер> powershell -NoProfile -NonInteractive -ExecutionPolic
 ```
 
 Версії схем за замовчуванням: з `integrity 3 / auth 1` (сервер TLSFIX5) до `integrity 5 / auth 2` (`-FromIntegrityVersion`,
-`-FromAuthVersion`, `-ToIntegrityVersion`, `-ToAuthVersion`). Поточний код — integrity 6 / auth 2: для сервера, встановленого
-`clean-install.ps1` поточного релізу ([CLEAN_INSTALL_CURRENT.md](CLEAN_INSTALL_CURRENT.md)), версії передаються явно
-(`-FromIntegrityVersion 6 -FromAuthVersion 2 -ToIntegrityVersion <нова> -ToAuthVersion <нова>`).
+`-FromAuthVersion`, `-ToIntegrityVersion`, `-ToAuthVersion`). Поточний код — integrity 7 / auth 2 (`SCHEMA_VERSION = 7`,
+integrity 7 = 6 + `user_units`): для сервера, встановленого `clean-install.ps1`
+([CLEAN_INSTALL_CURRENT.md](CLEAN_INSTALL_CURRENT.md)), версії передаються явно
+(`-FromIntegrityVersion 6 -FromAuthVersion 2 -ToIntegrityVersion 7 -ToAuthVersion 2`). Оновлення 6 → 7 пройшло з
+`-ToIntegrityVersion 7`.
 
 ## 4. Кроки, точки зупинки й коди виходу
 

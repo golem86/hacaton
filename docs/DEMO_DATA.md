@@ -37,7 +37,7 @@
 - Лише БД з позначкою `instance_meta('dataset', 'synthetic')` (ставить `python -m app.seed` або
   `v2_db_tool.py mark-synthetic`). Інакше **відмова** (код 2): демо-анкети не змішуються з реальними даними.
 - Цикл із такою самою назвою вже є → відмова, нічого не змінено (повторний запуск безпечний).
-- Схема лише перевіряється (`check_schema`, integrity schema 6); БД не мігрує й не створюється.
+- Схема лише перевіряється (`check_schema`, integrity schema 7); БД не мігрує й не створюється.
 - Не потребує `V2_SECRET_KEY`; читає лише `INTEGRITY_DB` (у release обов'язкова) і `APP_ENV`.
 - Коди виходу: `0` — виконано або план, `2` — відмова, `1` — помилка. Вивід — короткий підсумок без кодів доступу.
 
@@ -63,13 +63,51 @@ python -m app.demo_cycle --seed 7 --name "Демо seed 7" --confirm      # ще
    ```
    & 'C:\Program Files\Python313\python.exe' -I -B C:\srv\integrity-v2\pkg\ops-backup\v2_db_tool.py backup `
        C:\srv\integrity-v2\data\integrity_v2.db C:\srv\integrity-v2\backups\pre-demo-<час>.db `
-       --expect-version 6 --kind integrity --strict
+       --expect-version 7 --kind integrity --strict
    ```
 
-   Очікуваний рядок: `BACKUP OK user_version=6 … restore-test=ok sha256=…` — збережіть SHA256.
+   Очікуваний рядок: `BACKUP OK user_version=7 … restore-test=ok sha256=…` — збережіть SHA256.
 2. План: `powershell -NoProfile -ExecutionPolicy Bypass -File .\New-V2DemoCycle.ps1`
 3. Застосування: `powershell -NoProfile -ExecutionPolicy Bypass -File .\New-V2DemoCycle.ps1 -Apply`
    (параметри `-Responses`, `-Seed`, `-Name` — як у CLI).
+
+## Демо «Результати підрозділу»
+
+Екран «Результати підрозділу» (`GET /v2/user/unit-results`, `docs/API_CONTRACT.md`) показує користувачу V2 бали його
+підрозділу лише для закритого циклу, коли в підрозділі ≥ k анкет **і в усьому циклі немає жодної клітинки
+«категорія × підрозділ» з 1…k−1 анкет**. Одна мала клітинка будь-де приховує весь цикл для всіх підрозділів
+(`privacy_status: "suppressed"`): інакше бали малої групи можна відновити відніманням із загальних результатів.
+Тому стандартний демо-цикл (керівництво 4, персонал 3 < k = 5) на цьому екрані завжди прихований.
+
+Для показу — окремий цикл із `--no-small-groups`: керівництво й персонал — по 6 у кожному підрозділі, НПП і курсанти —
+щонайменше k + 1 = 6 у кожному підрозділі (для трьох підрозділів довідника потрібно ≥ 72 анкет; за замовчуванням 150).
+З каталогу `backend`:
+
+```
+python -m app.demo_cycle --no-small-groups                                        # лише план
+python -m app.demo_cycle --no-small-groups --confirm                              # створити цикл
+python -m app.demo_cycle --no-small-groups --name "Демо: підрозділи" --confirm    # якщо цикл з назвою за замовчуванням уже є
+```
+
+Потім власник сервера призначає підрозділ користувачу V2 (у вебі цього не робить ні користувач, ні адміністратор).
+Користувач має вже існувати у `V2_AUTH_DB`; підрозділ — лише з довідника `units`; без `--confirm` — лише план.
+Приклад з вигаданою адресою (реальні email у документацію й журнали команд не записуйте):
+
+```
+python -m app.v2_unit_cli list-units
+python -m app.v2_unit_cli set-unit --email demo.user@example.org --unit "Факультет 1"              # план
+python -m app.v2_unit_cli set-unit --email demo.user@example.org --unit "Факультет 1" --confirm    # виконати
+python -m app.v2_unit_cli clear-unit --email demo.user@example.org --confirm                      # зняти
+```
+
+Email у виводі маскується; у журнал пишеться подія `user.unit_change` (`actor_role = "server"`) без email, id і назви
+підрозділу. Коди виходу: `0` — виконано або план, `2` — відмова (немає користувача чи підрозділу), `1` — помилка.
+Після входу цього користувача екран для демо-циклу показує `privacy_status: "available"` (кількість анкет округлено
+вниз до кратного 5).
+
+На сервері: обгортка `New-V2DemoCycle.ps1` ключа `--no-small-groups` не передає, обгортки для `v2_unit_cli` немає —
+обидві команди запускаються вручну з venv служби в робочому каталозі backend зі змінними `INTEGRITY_DB`, `V2_AUTH_DB`,
+`APP_ENV` як у XML служби, **після** резервної копії INTEGRITY_DB (крок 1 вище; `user_units` теж у ній).
 
 ## Відкат
 
@@ -81,7 +119,7 @@ sc.exe stop integrity-v2-backend
 Rename-Item C:\srv\integrity-v2\data\integrity_v2.db integrity_v2.db.manual-<час>
 & 'C:\Program Files\Python313\python.exe' -I -B C:\srv\integrity-v2\pkg\ops-backup\v2_db_tool.py restore `
     C:\srv\integrity-v2\backups\pre-demo-<час>.db C:\srv\integrity-v2\data\integrity_v2.db `
-    --expect-version 6 --kind integrity --sha256 <SHA256 з кроку 1> --strict
+    --expect-version 7 --kind integrity --sha256 <SHA256 з кроку 1> --strict
 sc.exe start integrity-v2-backend
 ```
 
