@@ -37,3 +37,8 @@ frontend/blob-report/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local LM models (scripts/fetch-lm-model.*; never commit weights)
+models/
+*.gguf
+*.gguf.partial
