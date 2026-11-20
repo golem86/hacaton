@@ -40,6 +40,8 @@ ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "ass
                    # Чернетка тексту звіту локальною LM: лише роль, id адміністратора, цикл і count —
                    # кількість циклів у запиті (1 або 2). Ні тексту, ні виду, ні промпту в журналі немає
                    "report.narrative",
+                   # Звіт зрілості за Додатком В (PDF/XLSX): лише роль, id адміністратора і цикл, без деталей
+                   "report.maturity_export",
                    # Синтетичний демо-цикл (python -m app.demo_cycle, лише БД з позначкою synthetic):
                    # actor_role "server", цикл і count — кількість анкет; жодних кодів і відповідей
                    "demo.cycle_generated"}

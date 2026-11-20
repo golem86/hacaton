@@ -60,6 +60,29 @@ TEXTS = {
 }
 
 
+# Умови правил стисло — для звітів (PDF/XLSX). Самі пороги — константи вище, docs/maturity-annex-v.md, розділ 8.
+RULE_CONDITIONS = {
+    RULE_LOW: "Рівень експерта, а без експертної оцінки — самооцінки, нижчий за 3",
+    RULE_SELF_EXPERT: "Самооцінка − експерт ≥ 1,0 рівня",
+    RULE_SELF_CHECKLIST: "Самооцінка − чек-лист ≥ 1,0 рівня",
+    RULE_BELOW_TARGET: "Підтверджений показник нижчий за ціль, самооцінка ≥ 3,5",
+    RULE_UNCONFIRMED: "Самооцінка ≥ 4 без підтверджених об'єктивних показників",
+}
+
+
+def base_level(self_level, expert_level):
+    """
+    Підсумковий рівень критерію за правилами методики (розділ 8, MAT_LOW_LEVEL_LT_3): рівень експерта,
+    а якщо експертної оцінки немає — самооцінка. Повертає (рівень, джерело) або (None, None).
+    Працює і з Fraction (розрахунок), і з показаними числами відповіді /maturity (звіти).
+    """
+    if expert_level is not None:
+        return expert_level, "expert"
+    if self_level is not None:
+        return self_level, "self"
+    return None, None
+
+
 def round_half_up(value: Fraction, places: int) -> Fraction:
     """Точне округлення «половина вгору» (рівні й індекси невід'ємні)."""
     scale = 10 ** places
@@ -192,7 +215,7 @@ def calculate(assessment: dict, k: int, responses: list[tuple[str, dict]], exper
                 "basis": basis, "text": TEXTS[rule].format(name=meta["name_uk"]),
                 "requires_human_decision": True})
 
-        base, source = (e, "expert") if e is not None else (s, "self")
+        base, source = base_level(s, e)
         if base is not None and base < LOW_THRESHOLD:
             add(RULE_LOW, {"source": source, "level": show(base), "threshold": 3})
         for gap in gaps:

@@ -108,3 +108,7 @@
   .mp-indices { grid-template-columns: minmax(0, 1fr); }
   .mp-method dl > div { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
 }
+
+/* Кнопки звіту зрілості PDF/XLSX (розділ адміністратора). */
+.mp-report-export { display: grid; gap: .5rem; margin: .75rem 0; }
+.mp-report-export p { margin: 0; }

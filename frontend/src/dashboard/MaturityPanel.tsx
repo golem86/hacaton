@@ -7,6 +7,7 @@ import {
   type GapSource, type MaturityCriterion, type MaturityGap, type MaturityRecommendation, type MaturityReport, type SourceStatus,
 } from '../api/maturity'
 import { categoryLabel } from '../components/categories'
+import { MaturityReportButtons } from './MaturityReportButtons'
 import './dashboard.css'
 import './maturity-panel.css'
 
@@ -22,6 +23,8 @@ import './maturity-panel.css'
 export interface MaturityPanelProps {
   assessments: Assessment[]
   selectedId: number | null
+  /** Показати кнопки звіту зрілості PDF/XLSX (лише розділ адміністратора; сервер усе одно перевіряє роль). */
+  exportable?: boolean
 }
 
 /** Обидва правила розбіжностей контракту мають поріг 1,0 рівня. */
@@ -454,7 +457,7 @@ export function localBlock(assessment: Assessment | undefined): string | null {
   return MATURITY_MESSAGES[409]
 }
 
-export default function MaturityPanel({ assessments, selectedId }: MaturityPanelProps) {
+export default function MaturityPanel({ assessments, selectedId, exportable = false }: MaturityPanelProps) {
   const [chosen, setChosen] = useState<number | null>(selectedId)
   const [retry, setRetry] = useState(0)
   const [stored, setStored] = useState<{ key: string; state: MaturityState }>({ key: '', state: { status: 'loading' } })
@@ -503,6 +506,7 @@ export default function MaturityPanel({ assessments, selectedId }: MaturityPanel
               <option key={item.id} value={item.id}>{item.name}{item.status === 'closed' ? '' : ' (не закрито)'}</option>
             ))}
           </select>
+          {exportable && state.status === 'success' && <MaturityReportButtons key={state.data.assessment.id} id={state.data.assessment.id} />}
           <MaturityStatus state={state} retry={() => setRetry(value => value + 1)} />
         </>
       )}
