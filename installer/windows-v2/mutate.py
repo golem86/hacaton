@@ -65,7 +65,7 @@ MUT = [
     ("MA3", DB, sub('add("A12", not extra and not lack,', 'add("A12", True,'), ["auth"], ["N14.trigger", "N14.view", "N14.table"], "auth: сторонні об'єкти не перевіряються"),
     ("MA4", DB, sub('add("A11", "v2_dev_mail" not in cat["tables"],', 'add("A11", True,'), ["auth"], ["N13"], "auth: v2_dev_mail дозволено"),
     ("MA5", DB, sub('add("A04", not fk,', 'add("A04", True,'), ["auth"], ["N10"], "auth: foreign_key_check не перевіряється"),
-    ("MA6", DB, sub('add("A02", uv == RELEASE_AUTH_VERSION,', 'add("A02", True,'), ["auth"], ["N15.v0", "N15.v2"], "auth: версія не перевіряється"),
+    ("MA6", DB, sub('add(2, uv == version,', 'add(2, True,'), ["auth"], ["N15.v0", "N15.v2"], "auth: версія не перевіряється"),
     ("MA7", C, sub("if ($it.Db -eq 'v2_auth.db') {                                                            # етап 1: строга схема auth — ДО мутації", "if ($false) {"),
      ["ps"], ["R06.auth-incomplete"], "відкат: без строгої перевірки копії auth до мутації"),
     ("MA8", C, sub("if ($it.Db -eq 'v2_auth.db') {                                                          # етап 1: строга схема ВІДНОВЛЕНОЇ auth-БД", "if ($false) {"),

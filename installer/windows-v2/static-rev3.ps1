@@ -83,7 +83,9 @@ Add-Res 'P18' ($src -match "(?m)^\s+Job = \`$null \}" -and -not $bx.Contains('v2
 # P19 (етап 1): строга перевірка v2_auth — закріплений release-DDL; у відкаті — для копії ДО мутації і для відновленого файлу ДО RESTORE-OK
 $dbt = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'v2_db_tool.py'))
 $iA1 = $fr.IndexOf("@('auth-schema', `$it.Backup)"); $iA2 = $fr.IndexOf("@('auth-schema', `$dst)"); $iOk = $fr.IndexOf('RESTORE-OK-')
-Add-Res 'P19' ($dbt.Contains('RELEASE_AUTH_SOURCE_SHA256 = "cbb529ce0140385e7867bc12e6048614c59fa7fdfb22bc65b70e0626ada92086"') -and $iA1 -ge 0 -and $iA1 -lt $iN -and $iA2 -gt $iN -and $iA2 -lt $iOk) 'етап 1: auth-schema прив''язаний до release v2_auth.py (cbb529ce…); копія — до мутації, відновлений файл — до RESTORE-OK'
+# Hardening (I5): SHA джерела схеми не закріплюється в коді — береться з маніфесту релізу (bind-check --release-manifest)
+$okBind = -not $dbt.Contains('RELEASE_AUTH_SOURCE_SHA256') -and $dbt.Contains('def cmd_bind_check(') -and $dbt.Contains('--release-manifest') -and $dbt.Contains('SCHEMA_SPECS = {')
+Add-Res 'P19' ($okBind -and $iA1 -ge 0 -and $iA1 -lt $iN -and $iA2 -gt $iN -and $iA2 -lt $iOk) 'етап 1: auth-schema прив''язаний до release через маніфест (bind-check, без закріпленого SHA у коді); копія — до мутації, відновлений файл — до RESTORE-OK'
 # P20 (етап 3): відкат лише з доказом рівня job (Completeness = job, JobActive 0, OwnerScanAlive 0)
 $fp20 = [regex]::Match($src, '(?s)function Assert-V2RestorePermitted \{.*?\n\}').Value
 Add-Res 'P20' ($fp20.Contains("`$pr.Completeness -ne 'job'") -and $fp20.Contains('$pr.JobActive -ne 0') -and $fp20.Contains('$pr.OwnerScanAlive -ne 0')) 'етап 3: Assert-V2RestorePermitted вимагає доказу рівня Job Object (інакше P4 BLOCKED)'
