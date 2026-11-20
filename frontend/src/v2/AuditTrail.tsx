@@ -25,6 +25,11 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   'tracker.in_progress': 'Захід розпочато',
   'tracker.completed': 'Захід виконано',
   'tracker.verified': 'Результат заходу перевірено',
+  'annex_v.expert_create': 'Внесено експертну оцінку (Додаток В)',
+  'checklist.update': 'Оновлено пункт чеклиста Додатка Б',
+  'checklist.confirm': 'Підтверджено пункт чеклиста Додатка Б',
+  'objective.create': 'Внесено об’єктивний показник',
+  'objective.confirm': 'Підтверджено об’єктивний показник',
 }
 
 /** Ролі виконавця: сесійні ролі V2 (admin, user, data_officer) і демонстраційні ролі V1 з backend/app/roles.py. */
@@ -57,6 +62,11 @@ const ACTION_KINDS: Readonly<Record<string, string>> = {
   'tracker.in_progress': 'tracker',
   'tracker.completed': 'tracker',
   'tracker.verified': 'tracker',
+  'annex_v.expert_create': 'maturity',
+  'checklist.update': 'maturity',
+  'checklist.confirm': 'maturity',
+  'objective.create': 'maturity',
+  'objective.confirm': 'maturity',
 }
 
 const ALL = 'all'

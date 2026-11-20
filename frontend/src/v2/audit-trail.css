@@ -162,6 +162,7 @@
 .audit-trail__action[data-kind="access"]::before { background: #547b9b; }
 .audit-trail__action[data-kind="account"]::before { background: #9b742d; }
 .audit-trail__action[data-kind="tracker"]::before { background: #78729b; }
+.audit-trail__action[data-kind="maturity"]::before { background: #3a7f6a; }
 
 .audit-trail__cycle {
   font-variant-numeric: tabular-nums;

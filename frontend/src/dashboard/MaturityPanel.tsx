@@ -107,6 +107,8 @@ const BASIS_LABELS: Record<string, string> = {
   self: 'самооцінка', expert: 'експерт', checklist: 'чеклист', diff: 'розрив', threshold: 'поріг',
   level: 'рівень', source: 'джерело', value: 'значення', target: 'цільове значення', name: 'показник',
   confirmed: 'підтверджено', criterion: 'критерій', status: 'статус',
+  self_min: 'поріг самооцінки', indicators_total: 'показників усього', indicators_confirmed: 'підтверджених показників',
+  indicators: 'показники', expert_level: 'рівень експерта',
 }
 
 function basisValue(value: unknown): string {
@@ -114,6 +116,9 @@ function basisValue(value: unknown): string {
   if (typeof value === 'number') return plainNumber(value)
   if (typeof value === 'boolean') return value ? 'так' : 'ні'
   if (typeof value === 'string') return value in SOURCE_LABELS ? SOURCE_LABELS[value as keyof typeof SOURCE_LABELS] : value
+  if (Array.isArray(value)) return value.map(item => item && typeof item === 'object' && 'name' in item
+    ? `${String((item as { name: unknown }).name)}: ${basisValue((item as { value?: unknown }).value)} (ціль ${basisValue((item as { target?: unknown }).target)})`
+    : basisValue(item)).join('; ') || '—'
   return JSON.stringify(value)
 }
 
