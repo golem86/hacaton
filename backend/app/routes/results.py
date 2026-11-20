@@ -10,7 +10,12 @@
 - результати доступні лише після ЗАКРИТТЯ оцінювання (інакше порівняння «до/після»
   чиєїсь анкети розкрило б її відповіді);
 - категорії, менші за k, приховуються; додатково приховується ще одна, якщо інакше
-  із загального бала можна було б вирахувати бал малої групи (див. anonymity.py).
+  із загального бала можна було б вирахувати бал малої групи (див. anonymity.py);
+- приховані категорії НЕ перелічуються взагалі (D4): у `categories` і в кожному
+  `components[].by_category` — лише видимі категорії (з hidden=false для сумісності),
+  а `suppressed: true` означає, що щось приховано. Обидва списки ріжуться однаково.
+  Загальний бал і кількість лишаються видимими: «підсумок − видимі» дає лише суму
+  (чи середнє) ВСІХ прихованих категорій разом, а їх сумарно ≥ k.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -19,6 +24,7 @@ from sqlalchemy.orm import Session
 from ..anonymity import hidden_flags
 from ..database import get_db
 from ..models import Answer, Component, Cycle, ObjectiveIndicator, Question, ResponseSet
+from ..request_limits import BoundedId
 from ..roles import ANALYTICS_ROLES, require_role
 
 router = APIRouter(prefix="/api", tags=["Результати"])
@@ -30,7 +36,7 @@ def _round(x: float | None) -> float | None:
 
 @router.get("/assessments/{assessment_id}/results",
             dependencies=[Depends(require_role(*ANALYTICS_ROLES))])
-def assessment_results(assessment_id: int, db: Session = Depends(get_db)):
+def assessment_results(assessment_id: BoundedId, db: Session = Depends(get_db)):
     """
     Бал компонента = середнє відповідей, переведених у 0–100:
         (відповідь − мінімум шкали) / (максимум − мінімум) × 100.
@@ -49,6 +55,7 @@ def assessment_results(assessment_id: int, db: Session = Depends(get_db)):
                  .group_by(ResponseSet.respondent_category).all())
     categories = sorted(sizes)
     flags = dict(zip(categories, hidden_flags([sizes[c] for c in categories], k)))
+    visible = [c for c in categories if not flags[c]]          # приховані не перелічуються (D4)
     total = sum(sizes.values())
 
     # 2. Середній бал (0–100) по компоненту × категорії і по компоненту загалом
@@ -76,9 +83,8 @@ def assessment_results(assessment_id: int, db: Session = Depends(get_db)):
         components.append({
             "code": comp.code, "name": comp.name, "weight": comp.weight,
             "score": _round(overall.get(comp.id)) if overall_visible else None,
-            "by_category": [{"category": c,
-                             "score": None if flags[c] else _round(by_cat.get((comp.id, c))),
-                             "hidden": flags[c]} for c in categories],
+            "by_category": [{"category": c, "score": _round(by_cat.get((comp.id, c))), "hidden": False}
+                            for c in visible],
             "objective_indicators": objective.get(comp.id, []),
         })
 
@@ -86,7 +92,8 @@ def assessment_results(assessment_id: int, db: Session = Depends(get_db)):
         "assessment": {"id": cycle.id, "name": cycle.name, "status": cycle.status},
         "min_group_size": k,
         "responses_total": total if overall_visible else None,
-        "categories": [{"category": c, "responses": None if flags[c] else sizes[c], "hidden": flags[c]}
-                       for c in categories],
+        "categories": [{"category": c, "responses": sizes[c], "hidden": False} for c in visible],
+        # Розріз по категоріях (і всі by_category) неповний: щось приховано. Без даних — теж true.
+        "suppressed": not overall_visible or any(flags.values()),
         "components": components,
     }

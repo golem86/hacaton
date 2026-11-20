@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database import get_db
 from app.main import app
 from app.migrations import SCHEMA_VERSION, MigrationError, migrate
-from app.models import AccessToken, Answer, ResponseSet
+from app.models import AccessToken, Answer, ResponseSet, hash_access_code
 
 # Схема таблиць так, як її створювала попередня версія бекенду (PR #4)
 LEGACY_DDL = """
@@ -139,7 +139,7 @@ def test_api_accepts_old_unit_after_migration(tmp_path):
     migrate(engine)
     Session = sessionmaker(bind=engine)
     with Session() as s:
-        s.add(AccessToken(cycle_id=1, token="legacy-test-token", used=False))
+        s.add(AccessToken(cycle_id=1, token_hash=hash_access_code("legacy-test-token"), used=False))
         s.commit()
 
     def override():
@@ -183,7 +183,7 @@ def test_v1_database_gets_audit_table_without_touching_data(tmp_path):
 
     after = inspect_db(db)
     assert report["action"] == "migrated" and report["backup"] is not None
-    assert after["version"] == SCHEMA_VERSION == 4
+    assert after["version"] == SCHEMA_VERSION == 5
     assert "audit_events" in after["tables"]
     assert after["set_rows"] == before["set_rows"] and after["answer_rows"] == before["answer_rows"]
     assert set(Base.metadata.tables) <= after["tables"]

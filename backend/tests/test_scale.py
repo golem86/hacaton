@@ -11,12 +11,13 @@ from sqlalchemy.orm import sessionmaker
 from app import seed
 from app.database import SessionLocal, get_db
 from app.main import app
-from app.models import AccessToken, Question
+from app.models import AccessToken, Question, hash_access_code
 from app.questionnaire_contract import (MAX_SCALE_VALUES, SAFE_INTEGER, Questionnaire,
                                         scale_error, validate_scale)
 
 client = TestClient(app)
 ADMIN, RESPONDENT, MANAGER = {"X-Role": "admin"}, {"X-Role": "respondent"}, {"X-Role": "manager"}
+DATA_OFFICER = {"X-Role": "data_officer"}   # коди видає лише data_officer (V2_HARDENING_CONTRACT, розділ 1)
 
 
 # --- Правило шкали: граничні значення ---------------------------------------
@@ -173,7 +174,7 @@ def test_single_value_scale_does_not_break_results(temp_client):
 # --- POST /submissions: некоректні вхідні анкети → 422 -----------------------
 
 def new_token() -> str:
-    return client.post("/api/assessments/3/tokens", params={"count": 1}, headers=ADMIN).json()["tokens"][0]
+    return client.post("/api/assessments/3/tokens", params={"count": 1}, headers=DATA_OFFICER).json()["tokens"][0]
 
 
 def answers(value=3):
@@ -206,7 +207,7 @@ def test_invalid_submission_returns_422_and_keeps_token(name, mutate):
                            json=body(token, answers=mutate(answers())))
     assert response.status_code == 422, name
     db = SessionLocal()
-    assert db.query(AccessToken).filter_by(token=token).one().used is False, name
+    assert db.query(AccessToken).filter_by(token_hash=hash_access_code(token)).one().used is False, name
     db.close()
 
 

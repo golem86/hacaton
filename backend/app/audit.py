@@ -13,11 +13,12 @@
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from .database import get_db
 from .models import AuditEvent
+from .request_limits import OptionalIdQuery
 from .roles import require_role
 
 # Дозволені службові поля details і їхній тип. Нове поле додається сюди свідомо, з рев'ю.
@@ -52,27 +53,40 @@ def record(db: Session, actor_role: str, action: str, assessment_id: int | None 
            actor_user_id: int | None = None, **details) -> None:
     """
     Додає запис у поточну транзакцію. Зберігається разом із db.commit() самої дії.
-    actor_user_id — id користувача V2_AUTH_DB (без email та імені). ТИМЧАСОВО приймається,
-    але не зберігається: колонку audit_events.actor_user_id додає міграція schema 4 (потік даних).
+    actor_user_id — id користувача V2_AUTH_DB (без email та імені; колонка schema 5).
+    None — дія без сесії (CLI-команда або демо-заголовок X-Role у development).
     """
     _validate(action, details)
+    if actor_user_id is not None and (type(actor_user_id) is not int or actor_user_id < 1):
+        raise ValueError("actor_user_id має бути додатним цілим id користувача")
     db.add(AuditEvent(created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                       actor_role=actor_role, action=action, assessment_id=assessment_id,
-                      details=json.dumps(details, ensure_ascii=False)))
+                      actor_user_id=actor_user_id, details=json.dumps(details, ensure_ascii=False)))
+
+
+def actor_user_id(request: Request) -> int | None:
+    """
+    id користувача з principal, який require_role(...) поклав у request.state.
+    Для сесії V2 — id з V2_AUTH_DB; для демо-заголовка X-Role і без principal — None.
+    Використання в маршруті: audit.record(db, role, "...", id, actor_user_id=audit.actor_user_id(request)).
+    """
+    principal = getattr(request.state, "principal", None) or {}
+    user = principal.get("user") if principal.get("source") == "session" else None
+    return int(user["id"]) if user else None
 
 
 router = APIRouter(prefix="/api", tags=["Журнал дій"])
 
 
 @router.get("/audit-events", dependencies=[Depends(require_role(*AUDIT_ROLES))])
-def list_audit_events(assessment_id: int | None = None,
+def list_audit_events(assessment_id: OptionalIdQuery = None,
                       limit: int = Query(default=100, ge=1, le=500),
                       db: Session = Depends(get_db)):
-    """Останні записи журналу (найновіші першими). Доступ: admin, auditor."""
+    """Останні записи журналу (найновіші першими). Доступ: admin."""
     query = db.query(AuditEvent)
     if assessment_id is not None:
         query = query.filter(AuditEvent.assessment_id == assessment_id)
     events = query.order_by(AuditEvent.id.desc()).limit(limit).all()
     return [{"id": e.id, "created_at": e.created_at.isoformat() + "Z", "actor_role": e.actor_role,
-             "action": e.action, "assessment_id": e.assessment_id,
+             "actor_user_id": e.actor_user_id, "action": e.action, "assessment_id": e.assessment_id,
              "details": json.loads(e.details)} for e in events]

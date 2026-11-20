@@ -9,19 +9,29 @@
 Без прапорця --reset скрипт відмовиться чіпати базу, у якій уже є дані.
 --reset — лише для окремої синтетичної бази. Робочу базу оновлює migrations.py
 під час запуску сервера без втрати даних (див. docs/DATABASE_UPGRADE.md).
+
+Запобіжники (D3, docs/V2_HARDENING_CONTRACT.md):
+  - у release (APP_ENV=release) seed відмовляє завжди — робоча БД не може бути «демо»;
+  - версія схеми перевіряється ДО будь-яких змін: БД новішої версії не стирається;
+  - --reset спершу робить резервну копію і перевіряє її (integrity_check, кількість
+    рядків, версія), і лише тоді стирає таблиці;
+  - seed позначає БД як синтетичну: instance_meta('dataset', 'synthetic') — без цієї
+    позначки демо-аналітика в release не працює (routes/analytics.py).
 """
 import argparse
 import random
 import secrets
 import sys
 from datetime import date
+from pathlib import Path
 
 from sqlalchemy import inspect, select
 
+from . import settings
 from .database import Base, SessionLocal, engine
-from .migrations import migrate
-from .models import (AccessToken, Answer, Component, Cycle, ObjectiveIndicator,
-                     Question, Recommendation, ResponseSet, Unit)
+from .migrations import SCHEMA_VERSION, MigrationError, backup_database, migrate
+from .models import (AccessToken, Answer, Component, Cycle, InstanceMeta, ObjectiveIndicator,
+                     Question, Recommendation, ResponseSet, Unit, hash_access_code)
 
 random.seed(2026)  # однакове «випадкове» щоразу, щоб у всієї команди були ті самі дані
 
@@ -99,24 +109,62 @@ def database_has_data() -> bool:
     return False
 
 
+class SeedRefused(RuntimeError):
+    """Seed не виконано; база не змінена."""
+
+
+def _check_before_changes() -> None:
+    """Перевірки, що виконуються ДО будь-яких змін бази (і до drop_all)."""
+    if settings.is_release():
+        raise SeedRefused("python -m app.seed у release заборонено: seed лише для окремої "
+                          "синтетичної бази в development. База не змінена")
+    raw = engine.raw_connection()
+    try:
+        version = raw.driver_connection.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        raw.close()
+    if version > SCHEMA_VERSION:
+        raise SeedRefused(f"Версія схеми бази {version} новіша за підтримувану {SCHEMA_VERSION}: "
+                          "seed відмовляє, база не змінена")
+
+
+def _verified_backup() -> str | None:
+    """Резервна копія перед --reset з перевіркою (integrity_check, рядки, версія)."""
+    database = engine.url.database
+    if database in (None, "", ":memory:"):
+        return None
+    raw = engine.raw_connection()
+    try:
+        return str(backup_database(raw.driver_connection, Path(database)))
+    except MigrationError as exc:
+        raise SeedRefused(f"{exc}. Seed --reset зупинено до стирання") from exc
+    finally:
+        raw.close()
+
+
 def run(reset: bool = False) -> bool:
     """
     Заповнює базу демо-даними. Повертає True, якщо дані створено.
     Без reset=True НЕ чіпає базу, у якій уже є дані — захист від випадкового стирання.
+    У release і для БД новішої схеми піднімає SeedRefused, нічого не змінивши.
     """
     random.seed(2026)  # щоразу однакові дані
+    _check_before_changes()
 
     if database_has_data() and not reset:
         print("У базі вже є дані — нічого не змінюю.\n"
               "Щоб стерти все і створити демо-дані заново: python -m app.seed --reset")
         return False
 
-    # 1. Стираємо таблиці ЛИШЕ за явного --reset; інакше база гарантовано порожня
+    # 1. Стираємо таблиці ЛИШЕ за явного --reset і ЛИШЕ після перевіреної резервної копії
+    if reset and database_has_data():
+        print("Резервна копія перед стиранням:", _verified_backup())
     if reset:
         Base.metadata.drop_all(engine)
     migrate(engine)  # створює таблиці поточної схеми і записує її версію
 
     db = SessionLocal()
+    db.add(InstanceMeta(key="dataset", value="synthetic"))   # позначка синтетичної БД (D12)
 
     # 2. Довідник підрозділів (анкети можуть посилатися лише на них)
     db.add_all(Unit(name=name) for name in UNITS)
@@ -149,12 +197,14 @@ def run(reset: bool = False) -> bool:
                     comp_index = int(q.component.code[1:]) - 1
                     level = BASE_LEVEL[category][comp_index] + shift
                     rs.answers.append(Answer(question_id=q.id, value=level_to_answer(level)))
-                # токен лише позначаємо «використаним» — без зв'язку з анкетою
-                db.add(AccessToken(cycle_id=cycle.id, token=secrets.token_hex(16), used=True))
+                # токен лише позначаємо «використаним» — без зв'язку з анкетою; у БД — лише хеш
+                db.add(AccessToken(cycle_id=cycle.id, token_hash=hash_access_code(secrets.token_hex(16)),
+                                   used=True))
 
         # кілька невикористаних токенів = людей, які ще не пройшли опитування
         for _ in range(20):
-            db.add(AccessToken(cycle_id=cycle.id, token=secrets.token_hex(16), used=False))
+            db.add(AccessToken(cycle_id=cycle.id, token_hash=hash_access_code(secrets.token_hex(16)),
+                               used=False))
 
         for i, (code, comp) in enumerate(components.items()):
             db.add(ObjectiveIndicator(
@@ -189,4 +239,9 @@ if __name__ == "__main__":
     parser.add_argument("--reset", action="store_true",
                         help="стерти ВСІ наявні дані і створити демо-дані заново")
     args = parser.parse_args()
-    sys.exit(0 if run(reset=args.reset) or not args.reset else 1)
+    try:
+        created = run(reset=args.reset)
+    except (SeedRefused, MigrationError) as exc:
+        print(f"Seed не виконано: {exc}", file=sys.stderr)
+        sys.exit(2)
+    sys.exit(0 if created or not args.reset else 1)
