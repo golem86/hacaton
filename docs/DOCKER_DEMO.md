@@ -30,6 +30,8 @@ docker compose up --build
 
 `config --quiet` перевіряє Compose без виведення розгорнутих значень `V2_SECRET_KEY`. Не зберігайте повний `docker compose config` у загальнодоступному журналі. Backend під час старту виконує чинний `python -m app.seed` **без `--reset`**: він заповнює тільки нову порожню синтетичну БД в окремому named volume. За наявності даних seed відмовляється їх перезаписувати, після чого стартує FastAPI з чинними міграціями development. У volume `demo_data` зберігаються дві незалежні SQLite: `/data/integrity.db` і `/data/v2_auth.db`. Frontend чекає на healthcheck backend.
 
+Оскільки цей volume завжди містить лише синтетичну БД із seed, `INTEGRITY_ANALYTICS_DEMO` у `compose.yaml` і `.env.example` за замовчуванням дорівнює `1`: Integrity Index, рекомендації та порівняння працюють одразу, а не повертають `503`. Прапорець не перевіряє походження даних, тому для будь-якої несинтетичної БД задайте `INTEGRITY_ANALYTICS_DEMO=0`.
+
 Відкрийте `http://127.0.0.1:8080/` (або ваш порт); Survey — `/survey`. Перевірте з іншого термінала:
 
 ```powershell

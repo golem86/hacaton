@@ -1,10 +1,82 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import Chart from 'chart.js/auto'
 import { getAssessments, type Assessment } from '../api/assessments'
 import { activateCycle, closeCycle, createCycle, getParticipation, issueAccessTokens, type Participation } from '../api/admin'
 import './AssessmentManager.css'
 
 const categoryLabels = { mgmt: 'Керівництво', npp: 'Науково-педагогічні працівники', cadets: 'Курсанти', staff: 'Працівники' }
 type Category = keyof typeof categoryLabels
+
+export const cycleStatusLabels: Readonly<Record<Assessment['status'], string>> = { draft: 'Чернетка', open: 'Відкритий', closed: 'Закритий' }
+
+/** Український статус циклу; невідоме значення показується як є. */
+export function cycleStatusLabel(status: string) {
+  return Object.hasOwn(cycleStatusLabels, status) ? cycleStatusLabels[status as Assessment['status']] : status
+}
+
+const usedColor = '#276456'
+const unusedColor = '#b7cec4'
+const formatCount = (value: number) => value.toLocaleString('uk-UA')
+const formatPercent = (value: number) => `${value.toLocaleString('uk-UA', { maximumFractionDigits: 1 })}%`
+
+/**
+ * Кругова діаграма використаних і невикористаних кодів.
+ * null від API означає «приховано через мінімальний розмір групи» — його не перетворюємо на 0.
+ */
+export function ParticipationChart({ participation }: { participation: Participation | null }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const issued = participation?.tokens_issued ?? null
+  const unused = participation?.tokens_unused ?? null
+  const used = issued !== null && unused !== null ? Math.max(issued - unused, 0) : null
+  const visible = issued !== null && issued > 0 && unused !== null && used !== null
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !issued || used === null || unused === null) return
+    const chart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['Використані коди', 'Невикористані коди'],
+        datasets: [{ data: [used, unused], backgroundColor: [usedColor, unusedColor], borderColor: '#ffffff', borderWidth: 2, hoverOffset: 4 }],
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '68%',
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: context => ` ${context.label}: ${formatCount(Number(context.raw))}` } },
+        },
+      },
+    })
+    return () => chart.destroy()
+  }, [issued, used, unused])
+
+  if (!participation) return <p className="cycle-manager__chart-state" role="status">Завантажуємо дані участі…</p>
+  if (participation.tokens_issued === 0) {
+    return <div className="cycle-manager__chart-state"><strong>Коди ще не видано</strong><span>Діаграма з’явиться після видачі перших кодів доступу.</span></div>
+  }
+  if (!visible) {
+    return <div className="cycle-manager__chart-state cycle-manager__chart-state--hidden"><strong>Розподіл кодів приховано</strong><span>Діаграма з’явиться, коли кількість анкет досягне порогу групи.</span></div>
+  }
+  return (
+    <figure className="cycle-manager__chart">
+      <div className="cycle-manager__chart-canvas">
+        <canvas ref={canvasRef} role="img" aria-label={`Кругова діаграма участі: використано ${formatCount(used)} з ${formatCount(issued)} кодів, невикористаних ${formatCount(unused)}`} />
+        {participation.participation_percent !== null && (
+          <div className="cycle-manager__chart-center" aria-hidden="true"><strong>{formatPercent(participation.participation_percent)}</strong><span>участь</span></div>
+        )}
+      </div>
+      <figcaption>
+        <ul className="cycle-manager__legend">
+          <li><i style={{ background: usedColor }} aria-hidden="true" /><span>Використані коди</span><strong>{formatCount(used)}</strong></li>
+          <li><i style={{ background: unusedColor }} aria-hidden="true" /><span>Невикористані коди</span><strong>{formatCount(unused)}</strong></li>
+        </ul>
+      </figcaption>
+    </figure>
+  )
+}
 
 export default function AssessmentManager() {
   const [cycles, setCycles] = useState<Assessment[]>([])
@@ -126,14 +198,14 @@ export default function AssessmentManager() {
           <h3 id="cycle-overview-title">Огляд циклу</h3>
           <label className="cycle-manager__field">Цикл
             <select value={id ?? ''} onChange={e => { const next = cycles.find(c => c.id === Number(e.target.value)); setId(next?.id ?? null); setCategory(next?.categories?.[0] ?? 'mgmt'); setCodes([]); setParticipation(null) }}>
-              {cycles.map(c => <option key={c.id} value={c.id}>{c.name} · {c.status}</option>)}
+              {cycles.map(c => <option key={c.id} value={c.id}>{c.name} · {cycleStatusLabel(c.status)}</option>)}
             </select>
           </label>
 
           {selected ? (
             <>
               <div className="cycle-manager__summary">
-                <p className="cycle-manager__status" data-status={selected.status}>Статус: {selected.status}</p>
+                <p className="cycle-manager__status" data-status={selected.status}>Статус: {cycleStatusLabel(selected.status)}</p>
                 <dl className="cycle-manager__details">
                   <div className="cycle-manager__wide">
                     <dt>Період</dt>
@@ -162,12 +234,14 @@ export default function AssessmentManager() {
 
               <section className="cycle-manager__participation" aria-labelledby="cycle-participation-title">
                 <h4 id="cycle-participation-title">Участь</h4>
+                <ParticipationChart participation={participation} />
                 <dl className="cycle-manager__metrics">
-                  <div><dt>Видано кодів:</dt>{' '}<dd>{participation?.tokens_issued ?? '—'}</dd></div>
-                  <div><dt>Невикористаних:</dt>{' '}<dd>{participation?.tokens_unused ?? 'приховано'}</dd></div>
-                  <div><dt>Анкет:</dt>{' '}<dd>{participation?.responses_total ?? 'приховано'}</dd></div>
-                  <div className="cycle-manager__metric-accent"><dt>Рівень участі:</dt>{' '}<dd>{participation?.participation_percent == null ? 'приховано' : `${participation.participation_percent}%`}</dd></div>
+                  <div><dt>Видано кодів:</dt>{' '}<dd>{participation ? formatCount(participation.tokens_issued) : '—'}</dd></div>
+                  <div><dt>Невикористаних:</dt>{' '}<dd>{participation?.tokens_unused == null ? 'приховано' : formatCount(participation.tokens_unused)}</dd></div>
+                  <div><dt>Анкет:</dt>{' '}<dd>{participation?.responses_total == null ? 'приховано' : formatCount(participation.responses_total)}</dd></div>
+                  <div className="cycle-manager__metric-accent"><dt>Рівень участі:</dt>{' '}<dd>{participation?.participation_percent == null ? 'приховано' : formatPercent(participation.participation_percent)}</dd></div>
                 </dl>
+                <p className="cycle-manager__privacy-note">Участь малих груп приховано: доки анкет менше за поріг групи ({selected.min_group_size}), кількість анкет, невикористаних кодів і рівень участі не показуються, щоб захистити анонімність.</p>
               </section>
 
               {selected.status === 'open' && (

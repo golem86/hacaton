@@ -4,6 +4,11 @@ import { validateOfficialAnswers, type OfficialAnswers } from './validation'
 
 type Mode = 'self' | 'expert'
 
+/** Робочі позначки з каталогу (WIP Preview, preview) не показуємо користувачу; сам каталог не змінюється. */
+export function presentableText(text: string) {
+  return text.replace(/\s*Це WIP Preview без серверного збереження\./g, '').replace(/\bpreview\b/gi, 'перегляд')
+}
+
 export default function OfficialAssessment({ mode }: { mode: Mode }) {
   const [templateKey, setTemplateKey] = useState(`${officialTemplates[0].id}@${officialTemplates[0].version}`)
   const [answers, setAnswers] = useState<OfficialAnswers>({})
@@ -31,21 +36,21 @@ export default function OfficialAssessment({ mode }: { mode: Mode }) {
       setReview(false)
     } else {
       setReview(true)
-      setNotice('Локальну перевірку завершено. Це лише перегляд: серверне збереження й подання недоступні.')
+      setNotice('Перевірку завершено: усі обов’язкові відповіді заповнено. У цій версії відповіді не надсилаються і не зберігаються на сервері.')
     }
   }
 
   return <section className="v2-card official-assessment" aria-label={mode === 'expert' ? 'Експертне оцінювання' : 'Офіційна анкета'}>
-    <h2>{mode === 'expert' ? 'Експертне оцінювання · WIP Preview' : 'Офіційна анкета · WIP Preview'}</h2>
-    <p>Джерело: Додаток В, друковані с. 53–66. У PDF: Анкета 1 — 12 питань, Анкета 2 — 10 питань. {template.version === '2.0.0' ? 'Ця версія охоплює всі питання відповідної анкети в адаптованому викладі.' : 'Ця версія охоплює лише піднабір питань.'}</p>
-    <p role="status">Відповіді перебувають тільки в пам’яті цієї вкладки. Збереження і подання недоступні.</p>
-    {mode === 'expert' && <p>Адміністративна сесія відкриває лише preview. Серверної ролі експерта та сховища експертних оцінок ще немає.</p>}
+    <h2>{mode === 'expert' ? 'Експертне оцінювання — демонстраційний перегляд' : 'Офіційна анкета (Додаток В) — демонстраційний перегляд'}</h2>
+    <p>Джерело: Додаток В, друковані с. 53–66. У PDF: Анкета 1 — 12 питань, Анкета 2 — 10 питань. {Number.parseInt(template.version, 10) >= 2 ? 'Ця версія охоплює всі питання відповідної анкети в адаптованому викладі.' : 'Ця версія охоплює лише піднабір питань.'}</p>
+    <p className="official-demo-note" role="status">У цій версії відповіді не зберігаються на сервері — перегляд призначений для демонстрації структури анкети.</p>
+    {mode === 'expert' && <p className="official-demo-note">Окрема роль експерта та сховище експертних оцінок у цій версії не передбачені: адміністратор переглядає структуру експертної анкети.</p>}
     <label htmlFor="official-template">Шаблон і версія</label>
     <select id="official-template" value={templateKey} onChange={event => selectTemplate(event.target.value)}>
-      {officialTemplates.map(item => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.title} · v{item.version}</option>)}
+      {officialTemplates.map(item => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{presentableText(item.title)} · v{item.version}</option>)}
     </select>
     <p>{template.audienceNote}</p>
-    {template.contentNote && <p>{template.contentNote}</p>}
+    {template.contentNote && <p>{presentableText(template.contentNote)}</p>}
     {template.sourceUrl && <p><a href={template.sourceUrl} target="_blank" rel="noreferrer">Офіційне джерело (PDF)</a></p>}
     <div className="official-progress" role="status" aria-live="polite">
       <span>Заповнено {answered} з {questions.length}</span>
