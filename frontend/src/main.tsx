@@ -28,7 +28,7 @@ type Route = { role: 'admin'; section: AdminSection } | { role: 'user'; section:
 const adminItems: { key: AdminSection; title: string }[] = [
   { key: 'overview', title: 'Огляд' }, { key: 'analytics', title: 'Аналітика' },
   { key: 'tracker', title: 'Трекер рекомендацій' },
-  { key: 'testing', title: 'Тестування' }, { key: 'expert', title: 'Експертний шаблон' }, { key: 'audit', title: 'Audit Trail' }, { key: 'reports', title: 'Звіти' },
+  { key: 'testing', title: 'Цикли оцінювання' }, { key: 'expert', title: 'Експертне оцінювання' }, { key: 'audit', title: 'Журнал дій' }, { key: 'reports', title: 'Звіти' },
 ]
 const userItems: { key: UserSection; title: string }[] = [
   { key: 'profile', title: 'Мій кабінет' }, { key: 'available', title: 'Мої тестування' },
@@ -103,7 +103,7 @@ function App() {
     <aside className="v2-sidebar"><div className="v2-brand"><span className="v2-brand-mark">IM</span><div><strong>Integrity<br/>Management</strong><small>{admin ? 'Адміністративна панель' : 'Особистий простір'}</small></div></div>
       <nav className="v2-nav" aria-label={admin ? 'Навігація адміністратора' : 'Навігація користувача'}><span className="v2-nav-label">{admin ? 'Адміністрування' : 'Мій простір'}</span>
         {(admin ? adminItems : userItems).map(item => <button key={item.key} className={section === item.key ? 'is-active' : ''} onClick={() => go(admin ? `/admin/${item.key}` : `/app/${item.key}`)} type="button">{item.title}</button>)}
-        {admin && <button type="button" onClick={() => go('/survey')}>Анонімний Survey ↗</button>}
+        {admin && <button type="button" onClick={() => go('/survey')}>Анонімне опитування ↗</button>}
       </nav>
     </aside>
     <main className="v2-main"><header className="v2-topbar"><div><p className="v2-overline">Integrity Management · {admin ? 'АДМІНІСТРАТОР' : 'КОРИСТУВАЧ'}</p><h1>{title}</h1><p>{admin ? 'Організаційні агрегати з Survey API та Analytics.' : 'Ваші особисті тестування й результати.'}</p></div>

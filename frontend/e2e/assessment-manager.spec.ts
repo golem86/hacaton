@@ -22,7 +22,7 @@ async function signIn(page: Page) {
 
 test('адміністратор створює цикл, а респондент подає анонімну анкету', async ({ page }) => {
   await signIn(page)
-  await page.getByRole('button', { name: 'Тестування' }).click()
+  await page.getByRole('button', { name: 'Цикли оцінювання' }).click()
   const uniqueName = `Синтетичний E2E ${Date.now()}`
   await page.getByLabel('Назва').fill(uniqueName)
   await page.getByLabel('Початок').fill(new Date().toISOString().slice(0, 10))
