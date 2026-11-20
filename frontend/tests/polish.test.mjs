@@ -99,8 +99,8 @@ test('personal tests are numbered with padStart and texts use Ukrainian formats'
 test('official previews no longer show WIP wording', () => {
   const self = renderToStaticMarkup(React.createElement(official.default, { mode: 'self' }))
   const expert = renderToStaticMarkup(React.createElement(official.default, { mode: 'expert' }))
-  assert.ok(self.includes('Офіційна анкета (Додаток В) — демонстраційний перегляд'))
-  assert.ok(expert.includes('Експертне оцінювання — демонстраційний перегляд'))
+  assert.ok(self.includes('Офіційна анкета (Додаток В)'))
+  assert.ok(expert.includes('Експертне оцінювання (Додаток В, анкета 1)'))
   for (const html of [self, expert]) assert.doesNotMatch(html, /WIP|preview/i)
   for (const template of officialTemplates) {
     for (const text of [template.title, template.contentNote ?? '']) assert.doesNotMatch(official.presentableText(text), /WIP|preview/i)

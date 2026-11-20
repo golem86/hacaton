@@ -45,9 +45,9 @@ function recorder(route) {
 
 // ---------------------------------------------------------------------------- навігація за ролями
 
-test('data_officer menu has only open cycles/codes and participation — no results, analytics, audit, reports or tracker', () => {
+test('data_officer menu has codes, participation and Annex V data entry — no results, analytics, audit, reports or tracker', () => {
   const items = nav.navigationFor('data_officer')
-  assert.deepEqual(items.map(item => item.key), ['codes', 'participation'])
+  assert.deepEqual(items.map(item => item.key), ['codes', 'participation', 'checklist', 'objective'])
   assert.ok(items.every(item => item.path.startsWith('/officer/')))
   const titles = items.map(item => item.title).join(' | ')
   for (const forbidden of [/Огляд/, /Аналітика/, /Журнал/, /Звіти/, /Трекер/, /Результати/, /Користувачі/]) assert.doesNotMatch(titles, forbidden)

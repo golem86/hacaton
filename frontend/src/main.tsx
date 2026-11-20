@@ -23,7 +23,9 @@ import { homePathFor, navigationFor, PANEL_TEXT, routeFromPath, sectionTitle, ty
 import { pathForPublicPage, publicPageFromPath, type PublicPage } from './v2/publicRoutes'
 import Survey from './pages/Survey'
 import AssessmentManager from './components/AssessmentManager'
-import OfficialAssessment from './official/OfficialAssessment'
+import OfficialAssessment, { PublicOfficialAssessment } from './official/OfficialAssessment'
+import ChecklistPanel from './v2/ChecklistPanel'
+import ObjectiveIndicatorsPanel from './v2/ObjectiveIndicatorsPanel'
 import './style.css'
 import './v2/v2.css'
 
@@ -82,6 +84,7 @@ function App() {
   }
   if (initializing) return <main className="v2-auth-page"><p role="status">Перевіряємо захищену сесію…</p></main>
   if (path === '/survey') return <PublicSurvey />
+  if (path === '/survey/annex-v') return <PublicOfficialAssessment />
   if (!session) return <AuthPage page={page} pendingEmail={pendingEmail} error={authError} notice={resetNotice} pendingUser={pendingUser}
     onLogin={signIn} onRegister={signUp} onVerify={verify}
     onResend={() => resendTwoFactor().then(() => setAuthError('Код повторно надіслано.'), error => setAuthError(errorText(error, 'Не вдалося надіслати код.')))}
@@ -113,8 +116,8 @@ function App() {
     <main className="v2-main"><header className="v2-topbar"><div><p className="v2-overline">Integrity Management · {text.overline}</p><h1>{title}</h1><p>{text.subtitle}</p></div>
       <AccountMenu user={session} onLogout={() => void signOut()} onLogoutAll={signOutEverywhere} />
     </header><div className="v2-main-inner">
-      {route.role === 'admin' ? (route.section === 'reports' ? <ReportsPanel /> : route.section === 'tracker' ? <TrackerPanel /> : route.section === 'users' ? <UsersPanel currentUserId={session.id} /> : <AdminPanel section={route.section} />) :
-        route.role === 'data_officer' ? <DataOfficerPanel section={route.section} /> :
+      {route.role === 'admin' ? (route.section === 'reports' ? <ReportsPanel /> : route.section === 'tracker' ? <TrackerPanel /> : route.section === 'users' ? <UsersPanel currentUserId={session.id} /> : route.section === 'checklist' ? <ChecklistPanel role="admin" /> : route.section === 'objective' ? <ObjectiveIndicatorsPanel role="admin" /> : <AdminPanel section={route.section} />) :
+        route.role === 'data_officer' ? (route.section === 'checklist' ? <ChecklistPanel role="data_officer" /> : route.section === 'objective' ? <ObjectiveIndicatorsPanel role="data_officer" /> : <DataOfficerPanel section={route.section} />) :
         route.section === 'official' ? <OfficialAssessment mode="self" /> :
         <PersonalModule view={route.section as PersonalView} userId={session.id} userName={session.name} onStart={() => go('/app/attempt')} onFinish={() => go('/app/history')} />}
     </div></main>

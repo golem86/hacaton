@@ -107,20 +107,22 @@ test('2.1.0 restores source notes without mutating 2.0.0', () => {
   assert.equal(f2v21.audience, 'ambiguous')
 })
 
-test('self and expert render distinct preview modes without a submit action', () => {
-  const self = renderToStaticMarkup(React.createElement(OfficialAssessment, { mode: 'self' }))
-  const expert = renderToStaticMarkup(React.createElement(OfficialAssessment, { mode: 'expert' }))
+test('self and expert render distinct submission modes with honest adapted-wording labels', () => {
+  const cycles = [{ id: 1, name: 'Цикл', start_date: '2026-01-01', status: 'open', min_group_size: 5 }]
+  const self = renderToStaticMarkup(React.createElement(OfficialAssessment, { mode: 'self', cycles }))
+  const expert = renderToStaticMarkup(React.createElement(OfficialAssessment, { mode: 'expert', cycles }))
   for (const html of [self, expert]) {
-    assert.ok(html.includes('Шаблон і версія'))
     assert.ok(html.includes('type="radio"'))
-    assert.ok(html.includes('с. 53'))
     assert.ok(html.includes('Перевірити відповіді'))
-    assert.ok(html.includes('демонстраційний перегляд'))
     assert.ok(html.includes('Прогрес заповнення'))
-    assert.ok(html.includes('відповіді не зберігаються на сервері'))
-    assert.ok(!html.includes('type="submit"'))
+    assert.ok(html.includes('адаптоване формулювання'))
+    assert.ok(html.includes('адаптованому викладі'))
+    assert.doesNotMatch(html, /не зберігаються|демонстраційний перегляд/)
   }
   assert.ok(expert.includes('Експертне оцінювання'))
-  assert.ok(expert.includes('роль експерта'))
+  assert.ok(expert.includes('Посада або роль експерта'))
+  assert.ok(expert.includes('с. 53'))
   assert.ok(self.includes('Офіційна анкета'))
+  assert.ok(self.includes('Одноразовий код доступу'))
+  assert.ok(self.includes('с. 60'), 'self defaults to form 2 for personnel')
 })

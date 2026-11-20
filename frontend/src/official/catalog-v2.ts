@@ -84,6 +84,9 @@ const choices = {
 } as const
 
 type ChoiceKey = keyof typeof choices
+/** Критерій Додатка В — ключ набору варіантів (контракт «Зрілість за Додатком В»). Порядок — як у каталозі. */
+export type AnnexVCriterion = ChoiceKey
+export const ANNEX_V_CRITERIA: readonly AnnexVCriterion[] = Object.freeze(Object.keys(choices) as AnnexVCriterion[])
 type Section = 1 | 2 | 3 | 4
 type Entry = { section: Section; number: number; page: number; text: string; choices: ChoiceKey }
 const sectionNames: Record<Section, string> = {
