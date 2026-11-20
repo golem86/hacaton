@@ -186,3 +186,28 @@
 .official-review-item { padding: 1rem 0; border-bottom: 1px solid #dfeae4; }
 .official-review-item p { line-height: 1.5; }
 @media (max-width: 600px) { .official-actions { flex-wrap: wrap; } .official-actions .v2-button { width: 100%; } .official-option { padding: .4rem 0; } }
+
+/* Shared form controls and consistent compact navigation for the V2 shell. */
+.v2-nav button:focus-visible, .v2-logout-button:focus-visible, .v2-button:focus-visible { outline: 3px solid #54a996; outline-offset: 2px; }
+.v2-nav button { min-height: 2.65rem; }
+.v2-form-grid { display: grid; grid-template-columns: minmax(15rem, 1.5fr) minmax(9rem, .7fr) auto; align-items: end; gap: .85rem; margin-top: 1rem; }
+.v2-form-grid small, .v2-form-hint { color: var(--muted); font-size: .72rem; font-weight: 500; line-height: 1.45; }
+.v2-form-grid .v2-button { min-height: 2.75rem; white-space: nowrap; }
+.v2-inline-error { margin: .8rem 0 0; padding: .75rem .9rem; border-left: 3px solid #b55649; border-radius: .45rem; background: #fff4f1; color: #873c32; font-size: .82rem; }
+.v2-issued-codes { margin-top: 1rem; padding: 1rem; border: 1px solid #cfe2d6; border-radius: .75rem; background: #f3f8f5; }
+.v2-issued-codes strong { color: #1d554a; }
+.v2-issued-codes p { margin: .3rem 0 .7rem; color: #5e716a; font-size: .82rem; }
+.v2-issued-codes textarea { min-height: 8rem; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .8rem; }
+@media (max-width: 900px) {
+  .v2-sidebar { gap: .85rem; padding: .9rem 1rem; }
+  .v2-brand { min-height: 2.7rem; }
+  .v2-nav { align-items: center; min-height: 2.7rem; }
+  .v2-nav button { min-height: 2.55rem; padding: .58rem .72rem; }
+}
+@media (max-width: 600px) {
+  .v2-sidebar { gap: .65rem; padding: .78rem .85rem .65rem; }
+  .v2-nav { gap: .28rem; }
+  .v2-nav button { min-height: 2.4rem; padding: .52rem .68rem; font-size: .78rem; }
+  .v2-form-grid { grid-template-columns: 1fr; align-items: stretch; }
+  .v2-form-grid .v2-button { width: 100%; }
+}

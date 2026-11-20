@@ -140,40 +140,80 @@ function RoleDenied({user,onLogout}:{user:AuthUser;onLogout:()=>Promise<void>}) 
 function PublicSurvey() {
   const [assessments, setAssessments] = useState<Assessment[]>([])
   const [selected, setSelected] = useState('')
+  const [load, setLoad] = useState<'loading' | 'ready' | 'error'>('loading')
   const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
-    getAssessments(controller.signal).then(setAssessments).catch(error => {
-      if (!controller.signal.aborted) {
-        setError(error instanceof Error ? error.message : 'Не вдалося завантажити цикли')
-      }
-    })
+    setLoad('loading')
+    setError('')
+    getAssessments(controller.signal)
+      .then(items => {
+        if (!controller.signal.aborted) {
+          setAssessments(items)
+          setLoad('ready')
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : 'Не вдалося завантажити цикли оцінювання.')
+          setLoad('error')
+        }
+      })
     return () => controller.abort()
-  }, [])
+  }, [attempt])
+
+  const openAssessments = assessments.filter(assessment => assessment.status === 'open')
 
   return (
-    <main className="page survey-page">
-      <header className="page-header">
-        <p className="eyebrow">Анонімне опитування</p>
-        <h1>Survey</h1>
-        <p>Потрібен одноразовий код. Подання не пов’язується з обліковим записом.</p>
-        <a className="survey-page__admin-link" href="/login">Вхід адміністратора</a>
+    <div className="survey-app">
+      <header className="survey-masthead">
+        <a className="survey-brand" href="/" aria-label="Integrity Management — на головну">
+          <span className="survey-brand-mark">IM</span>
+          <span><strong>Integrity<br />Management</strong><small>Building Integrity · 2026</small></span>
+        </a>
+        <a className="survey-admin-link" href="/login">Вхід адміністратора <span aria-hidden="true">↗</span></a>
       </header>
-      <div className="survey-page__cycle">
-        {error && <p className="survey-api-error" role="alert">{error}</p>}
-        <label htmlFor="survey-cycle">Цикл оцінювання</label>
-        <select id="survey-cycle" value={selected} onChange={e => setSelected(e.target.value)}>
-          <option value="">Оберіть цикл</option>
-          {assessments.filter(assessment => assessment.status === 'open').map(assessment => (
-            <option key={assessment.id} value={assessment.id}>{assessment.name}</option>
-          ))}
-        </select>
-      </div>
-      {selected
-        ? <Survey key={selected} assessmentId={Number(selected)} />
-        : <p className="survey-page__hint">Оберіть доступний відкритий цикл.</p>}
-    </main>
+
+      <main className="survey-main">
+        <section className="survey-hero" aria-labelledby="survey-page-title">
+          <p className="survey-eyebrow">Анонімне опитування</p>
+          <h1 id="survey-page-title">Ваша думка допомагає змінам</h1>
+          <p>Дайте відповіді на запитання про доброчесність. Для подання потрібен одноразовий код; відповіді не пов’язуються з вашим обліковим записом.</p>
+          <div className="survey-assurances" aria-label="Гарантії опитування">
+            <span><strong>Анонімно</strong><small>без прив’язки до профілю</small></span>
+            <span><strong>За обраним циклом</strong><small>питання завантажуються з анкети</small></span>
+            <span><strong>Одноразовий код</strong><small>захищає від повторного подання</small></span>
+          </div>
+        </section>
+
+        <section className="survey-cycle-card" aria-labelledby="survey-cycle-title">
+          <div className="survey-cycle-heading">
+            <div><p className="survey-eyebrow">Початок</p><h2 id="survey-cycle-title">Оберіть цикл оцінювання</h2></div>
+            <span className="survey-step">Крок 1 з 2</span>
+          </div>
+          {load === 'loading' && <p className="survey-state" role="status">Завантажуємо доступні цикли…</p>}
+          {load === 'error' && <div className="survey-state survey-state-error" role="alert"><p>{error}</p><button type="button" className="survey-secondary-button" onClick={() => setAttempt(value => value + 1)}>Спробувати ще раз</button></div>}
+          {load === 'ready' && openAssessments.length > 0 && (
+            <div className="survey-cycle-field">
+              <label htmlFor="survey-cycle">Відкритий цикл</label>
+              <select id="survey-cycle" value={selected} onChange={event => setSelected(event.target.value)}>
+                <option value="">Оберіть цикл зі списку</option>
+                {openAssessments.map(assessment => <option key={assessment.id} value={assessment.id}>{assessment.name}</option>)}
+              </select>
+              <p className="survey-field-hint">Оберіть цикл, у якому ви берете участь.</p>
+            </div>
+          )}
+          {load === 'ready' && openAssessments.length === 0 && (
+            <div className="survey-empty-state" role="status"><span aria-hidden="true">✓</span><div><strong>Зараз немає відкритих циклів</strong><p>Коли опитування буде доступне, воно з’явиться тут.</p></div></div>
+          )}
+          {selected && openAssessments.some(assessment => assessment.id === Number(selected)) && <Survey key={selected} assessmentId={Number(selected)} />}
+        </section>
+
+        <footer className="survey-footer">Якщо у вас виникли питання щодо участі, зверніться до координатора опитування.</footer>
+      </main>
+    </div>
   )
 }
 
