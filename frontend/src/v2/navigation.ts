@@ -5,8 +5,8 @@ import type { PersonalView } from './PersonalModule'
  * Розмітка кабінетів за серверною роллю (docs/V2_HARDENING_CONTRACT.md, розділ 1).
  * Меню лише допомагає зорієнтуватися: доступ до кожного маршруту перевіряє сервер.
  */
-export type AdminSection = 'overview' | 'analytics' | 'tracker' | 'testing' | 'users' | 'expert' | 'audit' | 'reports'
-export type OfficerSection = 'codes' | 'participation'
+export type AdminSection = 'overview' | 'analytics' | 'tracker' | 'testing' | 'users' | 'expert' | 'checklist' | 'objective' | 'audit' | 'reports'
+export type OfficerSection = 'codes' | 'participation' | 'checklist' | 'objective'
 export type UserSection = PersonalView | 'official'
 
 export type AppRoute =
@@ -25,14 +25,21 @@ const ADMIN_ITEMS: readonly { key: AdminSection; title: string }[] = [
   { key: 'testing', title: 'Цикли оцінювання' },
   { key: 'users', title: 'Користувачі й ролі' },
   { key: 'expert', title: 'Експертне оцінювання' },
+  { key: 'checklist', title: 'Чеклист Додатка Б' },
+  { key: 'objective', title: 'Об’єктивні показники' },
   { key: 'audit', title: 'Журнал дій' },
   { key: 'reports', title: 'Звіти' },
 ]
 
-/** Кабінет data_officer: лише відкриті цикли, видача кодів і участь. Без результатів, аналітики, журналу, звітів і трекера. */
+/**
+ * Кабінет data_officer: відкриті цикли, видача кодів, участь і внесення даних Додатка В (чеклист, показники).
+ * Без результатів, аналітики, журналу, звітів і трекера; внесене підтверджує лише адміністратор.
+ */
 const OFFICER_ITEMS: readonly { key: OfficerSection; title: string }[] = [
   { key: 'codes', title: 'Відкриті цикли й коди' },
   { key: 'participation', title: 'Участь' },
+  { key: 'checklist', title: 'Чеклист Додатка Б' },
+  { key: 'objective', title: 'Об’єктивні показники' },
 ]
 
 const USER_ITEMS: readonly { key: UserSection; title: string }[] = [
