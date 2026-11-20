@@ -15,24 +15,27 @@ import ReportsPanel from './v2/ReportsPanel'
 import { pathForPublicPage, publicPageFromPath, type PublicPage } from './v2/publicRoutes'
 import Survey from './pages/Survey'
 import AssessmentManager from './components/AssessmentManager'
+import OfficialAssessment from './official/OfficialAssessment'
 import './style.css'
 import './v2/v2.css'
 
-type AdminSection = 'overview' | 'analytics' | 'testing' | 'audit' | 'reports'
-type Route = { role: 'admin'; section: AdminSection } | { role: 'user'; section: PersonalView }
+type AdminSection = 'overview' | 'analytics' | 'testing' | 'expert' | 'audit' | 'reports'
+type UserSection = PersonalView | 'official'
+type Route = { role: 'admin'; section: AdminSection } | { role: 'user'; section: UserSection }
 const adminItems: { key: AdminSection; title: string }[] = [
   { key: 'overview', title: 'Огляд' }, { key: 'analytics', title: 'Аналітика' },
-  { key: 'testing', title: 'Тестування' }, { key: 'audit', title: 'Audit Trail' }, { key: 'reports', title: 'Звіти' },
+  { key: 'testing', title: 'Тестування' }, { key: 'expert', title: 'Експертний шаблон' }, { key: 'audit', title: 'Audit Trail' }, { key: 'reports', title: 'Звіти' },
 ]
-const userItems: { key: PersonalView; title: string }[] = [
+const userItems: { key: UserSection; title: string }[] = [
   { key: 'profile', title: 'Мій кабінет' }, { key: 'available', title: 'Мої тестування' },
+  { key: 'official', title: 'Офіційна анкета' },
   { key: 'attempt', title: 'Поточне тестування' }, { key: 'history', title: 'Мої результати' }, { key: 'stats', title: 'Персональна статистика' },
   { key: 'unit-results', title: 'Результати підрозділу' },
 ]
 
 function routeFromPath(path: string): Route {
   const [root, section] = path.split('/').filter(Boolean)
-  if (root === 'app') return { role: 'user', section: userItems.some(x => x.key === section) ? section as PersonalView : 'profile' }
+  if (root === 'app') return { role: 'user', section: userItems.some(x => x.key === section) ? section as UserSection : 'profile' }
   return { role: 'admin', section: adminItems.some(x => x.key === section) ? section as AdminSection : 'overview' }
 }
 function go(path: string) { history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
@@ -103,6 +106,7 @@ function App() {
       <div className="v2-account-menu"><span className="v2-account-avatar">{session.name.trim().slice(0, 2).toUpperCase()}</span><div className="v2-account-details"><strong>{session.name}</strong><span>{admin ? 'Адміністратор' : 'Користувач'}</span><small>{session.email}</small></div><button className="v2-logout-button" onClick={() => void signOut()} type="button">Вийти</button></div>
     </header><div className="v2-main-inner">
       {admin ? (section === 'reports' ? <ReportsPanel /> : <AdminPanel section={section as AdminSection} />) :
+        section === 'official' ? <OfficialAssessment mode="self" /> :
         <PersonalModule view={section as PersonalView} userId={session.id} userName={session.name} onStart={() => go('/app/attempt')} onFinish={() => go('/app/history')} />}
     </div></main>
   </div></div>
@@ -174,10 +178,11 @@ function PublicSurvey() {
 }
 
 function AdminPanel({section}:{section:AdminSection}) { const [assessments,setAssessments]=useState<Assessment[]>([]),[id,setId]=useState<number|null>(null),[detail,setDetail]=useState<Assessment|null>(null),[results,setResults]=useState<AssessmentResults|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[events,setEvents]=useState<AuditEvent[]>([])
-  useEffect(()=>{const c=new AbortController();getAssessments(c.signal).then(list=>{setAssessments(list);if(list.length)setId(list[0].id)}).catch(e=>setError(e instanceof Error?e.message:'Помилка API')).finally(()=>setLoading(false));return()=>c.abort()},[])
+  useEffect(()=>{if(section==='expert')return;const c=new AbortController();getAssessments(c.signal).then(list=>{setAssessments(list);if(list.length)setId(list[0].id)}).catch(e=>setError(e instanceof Error?e.message:'Помилка API')).finally(()=>setLoading(false));return()=>c.abort()},[section])
   useEffect(()=>{if(id===null)return;const c=new AbortController();setDetail(null);setResults(null);setError('');getAssessment(id,c.signal).then(a=>{if(c.signal.aborted)return;setDetail(a);if(a.status==='closed')getAssessmentResults(id,c.signal).then(setResults).catch(e=>{if(!c.signal.aborted)setError(e instanceof Error?e.message:'Не вдалося завантажити результати')})}).catch(e=>{if(!c.signal.aborted)setError(e instanceof Error?e.message:'Не вдалося завантажити цикл')});return()=>c.abort()},[id])
   useEffect(()=>{if(section!=='audit')return;const c=new AbortController();getAuditEvents(c.signal).then(setEvents).catch(e=>setError(e instanceof Error?e.message:'Не вдалося завантажити журнал'));return()=>c.abort()},[section])
   if(section==='audit')return <section className="v2-card"><h2>Audit Trail</h2>{error&&<p role="alert">{error}</p>}{events.length?events.map(e=><article className="v2-history-item" key={e.id}><strong>{e.action}</strong><span>{e.created_at} · {e.actor_role} · цикл {e.assessment_id??'—'}</span></article>):!error&&<p>Записів поки немає.</p>}</section>
+  if(section==='expert')return <OfficialAssessment mode="expert" />
   if(section==='testing')return <AssessmentManager />
   return <>{assessments.length>0&&<label className="cycle-select">Цикл оцінювання<select value={id??''} onChange={e=>setId(Number(e.target.value)||null)}>{assessments.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}{error&&<div role="alert" className="v2-auth-error">{error}</div>}{section==='overview'&&<><h2>Оперативний огляд</h2>{results?<DashboardSummary results={results}/>:<p>{detail?.status==='open'?'Результати стануть доступними після закриття циклу.':loading?'Завантаження…':'Оберіть цикл.'}</p>}</>}{section==='analytics'&&<><h2>Агреговані результати</h2>{results?<><ComponentScores components={results.components}/><CategoryComparison categories={results.categories} components={results.components}/><ObjectiveIndicators components={results.components}/>{detail?.status==='closed'&&id&&<><CycleTrend assessments={assessments} selectedId={id}/><AnalyticsModules id={id} assessments={assessments}/></>}</>:<p>{detail?.status==='open'?'Цикл відкритий: агрегати недоступні до закриття.':loading?'Завантаження…':'Результатів немає.'}</p>}</>}</>
 }
