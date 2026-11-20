@@ -137,12 +137,12 @@ MUT = [
     ("MR02", C, sub('  catch { Stop-V2 "TCP enumeration неможлива: $($_.Exception.Message)" }', '  catch { @() }'), ["ps"], ["CI.ports-tcp-error"], "R-02: TCP API error сприйнято за вільний порт"),
     ("MR03", "test_v2_job.py", sub('    if "--local-only" not in sys.argv:\n        add("J10"', '    if True:\n        add("J10"'), ["r03"], ["R03.local-split"], "R-03: local-only включає host-only J10"),
     ("MR04", "clean-install.ps1", sub("\"$K\\v2_clean_bootstrap_admin.py\", '--backend', $Backend", "'-m', 'app.v2_bootstrap_admin'"), ["bootstrap", "cistatic"], ["CB.static", "CI-S12"], "R-04: повернення bootstrap з init_auth_db/migrate_auth_db"),
-    ("MCS6", "clean-install.ps1", sub("  else { foreach ($n in 'integrity-v2-backend', 'integrity-v2-caddy') { Set-V2ServiceDelayedAuto -Name $n } }\n", ""), ["cistatic"], ["CI-S10"], "служби лишаються Manual після Clean Install"),
+    ("MCS6", "clean-install.ps1", sub("  else { foreach ($n in 'integrity-v2-backend', 'integrity-v2-caddy') { Set-V2ServiceDelayedAuto -Name $n } }", ""), ["cistatic"], ["CI-S10"], "служби лишаються Manual після Clean Install"),
     ("MCS7", C, sub("if ($rel -match $V2BootstrapRx) { continue }", ""), ["cistatic"], ["CI-S11"], "модулі bootstrap розгортаються в app\\"),
     ("MCS8", C, sub("$V2ReleaseSchema = [ordered]@{ integrity = 6; auth = 2 }", "$V2ReleaseSchema = [ordered]@{ integrity = 3; auth = 1 }"), ["cistatic"], ["CI-S13"], "Clean Install знову закріплено на 3/1"),
     ("MCS9", C, sub("    $ms = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('mark-synthetic',", "    $ms = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('users',"), ["cistatic"], ["CI-S13"], "без mark-synthetic"),
     ("MCS10", "clean-install.ps1", sub("-Prompted @('V2_SMTP_PASSWORD') -Values $Smtp.Values", "-Values $Smtp.Values"), ["cistatic"], ["CI-S14"], "SMTP: усі значення запитуються, Gmail-план ігнорується"),
-    ("MCS11", C, sub("  if ($hasLm) { foreach ($l in @(Assert-V2LmAcl)) { $out.Add($l) } }\n", ""), ["cistatic"], ["CI-S15"], "матриця ACL без lm\\"),
+    ("MCS11", C, sub("  if ($hasLm) { foreach ($l in @(Assert-V2LmAcl)) { $out.Add($l) } }", ""), ["cistatic"], ["CI-S15"], "матриця ACL без lm\\"),
     ("MR01D", C, sub("if (@(Compare-Object -ReferenceObject @($approved | Sort-Object -Unique) -DifferenceObject @($resolved | Sort-Object -Unique)).Count)", "if ($false)"), ["r01"], ["R01.extra-dns"], "R-01: зайву DNS-адресу прийнято"),
     ("MR01R", C, sub("  $null = Assert-V2TargetIdentity -HostName $HostName -Addresses $Addresses -TestHost:$TestHost", "  # DNS recheck пропущено"), ["r01"], ["R01.rebinding"], "R-01: DNS recheck перед HTTPS пропущено"),
     ("MR01P", C, sub("'--noproxy','*','--resolve',\"${HostName}:${Port}:$address\",'--request'", "'--noproxy','*','--request'"), ["r01"], ["R01.pinned-endpoint"], "R-01: HTTPS endpoint не прив'язано"),
@@ -174,9 +174,9 @@ def run_suite(kit, suite, tmp=None):
         cmd = [PY, "-I", os.path.join(kit, "test-r03-gate.py"), "--ps", PS]
     elif suite == "r01":
         cmd = [PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", os.path.join(kit, "test-r01-target.ps1")]
-    env = None
+    env = dict(os.environ, V2_CI_BACKEND=os.path.normpath(os.path.join(KIT, '..', '..', 'backend')))   # static-clean-install CI-S13: версії коду
     if tmp:                                  # власний %TEMP% мутанта: паралельні прогони не бачать тимчасових каталогів один одного
-        env = dict(os.environ, TEMP=tmp, TMP=tmp)
+        env = dict(env, TEMP=tmp, TMP=tmp)
     r = subprocess.run(cmd, capture_output=True, timeout=1800, env=env)
     out = r.stdout.decode("utf-8", "replace") + r.stderr.decode("utf-8", "replace")
     return r.returncode, sorted(set(m.group(1) for m in re.finditer(r"(?m)^(\S+)\s+FAIL\s", out))), cmd, out

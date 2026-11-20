@@ -103,8 +103,9 @@ $bsOk = -not @($copies | Where-Object { $_ -match 'bootstrap' }).Count -and $ciT
 Add-Res 'CI-S12' $bsOk 'модулі bootstrap у app\ не копіюються; v2_clean_bootstrap_admin.py — лише одноразовий виклик із каталогу інсталятора'
 # CI-S13: версії БД за замовчуванням = версії коду релізу (migrations.SCHEMA_VERSION / v2_auth.AUTH_SCHEMA_VERSION); mark-synthetic; seed не в release
 $repo = Split-Path -Parent (Split-Path -Parent $K)
-$codeI = [regex]::Match([IO.File]::ReadAllText("$repo\backend\app\migrations.py"), '(?m)^SCHEMA_VERSION\s*=\s*(\d+)').Groups[1].Value
-$codeA = [regex]::Match([IO.File]::ReadAllText("$repo\backend\app\v2_auth.py"), '(?m)^AUTH_SCHEMA_VERSION\s*=\s*(\d+)').Groups[1].Value
+$beDir = if ($env:V2_CI_BACKEND) { $env:V2_CI_BACKEND } else { "$repo\backend" }       # копія комплекту (mutate.py) — backend репозиторію через змінну
+$codeI = [regex]::Match([IO.File]::ReadAllText("$beDir\app\migrations.py"), '(?m)^SCHEMA_VERSION\s*=\s*(\d+)').Groups[1].Value
+$codeA = [regex]::Match([IO.File]::ReadAllText("$beDir\app\v2_auth.py"), '(?m)^AUTH_SCHEMA_VERSION\s*=\s*(\d+)').Groups[1].Value
 $m13 = [regex]::Match($commonText, '\$V2ReleaseSchema = \[ordered\]@\{ integrity = (\d+); auth = (\d+) \}')
 $reachText = (@($reach) | ForEach-Object { $fn[$_].Ast.Extent.Text }) -join "`n"
 $verOk = $m13.Success -and $m13.Groups[1].Value -eq $codeI -and $m13.Groups[2].Value -eq $codeA -and $reachText -notmatch "'--expect-version', '\d'" -and
