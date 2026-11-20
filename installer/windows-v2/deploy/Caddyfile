@@ -94,10 +94,11 @@ desktop-jtgc2sg.taild5c033.ts.net:443 {
 			}
 		}
 	}
-	# CSP SPA: index.html і dist без вбудованих скриптів/стилів; API — той самий origin; data: — для дрібних ресурсів Vite.
+	# CSP SPA: index.html і dist без вбудованих скриптів, стилів і data:-ресурсів (перевірено на dist 759ce5c із /sysmints-emblem.svg);
+	# API — той самий origin; SVG-логотип/favicon — звичайний файл dist (image/svg+xml, nosniff).
 	handle /assets/* {
 		header {
-			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 			defer
 		}
 		root * C:/srv/integrity-v2/app/frontend/dist
@@ -105,7 +106,7 @@ desktop-jtgc2sg.taild5c033.ts.net:443 {
 	}
 	handle {
 		header {
-			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 			defer
 		}
 		root * C:/srv/integrity-v2/app/frontend/dist

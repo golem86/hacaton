@@ -2,12 +2,14 @@
 # служби, ACL, мережа, C:\srv не змінюються. caddy.exe запускається лише як adapt / validate (не run).
 # Запуск: powershell -NoProfile -ExecutionPolicy Bypass -File .\test-caddy-config.ps1 -Py <python із trustme і fastapi>
 #          [-Caddy <caddy.exe 2.11.9>] [-DeployZip <integrity-v2-dde86e6-deploy.zip>] [-Backend <…\backend з app\api_docs.py>]
+#          [-DistZip <zip зібраного frontend (dist/…)>] — сумісність dist із CSP SPA
 # Код завершення: 0 — усі PASS; 1 — є FAIL або NOT RUN.
 param(
   [Parameter(Mandatory)] [string] $Py,
   [string] $Caddy,
   [string] $DeployZip,
-  [string] $Backend
+  [string] $Backend,
+  [string] $DistZip
 )
 if (-not $Backend) { $Backend = Join-Path $PSScriptRoot '..\..\backend' }
 $ErrorActionPreference = 'Stop'
@@ -134,6 +136,31 @@ try {
     $p = Join-Path $tmp "$($m[0]).xml"; [IO.File]::WriteAllText($p, $m[1], $utf8)
     $ok = if ($m[2]) { (@(Test-V2WinswXml -XmlPath $p -Name integrity-v2-backend -WinswVersion '2.12.0' -AllowPlaceholders))[-1] -like 'PASS*' } else { Test-Stop { Test-V2WinswXml -XmlPath $p -Name integrity-v2-backend -WinswVersion '2.12.0' -AllowPlaceholders } '*TRUSTED_PROXIES=127.0.0.1,::1*' }
     Add-Res $m[0] ($m[1] -ne $xt -and $ok) $(if ($m[2]) { 'без --no-proxy-headers TRUSTED_PROXIES не вимагається' } else { 'мутація TRUSTED_PROXIES → STOP' })
+  }
+
+  # C10: зібраний dist сумісний із CSP SPA (без вбудованих скриптів/стилів/обробників, без data:-ресурсів, лише той самий origin)
+  if (-not $DistZip) { Add-NotRun 'C10.dist-csp' 'немає -DistZip' }
+  else {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $dz = Join-Path $tmp 'dist'; [IO.Compression.ZipFile]::ExtractToDirectory($DistZip, $dz)
+    $idx = @(Get-ChildItem -LiteralPath $dz -Recurse -Filter 'index.html')
+    $bad = New-Object System.Collections.Generic.List[string]
+    if ($idx.Count -ne 1) { $bad.Add("index.html: $($idx.Count)") }
+    else {
+      $h = [IO.File]::ReadAllText($idx[0].FullName)
+      foreach ($m in [regex]::Matches($h, '(?is)<script\b([^>]*)>(.*?)</script>')) { if ($m.Groups[1].Value -notmatch '\bsrc=' -or $m.Groups[2].Value.Trim()) { $bad.Add('вбудований <script>') } }
+      if ($h -match '(?i)<style\b|\sstyle=|\son[a-z]+=') { $bad.Add('вбудований стиль або обробник подій') }
+      foreach ($m in [regex]::Matches($h, '(?i)\b(?:src|href)="([^"]+)"')) { if ($m.Groups[1].Value -notmatch '^/[^/]') { $bad.Add("ресурс не з того самого origin: $($m.Groups[1].Value)") } }
+    }
+    foreach ($f in @(Get-ChildItem -LiteralPath $dz -Recurse -File -Include '*.css', '*.js')) {
+      $x = [IO.File]::ReadAllText($f.FullName)
+      if ($x -match 'data:(image|font|application)/' -or $x -match '(?i)url\(\s*["'']?data:') { $bad.Add("$($f.Name): data:-ресурс") }
+      if ($f.Extension -eq '.css' -and $x -match '(?i)@import|url\(\s*["'']?https?:') { $bad.Add("$($f.Name): зовнішній CSS-ресурс") }
+      if ($f.Extension -eq '.js' -and $x -match '\beval\(|new Function\(') { $bad.Add("$($f.Name): eval / new Function") }
+    }
+    $svg = @(Get-ChildItem -LiteralPath $dz -Recurse -File -Filter '*.svg' | Where-Object { [IO.File]::ReadAllText($_.FullName) -match '(?i)<script|\son[a-z]+=' })
+    if ($svg.Count) { $bad.Add("SVG зі скриптом: $($svg.Name -join ', ')") }
+    Add-Res 'C10.dist-csp' (-not $bad.Count) "dist $(Split-Path $DistZip -Leaf): $(if ($bad.Count) { $bad -join '; ' } else { "сумісний із CSP SPA (img-src 'self', без unsafe-*, без data:)" })"
   }
 
   # C9 (I11): повний preflight на копії пакета dde86e6 з новим шаблоном — розділ Caddy без BLOCKED; мутації → BLOCKED
