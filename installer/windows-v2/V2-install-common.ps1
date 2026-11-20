@@ -134,6 +134,15 @@ function Invoke-V2Py {
   param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $Backend, [Parameter(Mandatory)] [string[]] $ArgList, [string] $What = 'python')
   Invoke-V2Native -Exe $Py -ArgList (@('-E', '-s', '-X', 'utf8') + $ArgList) -WorkingDirectory $Backend -Utf8 -What $What
 }
+# Seed синтетичних даних — лише для НОВОЇ порожньої БД (Clean Install, репетиція 5а). app.seed у release відмовляє завжди (D3),
+# тому seed виконується з APP_ENV=development і без dev-змінних (X-Role, dev-mail, підміна часу): створює схему коду (user_version =
+# SCHEMA_VERSION) і позначку instance_meta('dataset','synthetic'). Служба backend працює лише в release.
+function Invoke-V2Seed {
+  param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $Backend, [string] $What = 'seed')
+  Use-V2Env -Vars @{ APP_ENV = 'development'; INTEGRITY_DEMO_XROLE = $null; V2_AUTH_DEV_MAIL = $null; V2_AUTH_SECURE_COOKIE = $null; V2_CATALOG_NOW = $null } -Body {
+    Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-m', 'app.seed') -What $What
+  }
+}
 
 # --- HTTP: статус як число, без винятків; перевірка — автоматична -------------------------------------------------
 function Get-V2HttpStatus {
@@ -308,7 +317,8 @@ function Invoke-V2Cleanup {
 # (їхній командний рядок містить шлях v2_job_launcher.py під коренем V2 → без цього евристика давала б хибний STOP під час відкату)
 $V2OwnHelpers = @{}
 function Get-V2SuspectProcesses {
-  $me = @($PID)
+  param([int[]] $IgnorePids = @())                                              # напр. дерево служби integrity-v2-lm, яку не зупиняють
+  $me = @($PID) + $IgnorePids
   @(Get-V2CimProcessList | Where-Object {
       $me -notcontains [int]$_.ProcessId -and -not ($V2OwnHelpers.ContainsKey([int]$_.ProcessId) -and [math]::Abs((ConvertTo-V2Ticks $_.CreationDate) - $V2OwnHelpers[[int]$_.ProcessId]) -le 20000) -and (
       ($_.ExecutablePath -and $_.ExecutablePath.StartsWith("$V2Root\", [StringComparison]::OrdinalIgnoreCase)) -or
@@ -326,9 +336,9 @@ function Assert-V2DbFilesFree {
   "PASS  файли БД ($($files.Count)) не відкриті іншими процесами"
 }
 function Assert-V2NoProcesses {
-  param([string] $DataDir, [AllowEmptyCollection()] $Known = @())               # масив або List[object] — без приведення типу (PS 5.1)
+  param([string] $DataDir, [AllowEmptyCollection()] $Known = @(), [int[]] $IgnorePids = @())   # масив або List[object] — без приведення типу (PS 5.1)
   if ($null -ne $Known -and $Known.Count) { $null = Assert-V2TreeExited -Tree $Known }                  # основний доказ — збережені ідентичності
-  $p = @(Get-V2SuspectProcesses)
+  $p = @(Get-V2SuspectProcesses -IgnorePids $IgnorePids)
   if ($p.Count) { Stop-V2 "працюють процеси V2: $(($p | ForEach-Object { "$($_.ProcessId) $($_.Name)" }) -join '; ')" }
   $l = @(Get-V2Listeners $V2Ports)
   if ($l.Count) { Stop-V2 "порти V2 слухаються: $(($l | ForEach-Object { "$($_.LocalAddress):$($_.LocalPort) PID $($_.OwningProcess)" }) -join '; ')" }
@@ -398,9 +408,32 @@ function Assert-V2RestorePermitted {
   $late = @(Get-V2LateDescendants -Tree $tree); if ($late.Count) { Stop-V2 "відновлення заборонено: живі пізні нащадки $(($late | ForEach-Object { $_.ProcessId }) -join ', ')" }
   "PASS  повне дерево backend завершилось ($src), пізніх нащадків 0"
 }
-# B3: набір копій перевіряється ДО будь-якої мутації: рівно дві БД (integrity_v2.db v3, v2_auth.db v1), без дублікатів БД
-# і шляхів копій, копії — існуючі файли поза data\, SHA256 — 64 hex.
-$V2DbSet = [ordered]@{ 'integrity_v2.db' = 3; 'v2_auth.db' = 1 }
+# Версії схем поточного релізу (backend\app\migrations.py SCHEMA_VERSION, backend\app\v2_auth.py AUTH_SCHEMA_VERSION; обидві
+# мають бути в SCHEMA_SPECS v2_db_tool.py). Clean Install створює БД саме цих версій; Clean Install перевіряє збіг із кодом релізу
+# (bind-check). Історично: release dde86e6 / TLSFIX5 — 3/1.
+$V2ReleaseSchema = [ordered]@{ integrity = 6; auth = 2 }
+# B3: набір копій перевіряється ДО будь-якої мутації: рівно дві БД (integrity_v2.db, v2_auth.db — версії поточного релізу), без
+# дублікатів БД і шляхів копій, копії — існуючі файли поза data\, SHA256 — 64 hex.
+$V2DbSet = [ordered]@{ 'integrity_v2.db' = $V2ReleaseSchema.integrity; 'v2_auth.db' = $V2ReleaseSchema.auth }
+# Каталог коду релізу: app\<ReleaseId>\backend. Clean Install задає $V2AppRelease явно; інакше — єдиний каталог релізу в app\
+# (крім frontend); кілька релізів (після оновлення на місці) → workingdirectory XML служби backend.
+$V2AppRelease = $null
+function Get-V2ReleaseDir {
+  if ($V2AppRelease) {
+    if ($V2AppRelease -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$') { Stop-V2 "ReleaseId поза дозволеною формою: $V2AppRelease" }
+    return "$V2Root\app\$V2AppRelease"
+  }
+  $xml = "$V2Root\services\backend\integrity-v2-backend.xml"
+  if (Test-Path -LiteralPath $xml -PathType Leaf) {
+    [xml]$x = Get-Content -LiteralPath $xml -Raw -Encoding UTF8
+    $wd = [string]$x.service.workingdirectory
+    if ($wd -match ('^' + [regex]::Escape("$V2Root\app\") + '([A-Za-z0-9][A-Za-z0-9._-]{2,63})\\backend$')) { return "$V2Root\app\$($Matches[1])" }
+    Stop-V2 "workingdirectory служби backend поза $V2Root\app\<реліз>\backend: $wd"
+  }
+  $dirs = @(Get-ChildItem -LiteralPath "$V2Root\app" -Directory -Force -ErrorAction Stop | Where-Object { $_.Name -ne 'frontend' })
+  if ($dirs.Count -ne 1) { Stop-V2 "каталог релізу в $V2Root\app не визначено однозначно: $(@($dirs | ForEach-Object Name) -join ', ')" }
+  $dirs[0].FullName
+}
 function Assert-V2RestoreItems {
   param([Parameter(Mandatory)] [string] $DataDir, [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Items)
   if ($Items.Count -ne $V2DbSet.Count) { Stop-V2 "набір відновлення: потрібно рівно $($V2DbSet.Count) БД ($($V2DbSet.Keys -join ', ')), отримано $($Items.Count)" }
@@ -453,7 +486,7 @@ function Assert-V2SqliteSidecars {
 # start type повертається, якщо мутації не було; після мутації з помилкою лишається Disabled (разом із RESTORE-FAILED).
 function Invoke-V2DbRestore {
   param([Parameter(Mandatory)] [string] $DataDir, [Parameter(Mandatory)] [AllowEmptyCollection()] $Known, [Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $DbTool,
-        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Items)   # рівно: @{ Db='integrity_v2.db'; …; Version=3 }, @{ Db='v2_auth.db'; …; Version=1 }
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Items)   # рівно: @{ Db='integrity_v2.db'; …; Version=<$V2DbSet> }, @{ Db='v2_auth.db'; … }
   $ctx = @{ StartTypeChanged = $false; OriginalStartMode = $null; MutationStarted = $false; Done = $false }
   $err = $null; $res = $null
   try { $res = Invoke-V2DbRestoreCore -DataDir $DataDir -Known $Known -Py $Py -DbTool $DbTool -Items $Items -Ctx $ctx }
@@ -488,7 +521,7 @@ function Invoke-V2DbRestoreCore {
     if ($it.Db -notmatch '^[A-Za-z0-9_]+\.db$') { Stop-V2 "некоректне ім'я БД: $($it.Db)" }
     foreach ($l in @(Assert-V2RestoreReady -DataDir $DataDir -Known $kn -Py $Py -DbTool $DbTool -Backup $it.Backup -BackupSha256 $it.Sha256 -ExpectVersion $it.Version)) { $out.Add($l) }
     if ($it.Db -eq 'v2_auth.db') {                                                            # етап 1: строга схема auth — ДО мутації
-      $a = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $it.Backup)
+      $a = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $it.Backup, '--expect-version', "$($it.Version)")
       if ($a -notlike 'AUTH SCHEMA OK*') { Stop-V2 "копія v2_auth.db не пройшла строгу перевірку схеми: $a" }
       $out.Add("PASS  копія v2_auth.db: $a")
     }
@@ -533,13 +566,13 @@ function Invoke-V2DbRestoreCore {
       $v = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('verify', $dst, '--expect-version', "$($it.Version)")
       if ($v -notlike 'VERIFY OK*') { Stop-V2 "відновлена $($it.Db) не пройшла verify: $v" }
       if ($it.Db -eq 'v2_auth.db') {                                                          # етап 1: строга схема ВІДНОВЛЕНОЇ auth-БД
-        $a = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $dst)
+        $a = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $dst, '--expect-version', "$($it.Version)")
         if ($a -notlike 'AUTH SCHEMA OK*') { Stop-V2 "відновлена v2_auth.db не пройшла строгу перевірку схеми: $a" }
         $out.Add("PASS  відновлена v2_auth.db: $a")
       }
     }
     # B3: перевірка схеми САМЕ відновлених файлів — INTEGRITY_DB/V2_AUTH_DB вказують на data\ (без них backend перевіряв би БД за замовчуванням)
-    $sc = @(Use-V2Env -Vars @{ INTEGRITY_DB = (Join-Path $DataDir 'integrity_v2.db'); V2_AUTH_DB = (Join-Path $DataDir 'v2_auth.db') } -Body { Invoke-V2Py -Py $Py -Backend "$V2Root\app\integrity-v2-dde86e6\backend" -ArgList @('-c', 'from app.migrations import check_schema; from app.database import engine; check_schema(engine); from app.v2_auth import check_auth_schema; check_auth_schema(); print(''SCHEMA OK'')') -What 'schema після відновлення' })
+    $sc = @(Use-V2Env -Vars @{ INTEGRITY_DB = (Join-Path $DataDir 'integrity_v2.db'); V2_AUTH_DB = (Join-Path $DataDir 'v2_auth.db') } -Body { Invoke-V2Py -Py $Py -Backend "$(Get-V2ReleaseDir)\backend" -ArgList @('-c', 'from app.migrations import check_schema; from app.database import engine; check_schema(engine); from app.v2_auth import check_auth_schema; check_auth_schema(); print(''SCHEMA OK'')') -What 'schema після відновлення' })
     if (-not $sc.Count -or $sc[-1] -ne 'SCHEMA OK') { Stop-V2 "перевірка схеми після відновлення: $(if ($sc.Count) { $sc[-1] } else { 'немає результату' })" }
     $out.Add($sc[-1])
     # W5: виявлення втручання за час операції — ДО RESTORE-OK; будь-яка невідповідність → FAILED
@@ -674,6 +707,8 @@ function Assert-V2AclMatrix {
   $b = Get-V2ServiceSid 'integrity-v2-backend'; $c = $null
   if (Get-V2Service 'integrity-v2-caddy') { $c = Get-V2ServiceSid 'integrity-v2-caddy' }
   $expectTop = @('app', 'backups', 'caddy', 'data', 'logs', 'pkg', 'services', 'venv')
+  $hasLm = Test-Path -LiteralPath "$V2Root\lm"                                       # локальна LM (lm\Install-V2LmService.ps1) — необов'язкова
+  if ($hasLm) { $expectTop = @($expectTop + 'lm' | Sort-Object) }
   $top = @(Get-ChildItem -LiteralPath $V2Root -Force | ForEach-Object Name | Sort-Object)
   if (@(Compare-Object $top $expectTop).Count) { Stop-V2 "склад $V2Root ≠ очікуваному: $($top -join ', ')" }
   $out = New-Object System.Collections.Generic.List[string]
@@ -681,7 +716,7 @@ function Assert-V2AclMatrix {
     $out.Add((Assert-V2AclExact -Acl (Get-V2Acl $r) -Label $r -IsContainer))
   }
   foreach ($p in "$V2Root\pkg", "$V2Root\backups") { $out.Add((Assert-V2AclTree -Path $p -Role admin)) }
-  $out.Add((Assert-V2AclTree -Path "$V2Root\app\integrity-v2-dde86e6" -ServiceSid $b -ServiceRights RX -Role code))
+  $out.Add((Assert-V2AclTree -Path (Get-V2ReleaseDir) -ServiceSid $b -ServiceRights RX -Role code))
   $out.Add((Assert-V2AclTree -Path "$V2Root\venv" -ServiceSid $b -ServiceRights RX -Role code))
   $out.Add((Assert-V2AclTree -Path "$V2Root\services\backend" -ServiceSid $b -ServiceRights RX -Role code))   # wrapper + XML із секретами: лише читання
   $out.Add((Assert-V2AclTree -Path "$V2Root\data" -ServiceSid $b -ServiceRights M -Role data))
@@ -697,6 +732,31 @@ function Assert-V2AclMatrix {
       $out.Add((Assert-V2TlsDirectory -Path $tls -ServiceSid $c))
     }
   }
+  if ($hasLm) { foreach ($l in @(Assert-V2LmAcl)) { $out.Add($l) } }
+  $out.ToArray()
+}
+# Матриця ACL локальної LM (та сама, що встановлює lm\Install-V2LmService.ps1, крок lm.acl): lm\, lm\LM-BIN-SHA256.txt і
+# lm\secrets — лише Administrators/SYSTEM; lm\bin, lm\models, services\lm — NT SERVICE\integrity-v2-lm RX; logs\lm — M;
+# lm\secrets\api-key.txt — R (режим ключа File). Інших об'єктів у lm\ немає.
+function Assert-V2LmAcl {
+  $lm = "$V2Root\lm"; $sid = Get-V2ServiceSid 'integrity-v2-lm'
+  $out = New-Object System.Collections.Generic.List[string]
+  $allowed = @('bin', 'models', 'secrets', 'LM-BIN-SHA256.txt')
+  $extra = @(Get-ChildItem -LiteralPath $lm -Force | Where-Object { $allowed -notcontains $_.Name } | ForEach-Object Name)
+  if ($extra.Count) { Stop-V2 "склад $lm ≠ очікуваному: зайві $($extra -join ', ')" }
+  foreach ($n in 'bin', 'models') { if (-not (Test-Path -LiteralPath "$lm\$n" -PathType Container)) { Stop-V2 "немає $lm\$n" } }
+  $out.Add((Assert-V2AclExact -Acl (Get-V2Acl $lm) -Label $lm -IsContainer))
+  if (Test-Path -LiteralPath "$lm\LM-BIN-SHA256.txt") { $out.Add((Assert-V2AclExact -Acl (Get-V2Acl "$lm\LM-BIN-SHA256.txt") -Label "$lm\LM-BIN-SHA256.txt")) }
+  $out.Add((Assert-V2AclTree -Path "$lm\bin" -ServiceSid $sid -ServiceRights RX -Role code))
+  $out.Add((Assert-V2AclTree -Path "$lm\models" -ServiceSid $sid -ServiceRights RX -Role code))
+  if (Test-Path -LiteralPath "$lm\secrets") {
+    $out.Add((Assert-V2AclExact -Acl (Get-V2Acl "$lm\secrets") -Label "$lm\secrets" -IsContainer))
+    $keys = @(Get-ChildItem -LiteralPath "$lm\secrets" -Force)
+    if ($keys.Count -ne 1 -or $keys[0].Name -ne 'api-key.txt' -or $keys[0].PSIsContainer) { Stop-V2 "$lm\secrets має містити лише api-key.txt" }
+    $out.Add((Assert-V2AclExact -Acl (Get-V2Acl $keys[0].FullName) -ServiceSid $sid -ServiceRights R -Label $keys[0].FullName))
+  }
+  if (Test-Path -LiteralPath "$V2Root\services\lm") { $out.Add((Assert-V2AclTree -Path "$V2Root\services\lm" -ServiceSid $sid -ServiceRights RX -Role code)) }
+  if (Test-Path -LiteralPath "$V2Root\logs\lm") { $out.Add((Assert-V2AclTree -Path "$V2Root\logs\lm" -ServiceSid $sid -ServiceRights M -Role data)) }
   $out.ToArray()
 }
 function Assert-V2Ancestors {
@@ -865,15 +925,27 @@ function Set-V2ServiceStartMode {
   if (-not $chk -or $chk.StartMode -ne $Mode) { Stop-V2 "start type $Name не підтверджено: $(if ($chk) { $chk.StartMode } else { 'служби немає' }) ≠ $Mode" }
 }
 function Assert-V2Service {
-  param([Parameter(Mandatory)] [string] $Name, [Parameter(Mandatory)] [ValidateSet('Stopped', 'Running')] [string] $State)
+  param([Parameter(Mandatory)] [string] $Name, [Parameter(Mandatory)] [ValidateSet('Stopped', 'Running')] [string] $State,
+        [ValidateSet('Manual', 'Auto')] [string[]] $StartModes = @('Manual'))      # Auto — і Automatic (Delayed Start): Win32_Service.StartMode = Auto
   $want = $V2Services[$Name]; if (-not $want) { Stop-V2 "невідома служба $Name" }
   $s = Get-V2Service $Name; if (-not $s) { Stop-V2 "служби $Name немає" }
   $path = $s.PathName.Trim().Trim('"')
   if ($s.StartName -ne $want.Account) { Stop-V2 "${Name}: StartName = $($s.StartName), очікується $($want.Account)" }
   if ($path -ne $want.Exe) { Stop-V2 "${Name}: PathName = $($s.PathName)" }
-  if ($s.StartMode -ne 'Manual') { Stop-V2 "${Name}: StartMode = $($s.StartMode), очікується Manual" }
+  if ($StartModes -notcontains [string]$s.StartMode) { Stop-V2 "${Name}: StartMode = $($s.StartMode), очікується $($StartModes -join '/')" }
   if ($s.State -ne $State) { Stop-V2 "${Name}: State = $($s.State), очікується $State" }
-  "PASS  ${Name}: $($s.StartName), Manual, $State"
+  "PASS  ${Name}: $($s.StartName), $($s.StartMode), $State"
+}
+# Clean Install, останній крок: Automatic (Delayed Start) для служб V2 (сайт піднімається після перезавантаження). Лише після
+# успішного smoke; read-back StartMode = Auto і DelayedAutoStart = True. Не використовує Set-V2ServiceStartMode (лише Disabled/Manual).
+function Set-V2ServiceDelayedAuto {
+  param([Parameter(Mandatory)] [string] $Name)
+  if (-not $V2Services.ContainsKey($Name)) { Stop-V2 "start type лише для служб V2: $Name" }
+  $null = Invoke-V2Native -Exe "$env:SystemRoot\System32\sc.exe" -ArgList @('config', $Name, 'start=', 'delayed-auto') -What "sc config $Name start= delayed-auto"
+  $chk = Get-V2Service $Name
+  $delayed = [bool]($chk -and $chk.PSObject.Properties['DelayedAutoStart'] -and $chk.DelayedAutoStart)
+  if (-not $chk -or [string]$chk.StartMode -ne 'Auto' -or -not $delayed) { Stop-V2 "start type $Name не підтверджено: $(if ($chk) { "$($chk.StartMode)/delayed=$delayed" } else { 'служби немає' }) ≠ Auto/delayed" }
+  "PASS  ${Name}: Automatic (Delayed Start), read-back Auto/delayed"
 }
 function Install-V2Service {
   param([Parameter(Mandatory)] [string] $Name, [scriptblock] $OnCreated = $null)
@@ -1147,13 +1219,71 @@ function Assert-V1Unchanged {
   'PASS  чинні служби без змін (HacatonBackend, Caddy: стан, режим, акаунт, шлях, PID, порти)'
 }
 
+# Текстова заміна значення <env name="N" value="…"/> у XML служби (решта байтів незмінна): плейсхолдер __N__ → значення;
+# інакше наявний рядок env N → нове значення; інакше новий рядок після останнього <env>. Значення XML-екрануються.
+function Set-V2XmlEnvText {
+  param([Parameter(Mandatory)] [string] $Text, [Parameter(Mandatory)] [string] $Name, [Parameter(Mandatory)] [AllowEmptyString()] [string] $Value)
+  $esc = [Security.SecurityElement]::Escape($Value)
+  if ($Text.Contains("__${Name}__")) { return $Text.Replace("__${Name}__", $esc) }
+  $m = [regex]::Matches($Text, '<env name="' + [regex]::Escape($Name) + '" value="[^"]*"\s*/>')
+  $line = '<env name="' + $Name + '" value="' + $esc + '"/>'
+  if ($m.Count -gt 1) { Stop-V2 "XML: змінна $Name зустрічається $($m.Count) рази" }
+  if ($m.Count -eq 1) { return $Text.Substring(0, $m[0].Index) + $line + $Text.Substring($m[0].Index + $m[0].Length) }
+  $last = [regex]::Matches($Text, '(?m)^([ \t]*)<env name="[^"]+" value="[^"]*"\s*/>[ \t]*\r?\n')
+  if (-not $last.Count) { Stop-V2 'XML: немає жодного <env> для вставки' }
+  $l = $last[$last.Count - 1]; $nl = if ($l.Value.EndsWith("`r`n")) { "`r`n" } else { "`n" }
+  $Text.Substring(0, $l.Index + $l.Length) + $l.Groups[1].Value + $line + $nl + $Text.Substring($l.Index + $l.Length)
+}
+# Gmail: пароль застосунку Google — 16 латинських літер (пробіли з форми Google відкидаються); вводиться двічі приховано.
+# Повертає SecureString; відкриті копії — лише BSTR, обнуляються у finally (як ops\Set-V2SmtpGmail.ps1).
+function Read-V2GmailAppPassword {
+  param([scriptblock] $Reader = { param($p) Read-Host -Prompt $p -AsSecureString })
+  $a = & $Reader 'Пароль застосунку Gmail (16 літер; пробіли можна)'
+  $b = & $Reader 'Повторіть пароль застосунку'
+  $pa = [IntPtr]::Zero; $pb = [IntPtr]::Zero
+  try {
+    $pa = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($a); $pb = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($b)
+    $va = ([Runtime.InteropServices.Marshal]::PtrToStringBSTR($pa)) -replace '\s', ''
+    $vb = ([Runtime.InteropServices.Marshal]::PtrToStringBSTR($pb)) -replace '\s', ''
+    if ($va -cne $vb) { Stop-V2 'паролі застосунку не збігаються' }
+    if ($va -notmatch '^[a-zA-Z]{16}$') { Stop-V2 'пароль застосунку Google — 16 латинських літер' }
+    $s = New-Object Security.SecureString; foreach ($ch in $va.ToCharArray()) { $s.AppendChar($ch) }; $s.MakeReadOnly(); $va = $null; $vb = $null
+    $s
+  } finally {
+    if ($pa -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pa) }
+    if ($pb -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pb) }
+    if ($a) { $a.Dispose() }; if ($b) { $b.Dispose() }
+  }
+}
+# SMTP Clean Install: Gmail (smtp.gmail.com:587, starttls, FROM = USER; приховано лише пароль застосунку) або інший SMTP
+# (host/port/TLS mode/user/from — параметри, пароль приховано). dev-mail у release не існує (Test-V2WinswXml забороняє V2_AUTH_DEV_MAIL).
+function Get-V2SmtpPlan {
+  param([Parameter(Mandatory)] [ValidateSet('Gmail', 'Custom')] [string] $Mode, [Parameter(Mandatory)] [string] $User,
+        [string] $SmtpHost, [int] $Port = 587, [ValidateSet('starttls', 'implicit')] [string] $TlsMode = 'starttls', [string] $From)
+  $addr = '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+  if ($Mode -eq 'Gmail') {
+    if ($User -notmatch '^[A-Za-z0-9._%+-]+@(gmail\.com|googlemail\.com|[A-Za-z0-9.-]+\.[A-Za-z]{2,})$') { Stop-V2 'SMTP Gmail: -SmtpUser має бути адресою скриньки Google' }
+    if ($From -and $From -ne $User) { Stop-V2 'SMTP Gmail: FROM = USER (Gmail підставляє адресу облікового запису)' }
+    return [ordered]@{ Values = [ordered]@{ V2_SMTP_HOST = 'smtp.gmail.com'; V2_SMTP_PORT = '587'; V2_SMTP_TLS_MODE = 'starttls'; V2_SMTP_USER = $User; V2_SMTP_FROM = $User }; Gmail = $true }
+  }
+  if (-not $SmtpHost -or $SmtpHost -notmatch '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$') { Stop-V2 'SMTP Custom: потрібен -SmtpHost (DNS-ім''я)' }
+  if ($SmtpHost -match '(?i)^(localhost|127\.|.*\.local$)') { Stop-V2 'SMTP Custom: локальний relay у release заборонено' }
+  if ($Port -lt 1 -or $Port -gt 65535) { Stop-V2 'SMTP Custom: некоректний порт' }
+  if (-not $From) { $From = $User }
+  if ($From -notmatch $addr) { Stop-V2 'SMTP Custom: -SmtpFrom має бути справжньою адресою' }
+  [ordered]@{ Values = [ordered]@{ V2_SMTP_HOST = $SmtpHost; V2_SMTP_PORT = "$Port"; V2_SMTP_TLS_MODE = $TlsMode; V2_SMTP_USER = $User; V2_SMTP_FROM = $From }; Gmail = $false }
+}
+
 # --- I03: секрети у XML служби — без виводу; BSTR обнуляється у finally (REV3, без змін) ----------------------------------
 function Set-V2Secrets {
   param([Parameter(Mandatory)] [string] $XmlPath, [string[]] $Prompted = @('V2_SMTP_HOST', 'V2_SMTP_USER', 'V2_SMTP_PASSWORD', 'V2_SMTP_FROM'),
-        [scriptblock] $SecretReader = { param($n) Read-Host -Prompt $n -AsSecureString }, [switch] $Rehearsal)
+        [scriptblock] $SecretReader = { param($n) Read-Host -Prompt $n -AsSecureString }, [switch] $Rehearsal,
+        [System.Collections.IDictionary] $Values = @{})        # НЕсекретні значення (SMTP host/port/user/from/TLS mode): плейсхолдер __N__, наявний <env name="N"> або новий рядок
   if (-not $Rehearsal -and -not $XmlPath.StartsWith("$V2Root\services\", [StringComparison]::OrdinalIgnoreCase)) { Stop-V2 "секрети лише в $V2Root\services\" }
+  foreach ($n in $Values.Keys) { if ($Prompted -contains $n) { Stop-V2 "змінна $n задана і як значення, і як секрет" }; if ($n -notmatch '^V2_SMTP_(HOST|PORT|USER|FROM|TLS_MODE)$') { Stop-V2 "-Values: недозволена змінна $n" } }
   $t = [IO.File]::ReadAllText($XmlPath)
   try {
+    foreach ($n in $Values.Keys) { $t = Set-V2XmlEnvText -Text $t -Name $n -Value ([string]$Values[$n]) }
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create(); $b = New-Object byte[] 48
     try { $rng.GetBytes($b); $t = $t.Replace('__V2_SECRET_KEY__', [Convert]::ToBase64String($b)) } finally { [Array]::Clear($b, 0, $b.Length); $rng.Dispose() }
     foreach ($n in $Prompted) {
@@ -1199,7 +1329,7 @@ function New-V2RandomKey { $r = [Security.Cryptography.RandomNumberGenerator]::C
 function Invoke-V2Rehearsal {
   param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $Backend, [Parameter(Mandatory)] [string] $DbTool, [int] $Port = 8199,
         [string] $FrontendOrigin = 'https://desktop-jtgc2sg.taild5c033.ts.net',
-        [scriptblock] $PreSteps, [scriptblock] $Launcher)
+        [scriptblock] $PreSteps, [scriptblock] $Launcher, [int] $IntegrityVersion = $V2ReleaseSchema.integrity)
   Assert-V2Exe $Py 'python'
   if (@(Get-V2Listeners @($Port)).Count) { Stop-V2 "порт $Port зайнятий" }
   $T = Join-Path $env:TEMP ("v2-rehearsal-" + [guid]::NewGuid().ToString('N')); $null = New-Item -ItemType Directory -Path $T
@@ -1207,9 +1337,9 @@ function Invoke-V2Rehearsal {
   $tree = $null; $out = New-Object System.Collections.Generic.List[string]; $bodyErr = $null
   if (-not $PreSteps) {
     $PreSteps = {
-      $null = Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-m', 'app.seed') -What 'seed (копія)'
+      $null = Invoke-V2Seed -Py $Py -Backend $Backend -What 'seed (копія)'
       $out.Add("FINGERPRINT $(Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('fingerprint', "$T\integrity_v2.db"))")
-      $out.Add((Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', "$T\integrity_v2.db", "$T\integrity_v2.bak.db", '--expect-version', '3')))
+      $out.Add((Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', "$T\integrity_v2.db", "$T\integrity_v2.bak.db", '--expect-version', "$IntegrityVersion")))
       $null = Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-m', 'app.migrations', '--apply', '--confirm-verified-backup') -What 'migrations (копія)'
       $null = Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-c', 'from app.migrations import check_schema; from app.database import engine; check_schema(engine); from app.v2_auth import check_auth_schema; check_auth_schema(); print(''SCHEMA OK'')') -What 'schema check (копія)'
     }
@@ -1345,10 +1475,12 @@ function Set-V2InitMarker {
   if ($Note) { [IO.File]::AppendAllText((Join-Path $DataDir $new), "$Note`n") }
   $new
 }
-# Крок 4.5 (до bootstrap): нові БД лише в ПОРОЖНЬОМУ data\ — seed → verify → відбиток → backup → migrations → схема → строгий auth-schema
+# Крок 4.5 (до bootstrap): нові БД лише в ПОРОЖНЬОМУ data\ — seed (development, лише нова БД) → verify → відбиток → backup →
+# migrations (release; створює v2_auth) → check_schema коду → строгі схеми v2_db_tool (integrity / auth) версій поточного релізу
 function Initialize-V2CleanDatabases {
   param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $Backend, [Parameter(Mandatory)] [string] $DbTool,
-        [Parameter(Mandatory)] [string] $DataDir, [Parameter(Mandatory)] [string] $BackupDir, [string] $ReferenceFingerprint)
+        [Parameter(Mandatory)] [string] $DataDir, [Parameter(Mandatory)] [string] $BackupDir, [string] $ReferenceFingerprint,
+        [int] $IntegrityVersion = $V2ReleaseSchema.integrity, [int] $AuthVersion = $V2ReleaseSchema.auth, [string] $ReleaseId = 'release')
   if (-not (Test-Path -LiteralPath $DataDir -PathType Container)) { Stop-V2 "немає каталогу даних $DataDir" }
   $pre = @(Get-ChildItem -LiteralPath $DataDir -Force)
   if ($pre.Count) { Stop-V2 "Clean Install лише на порожньому data\: знайдено $($pre.Count) об'єкт(и) ($(($pre | Select-Object -First 5 | ForEach-Object Name) -join ', ')) — наявні БД не використовуються" }
@@ -1358,21 +1490,23 @@ function Initialize-V2CleanDatabases {
   [IO.File]::WriteAllText((Join-Path $DataDir $mk), "clean init started $ts`n", (New-Object Text.UTF8Encoding $false))
   $out = New-Object System.Collections.Generic.List[string]
   try {
-    Set-Content -LiteralPath (Join-Path $DataDir 'CREATED-BY-V2-INSTALL.txt') -Value "created $(Get-Date -Format s) by app.seed (package dde86e6)" -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $DataDir 'CREATED-BY-V2-INSTALL.txt') -Value "created $(Get-Date -Format s) by app.seed (package $ReleaseId, schema integrity $IntegrityVersion / auth $AuthVersion)" -Encoding UTF8
     $dbI = Join-Path $DataDir 'integrity_v2.db'; $dbA = Join-Path $DataDir 'v2_auth.db'   # не $A/$I: імена змінних PowerShell нечутливі до регістру
     $r = @(Use-V2Env -Vars @{ APP_ENV = 'release'; INTEGRITY_DB = $dbI; V2_AUTH_DB = $dbA; V2_SECRET_KEY = (New-V2RandomKey) } -Body {
-      $null = Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-m', 'app.seed') -What 'seed (Clean Install)'
-      Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('verify', $dbI, '--expect-version', '3')
+      $null = Invoke-V2Seed -Py $Py -Backend $Backend -What 'seed (Clean Install)'
+      Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('verify', $dbI, '--expect-version', "$IntegrityVersion")
       $fp = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('fingerprint', $dbI)
       if ($ReferenceFingerprint -and $fp -ne $ReferenceFingerprint) { Stop-V2 'відбиток нової БД ≠ репетиції 5а' }
-      Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', $dbI, (Join-Path $BackupDir "integrity_v2-pre-migration-$ts.db"), '--expect-version', '3')
+      Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', $dbI, (Join-Path $BackupDir "integrity_v2-pre-migration-$ts.db"), '--expect-version', "$IntegrityVersion")
       $null = Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-m', 'app.migrations', '--apply', '--confirm-verified-backup') -What 'migrations (Clean Install)'
       @(Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-c', 'from app.migrations import check_schema; from app.database import engine; check_schema(engine); from app.v2_auth import check_auth_schema; check_auth_schema(); print(''SCHEMA OK'')') -What 'schema (Clean Install)')[-1]
     })
     if ($r[-1] -ne 'SCHEMA OK') { Stop-V2 "перевірка схеми нових БД: $($r[-1])" }
-    $a = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $dbA)
+    $si = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('schema', $dbI, '--kind', 'integrity', '--expect-version', "$IntegrityVersion")
+    if ($si -notlike 'INTEGRITY SCHEMA OK*') { Stop-V2 "нова integrity_v2.db не пройшла строгу перевірку схеми: $si" }
+    $a = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $dbA, '--expect-version', "$AuthVersion")
     if ($a -notlike 'AUTH SCHEMA OK*') { Stop-V2 "нова v2_auth.db не пройшла строгу перевірку схеми: $a" }
-    foreach ($l in $r) { $out.Add("$l") }; $out.Add("PASS  нова v2_auth.db: $a")
+    foreach ($l in $r) { $out.Add("$l") }; $out.Add("PASS  нова integrity_v2.db: $si"); $out.Add("PASS  нова v2_auth.db: $a")
   } catch {
     $why = $_.Exception.Message -replace '^STOP: ', ''
     try { $null = Set-V2InitMarker -DataDir $DataDir -From $mk -To FAILED -Note "причина: $why" } catch { }
@@ -1384,26 +1518,33 @@ function Initialize-V2CleanDatabases {
 # Крок 4.5 (після bootstrap адміністратора): строгий auth-schema робочої БД і ФІНАЛЬНОЇ копії, DEMO-умова, початкові копії → CLEAN-INIT-OK
 function Complete-V2CleanDatabases {
   param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $DbTool, [Parameter(Mandatory)] [string] $DataDir,
-        [Parameter(Mandatory)] [string] $BackupDir, [Parameter(Mandatory)] [string] $ReferenceFingerprint)
+        [Parameter(Mandatory)] [string] $BackupDir, [Parameter(Mandatory)] [string] $ReferenceFingerprint,
+        [int] $IntegrityVersion = $V2ReleaseSchema.integrity, [int] $AuthVersion = $V2ReleaseSchema.auth)
   $mk = @(Get-ChildItem -LiteralPath $DataDir -File -Filter 'CLEAN-INIT-*.txt' | ForEach-Object Name)
   if ($mk.Count -ne 1 -or $mk[0] -notmatch '^CLEAN-INIT-IN-PROGRESS-') { Stop-V2 "очікується рівно один маркер CLEAN-INIT-IN-PROGRESS: $($mk -join ', ')" }
   $out = New-Object System.Collections.Generic.List[string]
   try {
     $dbA = Join-Path $DataDir 'v2_auth.db'; $dbI = Join-Path $DataDir 'integrity_v2.db'   # не $A/$I: імена змінних PowerShell нечутливі до регістру
-    $a = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $dbA)
+    $a = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $dbA, '--expect-version', "$AuthVersion")
     if ($a -notlike 'AUTH SCHEMA OK*') { Stop-V2 "v2_auth.db після bootstrap не пройшла строгу перевірку схеми: $a" }
     $u = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('users', $dbA)
     if ($u -notmatch '\badmin=1\b') { Stop-V2 "очікується рівно один адміністратор: $u" }
     $out.Add((Assert-V2SyntheticDb -Py $Py -DbTool $DbTool -DataDir $DataDir -ReferenceFingerprint $ReferenceFingerprint))
+    # позначка synthetic (instance_meta 'dataset') — без неї демо-аналітика в release не працює; ті самі критерії, що й вище
+    $ms = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('mark-synthetic', $dbI, '--auth-db', $dbA, '--reference-fingerprint', $ReferenceFingerprint, '--expect-version', "$IntegrityVersion")
+    if ($ms -notlike 'MARK-SYNTHETIC OK dataset=synthetic*') { Stop-V2 "позначка synthetic не підтверджена: $ms" }
+    $out.Add("PASS  $ms")
+    $si = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('schema', $dbI, '--kind', 'integrity', '--expect-version', "$IntegrityVersion")
+    if ($si -notlike 'INTEGRITY SCHEMA OK*') { Stop-V2 "integrity_v2.db після bootstrap не пройшла строгу перевірку схеми: $si" }
     $ts = ($mk[0] -replace '^CLEAN-INIT-IN-PROGRESS-', '' -replace '\.txt$', '')
     $bi = Join-Path $BackupDir "integrity_v2-initial-$ts.db"; $ba = Join-Path $BackupDir "v2_auth-initial-$ts.db"
-    $out.Add((Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', $dbI, $bi, '--expect-version', '3')))
-    $out.Add((Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', $dbA, $ba, '--expect-version', '1')))
-    $ab = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $ba)
+    $out.Add((Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', $dbI, $bi, '--expect-version', "$IntegrityVersion")))
+    $out.Add((Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', $dbA, $ba, '--expect-version', "$AuthVersion")))
+    $ab = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('auth-schema', $ba, '--expect-version', "$AuthVersion")
     if ($ab -notlike 'AUTH SCHEMA OK*') { Stop-V2 "фінальна копія v2_auth не пройшла строгу перевірку схеми: $ab" }
     $sums = foreach ($f in $bi, $ba) { '{0}  {1}' -f (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.ToLower(), (Split-Path $f -Leaf) }
     [IO.File]::AppendAllText((Join-Path $BackupDir 'SHA256SUMS.txt'), (($sums -join "`n") + "`n"))
-    $out.Add("PASS  v2_auth.db: $a; $u; фінальна копія: $ab")
+    $out.Add("PASS  integrity_v2.db: $si; v2_auth.db: $a; $u; фінальна копія: $ab")
   } catch {
     $why = $_.Exception.Message -replace '^STOP: ', ''
     try { $null = Set-V2InitMarker -DataDir $DataDir -From $mk[0] -To FAILED -Note "причина: $why" } catch { }
@@ -1533,7 +1674,7 @@ function Assert-V2PinnedHttps {
 function New-V2TargetConfig {
   param([Parameter(Mandatory)][string]$CaddySource, [Parameter(Mandatory)][string]$BackendSource,
         [Parameter(Mandatory)][string]$Destination, [Parameter(Mandatory)][string]$HostName, [Parameter(Mandatory)][string[]]$Addresses,
-        [switch]$UseFileTls)
+        [switch]$UseFileTls, [string]$ReleaseId)              # -ReleaseId: <workingdirectory> backend → app\<ReleaseId>\backend (Clean Install)
   $prodHost = 'desktop-jtgc2sg.taild5c033.ts.net'
   $prodBind = 'bind 100.111.221.74 [fd7a:115c:a1e0::ef01:dddc]'
   # I2 (hardening): Caddyfile — UTF-8 без BOM; невалідний UTF-8 → виняток (раніше cp1251 давав подвійне кодування коментарів)
@@ -1554,6 +1695,12 @@ function New-V2TargetConfig {
       $bind, "$bind`n`ttls C:/srv/integrity-v2/caddy/tls/site.crt C:/srv/integrity-v2/caddy/tls/site.key")
   }
   $xml = $xml.Replace('name="FRONTEND_ORIGINS" value="https://' + $prodHost + '"', 'name="FRONTEND_ORIGINS" value="https://' + $HostName + '"')
+  if ($ReleaseId) {
+    if ($ReleaseId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$') { Stop-V2 "target config: ReleaseId поза дозволеною формою: $ReleaseId" }
+    $wdRx = '<workingdirectory>C:\\srv\\integrity-v2\\app\\[A-Za-z0-9][A-Za-z0-9._-]{2,63}\\backend</workingdirectory>'
+    if ([regex]::Matches($xml, $wdRx).Count -ne 1) { Stop-V2 'target config: <workingdirectory> backend у шаблоні не рівно один' }
+    $xml = [regex]::Replace($xml, $wdRx, "<workingdirectory>C:\srv\integrity-v2\app\$ReleaseId\backend</workingdirectory>")
+  }
   if (Test-Path -LiteralPath $Destination) { Stop-V2 'target config: staging каталог уже існує' }
   $null = New-Item -ItemType Directory -Path $Destination -ErrorAction Stop
   $cf = Join-Path $Destination 'Caddyfile'; $xf = Join-Path $Destination 'integrity-v2-backend.xml'
@@ -1656,4 +1803,254 @@ function Invoke-V2CleanInstallAbort {
   }
   if ($Baseline) { $out.Add((Assert-V1Unchanged -Baseline $Baseline)) }
   $out.ToArray()
+}
+
+# =====================================================================================================================
+# Пакет Clean Install поточного релізу — ТОЙ САМИЙ формат, що й пакет оновлення (docs\UPGRADE_IN_PLACE.md §1), але всі частини
+# обов'язкові: backend-src.zip + BACKEND-SHA256.txt, dist.zip + DIST-SHA256.txt, Caddyfile (шаблон), requirements-hashed.txt
+# (ПОВНИЙ набір залежностей, кожна з sha256) + wheels\*.whl; суми — окремий APPROVED-SHA256.txt (поза каталогом пакета).
+# =====================================================================================================================
+$V2BootstrapRx = '(?i)(^|/)v2_(clean_)?bootstrap_admin\.py$'   # модулі bootstrap не розгортаються в app\ (контракт §5)
+function Read-V2SumsFile([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { Stop-V2 "немає файлу сум $Path" }
+  $m = [ordered]@{}; $n = 0
+  foreach ($l in [IO.File]::ReadAllLines($Path)) {
+    $n++; if (-not $l.Trim() -or $l.TrimStart().StartsWith('#')) { continue }
+    if ($l -notmatch '^([0-9a-fA-F]{64}) [ *]?(\S.*)$') { Stop-V2 "${Path}: некоректний рядок $n" }
+    $k = $Matches[2].Trim().Replace('\', '/')
+    if ($k.StartsWith('/') -or ($k -split '/') -contains '..' -or $m.Contains($k)) { Stop-V2 "${Path}: недопустимий або повторний шлях у рядку $n" }
+    $m[$k] = $Matches[1].ToLowerInvariant()
+  }
+  $m
+}
+function Get-V2StreamSha256($Stream) {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try { ([BitConverter]::ToString($sha.ComputeHash($Stream)) -replace '-', '').ToLowerInvariant() } finally { $sha.Dispose(); $Stream.Dispose() }
+}
+function Get-V2FileSha256([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
+function Get-V2TreeSha256([string]$Dir) {
+  $base = [IO.Path]::GetFullPath($Dir).TrimEnd('\') + '\'
+  $m = [ordered]@{}
+  foreach ($f in @(Get-ChildItem -LiteralPath $Dir -Recurse -File -Force | Sort-Object FullName)) { $m[$f.FullName.Substring($base.Length).Replace('\', '/')] = Get-V2FileSha256 $f.FullName }
+  $m
+}
+function Compare-V2Sums($Want, $Got) {
+  $d = New-Object System.Collections.Generic.List[string]
+  foreach ($k in $Want.Keys) { if (-not $Got.Contains($k)) { $d.Add("немає $k") } elseif ($Got[$k] -ne $Want[$k]) { $d.Add("інший $k") } }
+  foreach ($k in $Got.Keys) { if (-not $Want.Contains($k)) { $d.Add("зайвий $k") } }
+  $d.ToArray()
+}
+# Перевірка пакета (лише читання): суми окремого каналу, склад ZIP = маніфестам, вимоги з точними версіями й sha256,
+# requirements.txt релізу ⊆ requirements-hashed.txt, колеса — лише .whl. Повертає опис пакета для подальших кроків.
+function Assert-V2CleanPackage {
+  param([Parameter(Mandatory)] [string] $PackageDir, [Parameter(Mandatory)] [string] $ApprovedSums, [Parameter(Mandatory)] [string] $ReleaseId)
+  if ($ReleaseId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$') { Stop-V2 "ReleaseId поза дозволеною формою: $ReleaseId" }
+  $pkg = [IO.Path]::GetFullPath($PackageDir).TrimEnd('\')
+  if (-not (Test-Path -LiteralPath $pkg -PathType Container)) { Stop-V2 "немає каталогу пакета $pkg" }
+  $ap = [IO.Path]::GetFullPath($ApprovedSums)
+  if ($ap.StartsWith("$pkg\", [StringComparison]::OrdinalIgnoreCase)) { Stop-V2 'APPROVED-SHA256.txt має надходити окремим каналом (не з каталогу пакета)' }
+  $sums = Read-V2SumsFile $ap
+  $need = @('backend-src.zip', 'BACKEND-SHA256.txt', 'dist.zip', 'DIST-SHA256.txt', 'Caddyfile', 'requirements-hashed.txt')
+  foreach ($n in $need) {
+    $p = Join-Path $pkg $n
+    if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { Stop-V2 "у пакеті немає $n" }
+    if (-not $sums.Contains($n)) { Stop-V2 "у сумах з окремого каналу немає $n" }
+    if ((Get-V2FileSha256 $p) -ne $sums[$n]) { Stop-V2 "SHA256 $n ≠ сумі з окремого каналу" }
+  }
+  $out = New-Object System.Collections.Generic.List[string]
+  $out.Add("PASS  пакет: $($need -join ', ') = суми з окремого каналу")
+  Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+  $man = Read-V2SumsFile (Join-Path $pkg 'BACKEND-SHA256.txt')
+  $req = $null
+  $z = [IO.Compression.ZipFile]::OpenRead((Join-Path $pkg 'backend-src.zip'))
+  try {
+    $seen = @{}
+    foreach ($ze in $z.Entries) {
+      if ($ze.FullName.EndsWith('/')) { continue }
+      if (-not $ze.FullName.StartsWith("$ReleaseId/backend/") -or $ze.FullName.Contains('\') -or ($ze.FullName -split '/') -contains '..' -or $ze.FullName.Contains(':')) { Stop-V2 "backend-src.zip: запис поза $ReleaseId/backend/: $($ze.FullName)" }
+      $rel = $ze.FullName.Substring($ReleaseId.Length + 1)
+      if (-not $man.Contains($rel)) { Stop-V2 "backend-src.zip: $rel немає в BACKEND-SHA256.txt" }
+      if ((Get-V2StreamSha256 $ze.Open()) -ne $man[$rel]) { Stop-V2 "backend-src.zip: SHA256 $rel ≠ маніфесту" }
+      if ($rel -eq 'backend/requirements.txt') { $sr = New-Object IO.StreamReader($ze.Open(), [Text.Encoding]::UTF8); try { $req = $sr.ReadToEnd() } finally { $sr.Dispose() } }
+      $seen[$rel] = $true
+    }
+    foreach ($k in $man.Keys) { if (-not $seen.ContainsKey($k)) { Stop-V2 "BACKEND-SHA256.txt: $k немає в ZIP" } }
+  } finally { $z.Dispose() }
+  foreach ($k in 'backend/app/main.py', 'backend/app/migrations.py', 'backend/app/v2_auth.py', 'backend/app/seed.py', 'backend/requirements.txt') { if (-not $man.Contains($k)) { Stop-V2 "у релізі немає $k" } }
+  $skipped = @($man.Keys | Where-Object { $_ -match $V2BootstrapRx })
+  $out.Add("PASS  backend-src.zip: $($man.Count) файлів = BACKEND-SHA256.txt; не розгортаються (bootstrap): $(if ($skipped.Count) { $skipped -join ', ' } else { 'немає' })")
+  $dm = Read-V2SumsFile (Join-Path $pkg 'DIST-SHA256.txt')
+  $z = [IO.Compression.ZipFile]::OpenRead((Join-Path $pkg 'dist.zip'))
+  try {
+    $seen = @{}
+    foreach ($ze in $z.Entries) {
+      if ($ze.FullName.EndsWith('/')) { continue }
+      if (-not $ze.FullName.StartsWith('dist/') -or $ze.FullName.Contains('\') -or ($ze.FullName -split '/') -contains '..' -or $ze.FullName.Contains(':')) { Stop-V2 "dist.zip: запис поза dist/: $($ze.FullName)" }
+      if (-not $dm.Contains($ze.FullName) -or (Get-V2StreamSha256 $ze.Open()) -ne $dm[$ze.FullName]) { Stop-V2 "dist.zip: $($ze.FullName) ≠ DIST-SHA256.txt" }
+      $seen[$ze.FullName] = $true
+    }
+    foreach ($k in $dm.Keys) { if (-not $seen.ContainsKey($k)) { Stop-V2 "DIST-SHA256.txt: $k немає в ZIP" } }
+  } finally { $z.Dispose() }
+  if (-not $dm.Contains('dist/index.html')) { Stop-V2 'dist: немає index.html' }
+  $out.Add("PASS  dist.zip: $($dm.Count) файлів = DIST-SHA256.txt")
+  $pins = [ordered]@{}
+  foreach ($l in @([IO.File]::ReadAllLines((Join-Path $pkg 'requirements-hashed.txt')) | Where-Object { $_.Trim() -and -not $_.TrimStart().StartsWith('#') })) {
+    if ($l.Trim() -notmatch '^([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9.+!_-]+)(\s+--hash=sha256:[0-9a-f]{64})+$') { Stop-V2 "рядок вимог без точної версії й sha256: $l" }
+    $key = $Matches[1].ToLowerInvariant().Replace('_', '-')
+    if ($pins.Contains($key)) { Stop-V2 "вимоги: $key указано двічі" }
+    $pins[$key] = $Matches[2]
+  }
+  if (-not $pins.Count) { Stop-V2 'requirements-hashed.txt порожній' }
+  $relReq = @($req -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
+  foreach ($l in $relReq) {
+    if ($l -notmatch '^([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9.+!_-]+)$') { Stop-V2 "backend/requirements.txt: рядок без точної версії: $l" }
+    $key = $Matches[1].ToLowerInvariant().Replace('_', '-')
+    if (-not $pins.Contains($key) -or $pins[$key] -ne $Matches[2]) { Stop-V2 "requirements-hashed.txt не містить $($Matches[1])==$($Matches[2]) з requirements.txt релізу" }
+  }
+  $wd = Join-Path $pkg 'wheels'
+  $whl = @(if (Test-Path -LiteralPath $wd -PathType Container) { Get-ChildItem -LiteralPath $wd -Force })
+  if (-not $whl.Count -or @($whl | Where-Object { $_.PSIsContainer -or $_.Extension -ne '.whl' }).Count) { Stop-V2 "$wd має містити лише файли .whl" }
+  $extra = @(Get-ChildItem -LiteralPath $pkg -Force | Where-Object { ($need + 'wheels') -notcontains $_.Name } | ForEach-Object Name)
+  if ($extra.Count) { Stop-V2 "у каталозі пакета зайві об'єкти: $($extra -join ', ')" }
+  $out.Add("PASS  вимоги: $($pins.Count) пакетів з sha256 (⊇ requirements.txt релізу, $($relReq.Count)); коліс $($whl.Count) (хеші звіряє pip --require-hashes)")
+  [pscustomobject]@{ Dir = $pkg; ReleaseId = $ReleaseId; BackendManifest = $man; DistManifest = $dm; Pins = $pins; Skipped = $skipped; Lines = $out.ToArray() }
+}
+# Копія перевіреного пакета в pkg\<ReleaseId> (лише Administrators/SYSTEM — успадковується від pkg); повторна перевірка вже копії
+function Copy-V2CleanPackage {
+  param([Parameter(Mandatory)] $Package, [Parameter(Mandatory)] [string] $ApprovedSums, [Parameter(Mandatory)] [string] $Destination)
+  if (Test-Path -LiteralPath $Destination) { Stop-V2 "$Destination уже існує" }
+  $null = New-Item -ItemType Directory -Path $Destination, "$Destination\wheels"
+  foreach ($f in @(Get-ChildItem -LiteralPath $Package.Dir -File -Force) + @(Get-ChildItem -LiteralPath "$($Package.Dir)\wheels" -File -Force)) {
+    $rel = $f.FullName.Substring($Package.Dir.Length + 1)
+    [IO.File]::Copy($f.FullName, (Join-Path $Destination $rel), $false)
+  }
+  $ap = Join-Path (Split-Path -Parent $Destination) "$(Split-Path -Leaf $Destination)-APPROVED-SHA256.txt"
+  [IO.File]::Copy($ApprovedSums, $ap, $false)
+  $copy = Assert-V2CleanPackage -PackageDir $Destination -ApprovedSums $ap -ReleaseId $Package.ReleaseId
+  if (@(Compare-V2Sums (Get-V2TreeSha256 $Package.Dir) (Get-V2TreeSha256 $Destination)).Count) { Stop-V2 'копія пакета ≠ джерелу' }
+  $copy
+}
+# Розгортання коду релізу: app\<ReleaseId>\backend рівно за маніфестом, БЕЗ модулів bootstrap; маніфест → pkg\<ReleaseId>-BACKEND-SHA256.txt
+# (його бере Update-V2InPlace як «маніфест поточного коду»)
+function Expand-V2ReleaseBackend {
+  param([Parameter(Mandatory)] $Package, [Parameter(Mandatory)] [string] $AppDir, [Parameter(Mandatory)] [string] $PkgManifestPath)
+  if (Test-Path -LiteralPath $AppDir) { Stop-V2 "$AppDir уже існує" }
+  if (Test-Path -LiteralPath $PkgManifestPath) { Stop-V2 "$PkgManifestPath уже існує" }
+  Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+  $null = New-Item -ItemType Directory -Path $AppDir
+  $base = [IO.Path]::GetFullPath($AppDir).TrimEnd('\') + '\'
+  $rid = $Package.ReleaseId
+  $z = [IO.Compression.ZipFile]::OpenRead((Join-Path $Package.Dir 'backend-src.zip'))
+  try {
+    foreach ($ze in $z.Entries) {
+      if ($ze.FullName.EndsWith('/')) { continue }
+      $rel = $ze.FullName.Substring($rid.Length + 1)
+      if ($rel -match $V2BootstrapRx) { continue }
+      $dst = [IO.Path]::GetFullPath((Join-Path $AppDir ($rel -replace '/', '\')))
+      if (-not $dst.StartsWith($base, [StringComparison]::OrdinalIgnoreCase)) { Stop-V2 "запис поза каталогом релізу: $rel" }
+      $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $dst))
+      [IO.Compression.ZipFileExtensions]::ExtractToFile($ze, $dst, $false)
+    }
+  } finally { $z.Dispose() }
+  $want = [ordered]@{}; foreach ($k in $Package.BackendManifest.Keys) { if ($k -notmatch $V2BootstrapRx) { $want[$k] = $Package.BackendManifest[$k] } }
+  $diff = @(Compare-V2Sums $want (Get-V2TreeSha256 $AppDir))
+  if ($diff.Count) { Stop-V2 "розгорнутий код ≠ маніфесту: $($diff | Select-Object -First 5)" }
+  if (@(Get-ChildItem -LiteralPath $AppDir -Recurse -File -Force | Where-Object { $_.Name -match '(?i)bootstrap' }).Count) { Stop-V2 'у каталозі релізу є модуль bootstrap' }
+  [IO.File]::Copy((Join-Path $Package.Dir 'BACKEND-SHA256.txt'), $PkgManifestPath, $false)
+  "PASS  код $AppDir`: $($want.Count) файлів = маніфест (bootstrap не розгорнуто); маніфест релізу → $PkgManifestPath"
+}
+function Expand-V2ReleaseDist {
+  param([Parameter(Mandatory)] $Package, [Parameter(Mandatory)] [string] $DistDir)
+  if (Test-Path -LiteralPath $DistDir) { Stop-V2 "$DistDir уже існує" }
+  Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+  $null = New-Item -ItemType Directory -Path $DistDir
+  $base = [IO.Path]::GetFullPath($DistDir).TrimEnd('\') + '\'
+  $z = [IO.Compression.ZipFile]::OpenRead((Join-Path $Package.Dir 'dist.zip'))
+  try {
+    foreach ($ze in $z.Entries) {
+      if ($ze.FullName.EndsWith('/')) { continue }
+      $dst = [IO.Path]::GetFullPath((Join-Path $DistDir ($ze.FullName.Substring(5) -replace '/', '\')))
+      if (-not $dst.StartsWith($base, [StringComparison]::OrdinalIgnoreCase)) { Stop-V2 "dist: запис поза каталогом: $($ze.FullName)" }
+      $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $dst))
+      [IO.Compression.ZipFileExtensions]::ExtractToFile($ze, $dst, $false)
+    }
+  } finally { $z.Dispose() }
+  $want = [ordered]@{}; foreach ($k in $Package.DistManifest.Keys) { $want[$k.Substring(5)] = $Package.DistManifest[$k] }
+  $diff = @(Compare-V2Sums $want (Get-V2TreeSha256 $DistDir))
+  if ($diff.Count) { Stop-V2 "розгорнутий dist ≠ маніфесту: $($diff | Select-Object -First 5)" }
+  "PASS  dist $DistDir`: $($want.Count) файлів = DIST-SHA256.txt"
+}
+# Офлайн-залежності: pip --require-hashes лише з wheels\ пакета; pip check; pip freeze = рівно requirements-hashed.txt (без зайвих)
+function Install-V2Requirements {
+  param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] $Package)
+  $req = Join-Path $Package.Dir 'requirements-hashed.txt'
+  $null = Invoke-V2Native -Exe $Py -What 'pip install (офлайн, --require-hashes)' -Utf8 -ArgList @('-E', '-s', '-m', 'pip', '--isolated', '--disable-pip-version-check', '--no-input', 'install',
+    '--no-index', '--no-cache-dir', '--find-links', (Join-Path $Package.Dir 'wheels'), '--require-hashes', '--only-binary', ':all:', '-r', $req)
+  $null = Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-m', 'pip', '--isolated', '--disable-pip-version-check', 'check') -Utf8 -What 'pip check'
+  $freeze = @(Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-m', 'pip', '--isolated', '--disable-pip-version-check', 'freeze') -Utf8 -What 'pip freeze' |
+              ForEach-Object { $_.Trim().ToLowerInvariant().Replace('_', '-') } | Where-Object { $_ } | Sort-Object)
+  $want = @($Package.Pins.Keys | ForEach-Object { "$_==$($Package.Pins[$_])".ToLowerInvariant() } | Sort-Object)
+  $d = @(Compare-Object $want $freeze)
+  if ($d.Count) { Stop-V2 "pip freeze ≠ requirements-hashed.txt: $(($d | ForEach-Object { "$($_.SideIndicator) $($_.InputObject)" }) -join '; ')" }
+  "PASS  venv: $($freeze.Count) пакетів = requirements-hashed.txt (pip --require-hashes, pip check)"
+}
+# Прив'язка версій до коду релізу: SCHEMA_SPECS v2_db_tool має запис для версій коду (bind-check: SHA джерел схеми з маніфесту,
+# DDL коду = таблиці очікувань, SCHEMA_VERSION / AUTH_SCHEMA_VERSION = очікуваним)
+function Assert-V2ReleaseSchemaBinding {
+  param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $ReleasePy, [Parameter(Mandatory)] [string] $DbTool, [Parameter(Mandatory)] [string] $Backend,
+        [Parameter(Mandatory)] [string] $Manifest, [int] $IntegrityVersion = $V2ReleaseSchema.integrity, [int] $AuthVersion = $V2ReleaseSchema.auth)
+  $out = New-Object System.Collections.Generic.List[string]
+  foreach ($k in @(@('auth', $AuthVersion), @('integrity', $IntegrityVersion))) {
+    $a = @('-E', '-s', '-I', $DbTool, 'bind-check', '--kind', $k[0], '--expect-version', "$($k[1])", '--release-backend', $Backend, '--release-manifest', $Manifest)
+    if ($k[0] -eq 'integrity') { $a += @('--release-py', $ReleasePy) }
+    $r = @(Invoke-V2Native -Exe $Py -ArgList $a -Utf8 -What "bind-check $($k[0])")
+    if (-not $r.Count -or $r[-1] -ne "BIND OK kind=$($k[0]) version=$($k[1])") { Stop-V2 "bind-check $($k[0]) $($k[1]): $(if ($r.Count) { $r[-1] } else { 'немає результату' })" }
+    $out.Add("PASS  $($r[-1])")
+  }
+  $out.ToArray()
+}
+
+# =====================================================================================================================
+# Операторські перевірки працюючого сервера (tls\Restart-V2Tlsfix5Verified.ps1, tls\Verify-V2Tlsfix5Runtime.ps1): версії БД — з
+# самих файлів (v2_db_tool user-version, лише записи SCHEMA_SPECS), служба LM — перевіряється, але не зупиняється.
+# =====================================================================================================================
+function Get-V2DbVersion {
+  param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $DbTool, [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [ValidateSet('integrity', 'auth')] [string] $Kind)
+  $l = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('user-version', $Path)
+  if ($l -notmatch '^USER-VERSION kind=(\S+) user_version=(\d+) spec=(yes|no)$') { Stop-V2 "user-version $(Split-Path $Path -Leaf): $l" }
+  if ($Matches[1] -ne $Kind) { Stop-V2 "$(Split-Path $Path -Leaf): вид БД $($Matches[1]) ≠ $Kind" }
+  if ($Matches[3] -ne 'yes') { Stop-V2 "$(Split-Path $Path -Leaf): user_version $($Matches[2]) немає в SCHEMA_SPECS — невідома схема" }
+  [int]$Matches[2]
+}
+function Assert-V2DbStrict {
+  param([Parameter(Mandatory)] [string] $Py, [Parameter(Mandatory)] [string] $DbTool, [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [ValidateSet('integrity', 'auth')] [string] $Kind)
+  $v = Get-V2DbVersion -Py $Py -DbTool $DbTool -Path $Path -Kind $Kind
+  $vr = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('verify', $Path, '--expect-version', "$v")
+  if ($vr -notlike 'VERIFY OK*') { Stop-V2 "$(Split-Path $Path -Leaf): $vr" }
+  $sc = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('schema', $Path, '--kind', $Kind, '--expect-version', "$v")
+  if ($sc -notlike '* SCHEMA OK*') { Stop-V2 "$(Split-Path $Path -Leaf): $sc" }
+  [pscustomobject]@{ Kind = $Kind; Version = $v; Verify = $vr; Schema = $sc }
+}
+# Служба локальної LM (якщо встановлена): Running, NT SERVICE\integrity-v2-lm, власний WinSW, слухач лише 127.0.0.1:8200 у її дереві.
+# Повертає $null, якщо служби немає; інакше — доказ (PID дерева — для виключення з евристик «процесів V2»).
+function Get-V2LmServiceEvidence {
+  param([string] $Name = 'integrity-v2-lm', [int] $Port = 8200)
+  $s = Get-V2Service $Name
+  if (-not $s) { return $null }
+  if (-not $V2Services.ContainsKey($Name)) { $V2Services[$Name] = @{ Exe = "$V2Root\services\lm\$Name.exe"; Account = "NT SERVICE\$Name"; Port = $Port; Job = $null } }
+  $want = $V2Services[$Name]
+  if ($s.StartName -ne $want.Account) { Stop-V2 "${Name}: StartName = $($s.StartName), очікується $($want.Account)" }
+  if ($s.PathName.Trim().Trim('"') -ne $want.Exe) { Stop-V2 "${Name}: PathName = $($s.PathName)" }
+  if ($s.State -ne 'Running' -or -not $s.ProcessId) { Stop-V2 "${Name} встановлено, але не працює ($($s.State))" }
+  if (@('Auto', 'Manual') -notcontains [string]$s.StartMode) { Stop-V2 "${Name}: StartMode = $($s.StartMode)" }
+  $unresolved = New-Object 'System.Collections.Generic.List[object]'
+  $tree = Get-V2ServiceTree -Name $Name -Unresolved $unresolved
+  if ($unresolved.Count -or -not $tree.Count -or $tree[0].Pid -ne $s.ProcessId) { Stop-V2 "${Name}: дерево процесів не підтверджено" }
+  foreach ($p in $tree) { if ($p.Owner -ne $want.Account) { Stop-V2 "${Name}: процес $($p.Pid) не від $($want.Account)" } }
+  $pids = @($tree | ForEach-Object { [int]$_.Pid })
+  $l = @(Get-V2Listeners -Ports @($Port))
+  if (-not $l.Count -or @($l | Where-Object { $_.LocalAddress -ne '127.0.0.1' -or $pids -notcontains [int]$_.OwningProcess }).Count) { Stop-V2 "${Name}: порт $Port має слухати лише дерево служби на 127.0.0.1" }
+  [pscustomobject]@{ Name = $Name; State = [string]$s.State; StartMode = [string]$s.StartMode; WrapperPid = [int]$s.ProcessId; Pids = $pids; Tree = $tree }
 }
