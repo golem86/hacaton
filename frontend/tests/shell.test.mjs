@@ -126,3 +126,9 @@ test('mobile CSS hides the topbar card, shows the avatar and keeps 44 px nav tar
   assert.match(css, /\.v2-account-popover\[hidden\] \{ display: none; \}/)
   assert.match(css, /\.v2-account-trigger \{[^}]*width: 2\.75rem; height: 2\.75rem/)
 })
+
+test('desktop sidebar stays pinned so nav icons remain visible while scrolling', async () => {
+  const css = await readFile(new URL('../src/v2/v2.css', import.meta.url), 'utf8')
+  const desktop = css.match(/@media \(min-width: 900\.02px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  assert.match(desktop, /\.v2-sidebar \{[^}]*position: sticky; top: 0;[^}]*height: 100vh/)
+})

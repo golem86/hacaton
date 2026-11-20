@@ -261,3 +261,8 @@
 @media (max-width: 359.98px) {
   .v2-nav { grid-template-columns: repeat(var(--v2-nav-cols-xs, 4), minmax(0, 1fr)); }
 }
+
+/* Десктоп: бічне меню закріплене — іконки вкладок завжди видимі під час прокручування сторінки. */
+@media (min-width: 900.02px) {
+  .v2-sidebar { position: sticky; top: 0; z-index: 30; align-self: start; height: 100vh; }
+}
