@@ -206,6 +206,9 @@ try {
       $z = [IO.Compression.ZipFile]::OpenRead($src)
       try { foreach ($ze in $z.Entries) { if (-not $ze.FullName.EndsWith('/') -and $ze.FullName.StartsWith("$cur/backend/")) { $man[$ze.FullName.Substring($cur.Length + 1)] = Get-V2UpStreamSha $ze.Open() } } } finally { $z.Dispose() }
     } else { Stop-V2 "немає маніфесту поточного коду (pkg\$cur-BACKEND-SHA256.txt або pkg\$cur-backend-src.zip); задайте -CurrentManifest" }
+    # модулі bootstrap є в маніфесті релізу, але stage.code їх не розгортає — їхня відсутність у живому коді не розбіжність
+    $notDeployed = @($man.Keys | Where-Object { $_ -match $V2UpBootstrapRx })
+    foreach ($k in $notDeployed) { $man.Remove($k) }
     $live = [ordered]@{}
     $m = Get-V2UpTreeManifest $U.OldWorkdir -Exclude '(^|/)__pycache__/'
     foreach ($k in $m.Keys) { $live["backend/$k"] = $m[$k] }
