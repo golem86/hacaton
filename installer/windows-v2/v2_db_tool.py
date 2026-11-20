@@ -228,8 +228,9 @@ _INTEGRITY_TABLES_V5 = dict(
     FOREIGN KEY(assessment_id) REFERENCES cycles (id)
 );""",
     instance_meta="""CREATE TABLE instance_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
+    "key" TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY ("key")
 );""",
 )
 
@@ -282,15 +283,15 @@ CREATE TABLE IF NOT EXISTS v2_rate_limits (
 );
 """
 
-# ОЧІКУВАННЯ (контракт §2) — замінити фактичним _SCHEMA потоку auth після злиття (імена тригерів, NOT NULL, FK)
+# Фактичний _SCHEMA backend/app/v2_auth.py після злиття потоку auth (feature/integration a0cfca8)
 _AUTH_DDL_V2 = _AUTH_DDL_V1.replace(
     "role TEXT NOT NULL CHECK (role IN ('user', 'admin')),",
     "role TEXT NOT NULL CHECK (role IN ('user', 'admin', 'data_officer')),") + """CREATE TABLE IF NOT EXISTS v2_role_changes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     actor_user_id INTEGER NOT NULL,
     target_user_id INTEGER NOT NULL,
-    old_role TEXT NOT NULL,
-    new_role TEXT NOT NULL,
+    old_role TEXT NOT NULL CHECK (old_role IN ('user', 'admin', 'data_officer')),
+    new_role TEXT NOT NULL CHECK (new_role IN ('user', 'admin', 'data_officer')),
     changed_at TEXT NOT NULL
 );
 CREATE TRIGGER IF NOT EXISTS v2_role_changes_no_update BEFORE UPDATE ON v2_role_changes
@@ -322,7 +323,7 @@ SCHEMA_SPECS = {
         "forbidden": (), "contract": (("table", "recommendation_actions"),),
     },
     ("integrity", 5): {
-        "status": "ОЧІКУВАННЯ: посилення (контракт §2), звірити з DDL потоку даних", "ddl": _join(_INTEGRITY_TABLES_V5),
+        "status": "V2 Hardening (feature/integration a0cfca8), фактичний DDL моделей", "ddl": _join(_INTEGRITY_TABLES_V5),
         "strict_sql": False,   # audit_events.actor_user_id додається ALTER TABLE → текст CREATE відрізняється від свіжого
         "source": {"files": ("backend/app/models.py", "backend/app/migrations.py"), "generator": "sqlalchemy",
                    "version_file": "backend/app/migrations.py", "version_symbol": "SCHEMA_VERSION"},
@@ -343,7 +344,7 @@ SCHEMA_SPECS = {
         "forbidden": (("table", "v2_dev_mail"),), "contract": (),
     },
     ("auth", 2): {
-        "status": "ОЧІКУВАННЯ: ролі й журнал змін ролей (контракт §2), звірити з _SCHEMA потоку auth", "ddl": _AUTH_DDL_V2,
+        "status": "V2 Hardening (feature/integration a0cfca8), фактичний _SCHEMA", "ddl": _AUTH_DDL_V2,
         "strict_sql": True,    # нормалізація прибирає лапки імен (перебудова таблиці + RENAME дає "v2_users")
         "source": {"files": ("backend/app/v2_auth.py",), "generator": "ast", "ddl_symbol": "_SCHEMA",
                    "version_file": "backend/app/v2_auth.py", "version_symbol": "AUTH_SCHEMA_VERSION"},
