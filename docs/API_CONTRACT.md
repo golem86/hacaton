@@ -451,10 +451,12 @@ k-анонімність (як `/results`):
 
 ## Результати підрозділу для користувача (`GET /v2/user/unit-results?assessment_id={id}`)
 
-Сесія V2 з роллю `user` після 2FA (інші ролі → 403, без сесії → 401). Підрозділ визначає лише сервер
-(таблиця `user_units`, призначає власник сервера: `python -m app.v2_unit_cli set-unit --email … --unit … --confirm`);
-будь-які параметри підрозділу чи категорії від клієнта ігноруються. `404` — циклу немає, `409` — цикл не закрито,
-`404` також для чернетки циклу, `422` — id поза 1..2^63−1.
+Лише сесія V2 з пройденою 2FA і роллю `user` (`require_v2_role("user")`): `admin` і `data_officer` → 403,
+без сесії або без 2FA → 401. Підрозділ визначає лише сервер: таблиця `user_units` в INTEGRITY_DB (схема 7;
+`user_id` — id з V2_AUTH_DB без зовнішнього ключа, `unit` → `units.name`, `assigned_at`; один підрозділ на користувача).
+Будь-які параметри підрозділу чи категорії від клієнта ігноруються; вебмаршруту для зміни підрозділу немає.
+`404` — циклу немає або це чернетка (`draft`, відповідь однакова), `409` — цикл відкритий (`open`),
+`422` — `assessment_id` відсутній або поза 1..2^63−1.
 
 ```json
 {"assessment": {"id": 1, "name": "2025-II", "status": "closed"}, "unit": "Факультет 1",
@@ -463,9 +465,30 @@ k-анонімність (як `/results`):
  "components": [{"code": "C1", "name": "…", "score": 52.3, "status": "available"}]}
 ```
 
-`privacy_status`: `available` (`responses` округлено вниз до кратного 5) | `suppressed` (у підрозділі < k анкет або в
-циклі є клітинка «категорія × підрозділ» з 1…k−1 анкет; `responses` і всі `score` — null) | `no_unit` (`unit` = null). Розрізу за категоріями немає. Деталі й обґрунтування —
-`docs/USER_UNIT_RESULTS_API_PROPOSAL.md`, `docs/anonymity.md` §4.6.
+Поля: `assessment {id, name, status}`, `unit` (назва підрозділу рядком або `null`), `methodology_version`,
+`min_group_size` (k циклу), `privacy_status`, `responses`, `components[{code, name, score, status}]` — усі компоненти
+за кодом; `score` 0–100, округлено до 0,1.
+
+`privacy_status`:
+- `available` — `responses` округлено вниз до кратного 5; компонент `available` або `insufficient_data`
+  (`score` = null: в анкетах підрозділу немає відповідей на питання компонента);
+- `suppressed` — у підрозділі < k анкет **або** будь-яка непорожня клітинка «категорія × підрозділ» циклу має < k анкет
+  (тоді прихований увесь цикл, для всіх підрозділів); `unit` — назва підрозділу користувача, `responses` = null,
+  усі компоненти `score` = null, `status` = `suppressed`; порожній і малий підрозділ дають однакову відповідь;
+- `no_unit` — підрозділ не призначено: `unit` = null, решта як для `suppressed`.
+
+Розрізу за категоріями немає.
+
+Призначення підрозділу — лише власник сервера, з каталогу `backend`:
+`python -m app.v2_unit_cli list-units`, `python -m app.v2_unit_cli set-unit --email <email> --unit "<назва з довідника units>" [--confirm]`,
+`python -m app.v2_unit_cli clear-unit --email <email> [--confirm]`. Без `--confirm` — лише план, БД не змінюється;
+схема лише перевіряється (не мігрує). Кожна зміна — подія журналу `user.unit_change` з `actor_role = "server"`,
+`actor_user_id = null`, `details: {}` — без email, id і назви підрозділу. Коди виходу: `0` — виконано або план,
+`2` — відмова (немає користувача, підрозділу в довіднику або підрозділ не змінюється), `1` — помилка.
+
+**Відома прогалина:** `Cache-Control: no-store` для цього маршруту не встановлюється (як і для інших `/v2/user/*`).
+
+Деталі й обґрунтування — `docs/USER_UNIT_RESULTS_API_PROPOSAL.md`, `docs/anonymity.md` §4.6.
 
 ## V2 Hardening — зміни за аудитом backend (20.11.2026)
 
