@@ -123,7 +123,7 @@ test('413 says «Запит завеликий» and 422 never echoes validation
   await withFetch(async () => new Response('too large', { status: 413 }), async () => {
     await assert.rejects(auth.loginUser({ email: 'a@example.test', password: 'x'.repeat(12) }), error => error.status === 413 && /^Запит завеликий/.test(error.message))
     await assert.rejects(admin.createCycle({ name: 'x' }), error => error.status === 413 && /^Запит завеликий/.test(error.message))
-    await assert.rejects(users.changeUserRole(5, 'user', 'admin'), error => error.status === 413 && /^Запит завеликий/.test(error.message))
+    await assert.rejects(users.changeUserRole(5, 'user', 'data_officer'), error => error.status === 413 && /^Запит завеликий/.test(error.message))
   })
   await withFetch(async () => reply({ detail: [{ loc: ['body', 'name'], msg: 'bad', type: 'x' }] }, 422), async () => {
     await assert.rejects(admin.createCycle({ name: 'secret-input' }), error => error.status === 422 && !/secret-input|loc|msg/.test(error.message))
@@ -216,7 +216,7 @@ test('role change errors: 403 self_change, other 403, 409 conflict, 404 missing'
   ]
   for (const [response, status, message] of cases) {
     await withFetch(async () => response.clone(), async () => {
-      await assert.rejects(users.changeUserRole(1, 'admin', 'user'), error => error.status === status && message.test(error.message))
+      await assert.rejects(users.changeUserRole(1, 'user', 'data_officer'), error => error.status === status && message.test(error.message))
     })
   }
   await assert.rejects(users.changeUserRole(1, 'admin', 'root'), error => error.status === 422)
@@ -233,7 +233,8 @@ test('users table: masked email only, own row cannot change its role, others get
   assert.match(markup, /Не можна змінити власну роль/)
   assert.equal(markup.match(/>Змінити роль</g)?.length, 2, 'two other accounts')
   assert.equal(markup.match(/>Завершити сесії</g)?.length, 2)
-  for (const label of ['Користувач', 'Адміністратор', 'Відповідальний за коди доступу']) assert.ok(markup.includes(`>${label}</option>`), label)
+  for (const label of ['Користувач', 'Відповідальний за коди доступу']) assert.ok(markup.includes(`>${label}</option>`), label)
+  assert.ok(!markup.includes('>Адміністратор</option>'), 'роль admin у вебі не призначається')
 })
 
 test('confirmation explains the effect before a role change or a session revoke', () => {

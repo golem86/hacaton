@@ -42,6 +42,7 @@ export const ACTOR_ROLE_LABELS: Readonly<Record<string, string>> = {
   auditor: 'Аудитор',
   anticorruption: 'Уповноважений з антикорупції',
   data_officer: 'Відповідальний за коди доступу',
+  server: 'Власник сервера (серверна команда)',
   expert: 'Експерт',
   respondent: 'Респондент',
 }

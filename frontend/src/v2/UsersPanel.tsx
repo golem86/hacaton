@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ApiError } from '../api/client'
-import { isUserRole, ROLE_LABELS, roleLabel, USER_ROLES, type UserRole } from '../api/auth'
+import { isUserRole, ROLE_LABELS, roleLabel, type UserRole } from '../api/auth'
 import {
-  changeUserRole, findUserByEmail, getRoleChanges, listUsers, revokeUserSessions,
-  ROLE_CONFLICT_MESSAGE, USER_NOT_FOUND_MESSAGE, type AdminUser, type AdminUserMatch, type RoleChange,
+  ADMIN_ROLE_SERVER_ONLY_MESSAGE, changeUserRole, findUserByEmail, getRoleChanges, listUsers, revokeUserSessions,
+  ROLE_CONFLICT_MESSAGE, SERVER_ACTOR_ID, USER_NOT_FOUND_MESSAGE, WEB_ASSIGNABLE_ROLES,
+  type AdminUser, type AdminUserMatch, type RoleChange,
 } from '../api/users'
 import { formatAuditDate } from './AuditTrail'
 import { ListPagination, usePagination } from './ListPagination'
@@ -71,7 +72,8 @@ export function UsersTable({ rows, currentUserId, drafts, busy, caption, onDraft
         <tbody>
           {rows.map(user => {
             const self = user.id === currentUserId
-            const draft = drafts[user.id] ?? (isUserRole(user.role) ? user.role : 'user')
+            const serverOnly = user.role === 'admin'
+            const draft = drafts[user.id] ?? (isUserRole(user.role) && !serverOnly ? user.role : 'user')
             return (
               <tr key={user.id} data-self={self || undefined}>
                 <th scope="row" data-label="Ім’я"><span>{user.name}{self && <span className="v2-pill users-panel__self">Це ви</span>}</span></th>
@@ -81,12 +83,14 @@ export function UsersTable({ rows, currentUserId, drafts, busy, caption, onDraft
                 <td data-label="Дії">
                   {self ? (
                     <span className="users-panel__hint">Не можна змінити власну роль. Щоб завершити власні сесії, скористайтеся «Вийти на всіх пристроях».</span>
+                  ) : serverOnly ? (
+                    <span className="users-panel__hint">{ADMIN_ROLE_SERVER_ONLY_MESSAGE}</span>
                   ) : (
                     <div className="users-panel__actions">
                       <label className="users-panel__role-select">
                         <span className="users-panel__sr-only">Нова роль для {user.name}</span>
                         <select value={draft} disabled={busy} onChange={event => { if (isUserRole(event.target.value)) onDraft(user.id, event.target.value) }}>
-                          {USER_ROLES.map(role => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
+                          {WEB_ASSIGNABLE_ROLES.map(role => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
                         </select>
                       </label>
                       <button className="v2-button" type="button" disabled={busy || draft === user.role} onClick={() => onRequest({ kind: 'role', user, newRole: draft })}>Змінити роль</button>
@@ -103,9 +107,13 @@ export function UsersTable({ rows, currentUserId, drafts, busy, caption, onDraft
   )
 }
 
+/** Хто змінив роль, якщо це зробила серверна команда власника сервера (actor_user_id = 0). */
+export const SERVER_ACTOR_LABEL = 'Власник сервера (серверна команда)'
+
 export function RoleChangeHistory({ changes, users }: { changes: RoleChange[]; users: AdminUser[] }) {
   const names = new Map(users.map(user => [user.id, user.name]))
-  const who = (id: number | null) => id === null ? 'Системна дія' : names.get(id) ?? `Користувач № ${id}`
+  const who = (id: number | null) => id === null ? 'Системна дія'
+    : id === SERVER_ACTOR_ID ? SERVER_ACTOR_LABEL : names.get(id) ?? `Користувач № ${id}`
   // Історія змін ролей лише зростає: показуємо її сторінками.
   const { current, setPage, setPageSize } = usePagination(changes)
   if (changes.length === 0) return <p className="v2-muted">Змін ролей ще не було.</p>
@@ -186,8 +194,10 @@ export default function UsersPanel({ currentUserId }: { currentUserId: number })
       reload()
     } catch (error) {
       const status = error instanceof ApiError ? error.status : 0
+      const serverOnly = status === 403 && message(error, '') === ADMIN_ROLE_SERVER_ONLY_MESSAGE
       const text = status === 409 ? ROLE_CONFLICT_MESSAGE : status === 404 ? USER_NOT_FOUND_MESSAGE : message(error, 'Дію не виконано.')
-      setNotice({ kind: 'error', text, stale: status === 409 || status === 404 })
+      // admin_role_server_only: роль цілі могла змінитися на сервері — пропонуємо оновити список.
+      setNotice({ kind: 'error', text, stale: status === 409 || status === 404 || serverOnly })
     } finally {
       setPending(null)
       setBusy(false)
@@ -220,7 +230,9 @@ export default function UsersPanel({ currentUserId }: { currentUserId: number })
         <p className="v2-muted">
           Ролі: «Користувач» — особистий кабінет; «Адміністратор» — цикли, результати, аналітика, журнал і звіти;
           «Відповідальний за коди доступу» — лише видача кодів і участь. Коди й результати розділено між різними людьми.
-          Після зміни ролі всі сесії користувача завершуються. Перелік показує лише замаскований email.
+          Тут можна змінювати лише ролі «Користувач» і «Відповідальний за коди доступу». Роль адміністратора
+          призначає й знімає лише власник сервера командою на сервері; сесії іншого адміністратора тут теж не
+          завершуються. Після зміни ролі всі сесії користувача завершуються. Перелік показує лише замаскований email.
         </p>
         {notice && (
           <div className={notice.kind === 'ok' ? 'users-panel__notice' : 'users-panel__notice users-panel__notice--error'} role={notice.kind === 'ok' ? 'status' : 'alert'}>
