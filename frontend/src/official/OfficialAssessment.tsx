@@ -37,7 +37,7 @@ export default function OfficialAssessment({ mode }: { mode: Mode }) {
 
   return <section className="v2-card official-assessment" aria-label={mode === 'expert' ? 'Експертне оцінювання' : 'Офіційна анкета'}>
     <h2>{mode === 'expert' ? 'Експертне оцінювання · WIP Preview' : 'Офіційна анкета · WIP Preview'}</h2>
-    <p>Джерело: Додаток В, друковані с. 53–66. У PDF: Анкета 1 — 12 питань, Анкета 2 — 10 питань; цей каталог охоплює лише перевірений піднабір.</p>
+    <p>Джерело: Додаток В, друковані с. 53–66. У PDF: Анкета 1 — 12 питань, Анкета 2 — 10 питань. {template.version === '2.0.0' ? 'Ця версія охоплює всі питання відповідної анкети в адаптованому викладі.' : 'Ця версія охоплює лише піднабір питань.'}</p>
     <p role="status">Відповіді перебувають тільки в пам’яті цієї вкладки. Збереження і подання недоступні.</p>
     {mode === 'expert' && <p>Адміністративна сесія відкриває лише preview. Серверної ролі експерта та сховища експертних оцінок ще немає.</p>}
     <label htmlFor="official-template">Шаблон і версія</label>
@@ -70,7 +70,7 @@ export default function OfficialAssessment({ mode }: { mode: Mode }) {
       </div>)}
       <button type="button" className="v2-button" onClick={() => jump(index)}>Повернутися до питань</button>
     </div> : <div aria-live="polite">
-      <p>Питання {index + 1} з {questions.length} · {question.source.section} · Додаток {question.source.appendix}, с. {question.source.page}, № {question.source.number}</p>
+      <p>Питання {index + 1} з {questions.length} · {question.source.section} · Додаток {question.source.appendix}, с. {question.source.page}, № {question.source.number}{question.wording === 'adapted' ? ' · адаптоване формулювання' : ''}</p>
       <fieldset aria-invalid={showErrors && !!errors[question.id]} aria-describedby={showErrors && errors[question.id] ? 'official-question-error' : undefined}>
         <legend>{question.text} <span className="official-required">(обов’язково)</span></legend>
         {question.options.map(option => <label key={option.id} className="official-option"><input type="radio" name={question.id} value={option.id} checked={answers[question.id] === option.id}

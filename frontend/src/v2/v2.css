@@ -130,6 +130,7 @@
 .official-assessment legend { font-weight: 700; margin-bottom: 1rem; }
 .official-option { display: flex; gap: .65rem; align-items: flex-start; margin: .8rem 0; line-height: 1.45; }
 .official-option input { margin-top: .3rem; flex: none; }
+.official-option, .official-review-item { overflow-wrap: anywhere; }
 .official-actions { display: flex; gap: .75rem; margin-top: 1rem; }
 .official-assessment select { display: block; width: min(100%, 38rem); padding: .7rem; margin: .4rem 0 1rem; border: 1px solid #9bb8ac; border-radius: .5rem; background: #fff; color: var(--ink); font: inherit; }
 .official-progress { display: grid; gap: .4rem; max-width: 38rem; margin: 1rem 0; font-weight: 700; }

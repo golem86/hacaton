@@ -1,10 +1,13 @@
+import { fullTemplates } from './catalog-v2'
+
 export type OfficialOption = { id: string; text: string }
 export type OfficialQuestion = {
   id: string
   kind: 'single_choice'
   required: true
+  wording?: 'adapted'
   text: string
-  source: { appendix: 'В'; page: number; section: string; number: number }
+  source: { appendix: 'В'; form?: 1 | 2; page: number; section: string; number: number }
   options: readonly OfficialOption[]
 }
 export type OfficialTemplate = {
@@ -93,6 +96,7 @@ export const officialTemplates: readonly OfficialTemplate[] = [
       ],
     }],
   },
+  ...fullTemplates,
 ]
 
 for (const template of officialTemplates) {

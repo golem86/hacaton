@@ -38,6 +38,10 @@ test('verified admin sees expert preview with no submission control', async ({ p
   await signIn(page, 'e2e-admin@example.test')
   await page.goto('/admin/expert')
   await expect(page.getByRole('heading', { name: /Експертне оцінювання · WIP Preview/ })).toBeVisible()
+  await page.getByLabel('Шаблон і версія').selectOption('appendix-v-form-2@2.0.0')
+  await expect(page.locator('.official-question-buttons button')).toHaveCount(10)
+  await expect(page.locator('.official-section')).toHaveCount(4)
+  await expect(page.getByText(/Категорію має визначити №5/)).toBeVisible()
   await expect(page.getByText(/Збереження і подання недоступні/)).toBeVisible()
   await expect(page.locator('.official-assessment button[type="submit"]')).toHaveCount(0)
 })
@@ -61,4 +65,32 @@ test('multi-question preview keeps choices across navigation and never submits',
   await page.getByLabel('Шаблон і версія').selectOption('appendix-v-form-2@1.1.0')
   await expect(page.getByRole('progressbar', { name: 'Прогрес заповнення' })).toHaveAttribute('value', '0')
   await expect(page.getByText(/Заголовок на с. 60/)).toBeVisible()
+})
+
+test('complete catalogs navigate four sections, validate all answers and review locally', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await signIn(page, 'e2e-user@example.test')
+  await page.goto('/app/official')
+  for (const [form, count] of [[1, 12], [2, 10]] as const) {
+    await page.getByLabel('Шаблон і версія').selectOption(`appendix-v-form-${form}@2.0.0`)
+    await expect(page.getByText('Ця версія охоплює всі питання відповідної анкети в адаптованому викладі.')).toBeVisible()
+    await expect(page.locator('.official-section')).toHaveCount(4)
+    await expect(page.locator('.official-question-buttons button')).toHaveCount(count)
+    await page.getByRole('button', { name: 'Перевірити відповіді' }).click()
+    await expect(page.getByRole('status').last()).toContainText(`Пропущено обов'язкових відповідей: ${count}`)
+    for (let i = 0; i < count; i++) {
+      await page.locator('.official-question-buttons button').nth(i).click()
+      const first = page.locator('.official-option input').first()
+      if (i === 0) { await first.focus(); await page.keyboard.press('Space') }
+      else await first.check()
+    }
+    await expect(page.getByRole('progressbar', { name: 'Прогрес заповнення' })).toHaveAttribute('value', String(count))
+    await page.locator('.official-question-buttons button').first().click()
+    await expect(page.locator('.official-option input').first()).toBeChecked()
+    await page.getByRole('button', { name: 'Перевірити відповіді' }).click()
+    await expect(page.locator('.official-review-item')).toHaveCount(count)
+    await expect(page.locator('.official-assessment button[type="submit"]')).toHaveCount(0)
+  }
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
+  expect(overflow).toBe(false)
 })

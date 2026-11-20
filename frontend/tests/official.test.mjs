@@ -11,7 +11,7 @@ const { validateOfficialAnswers } = await server.ssrLoadModule('/src/official/va
 const OfficialAssessment = (await server.ssrLoadModule('/src/official/OfficialAssessment.tsx')).default
 
 test('versioned official catalog has unique question and option IDs, source and descriptive choices', () => {
-  assert.equal(officialTemplates.length, 4)
+  assert.equal(officialTemplates.length, 6)
   for (const template of officialTemplates) {
     const ids = new Set()
     assert.ok(Object.isFrozen(template) && Object.isFrozen(template.questions))
@@ -20,20 +20,20 @@ test('versioned official catalog has unique question and option IDs, source and 
       assert.ok(Object.isFrozen(question) && Object.isFrozen(question.options))
       assert.equal(question.kind, 'single_choice')
       assert.equal(question.required, true)
-      assert.equal(question.options.length, 5)
+      assert.equal(question.options.length, question.source.section.startsWith('Розділ 3.') && question.source.number === 3 ? 6 : 5)
       assert.equal(question.source.appendix, 'В')
-      assert.match(question.source.section, /^Розділ [12]\. /)
+      assert.match(question.source.section, /^Розділ [1-4]\. /)
       assert.ok(!ids.has(question.id))
       ids.add(question.id)
       for (const option of question.options) { assert.ok(!ids.has(option.id)); ids.add(option.id); assert.ok(option.text.length > 20) }
     }
   }
-  assert.deepEqual(officialTemplates.map(t => t.questions[0].source.page), [53, 60, 53, 60])
+  assert.deepEqual(officialTemplates.map(t => t.questions[0].source.page), [53, 60, 53, 60, 53, 60])
   assert.equal(officialTemplates[1].audience, 'ambiguous')
   assert.equal(officialTemplates[3].audience, 'ambiguous')
-  assert.deepEqual(officialTemplates.map(t => t.version), ['1.0.0', '1.0.0', '1.1.0', '1.1.0'])
-  assert.deepEqual(officialTemplates.map(t => t.questions.length), [1, 1, 2, 2])
-  assert.deepEqual(officialTemplates.slice(2).map(t => t.questions[1].source.page), [56, 62])
+  assert.deepEqual(officialTemplates.map(t => t.version), ['1.0.0', '1.0.0', '1.1.0', '1.1.0', '2.0.0', '2.0.0'])
+  assert.deepEqual(officialTemplates.map(t => t.questions.length), [1, 1, 2, 2, 12, 10])
+  assert.deepEqual(officialTemplates.slice(2, 4).map(t => t.questions[1].source.page), [56, 62])
   assert.ok(officialTemplates.slice(2).every(t => t.sourceUrl?.endsWith('.pdf') && t.contentNote?.includes('адаптовано')))
   assert.deepEqual(officialTemplates[0].questions, officialTemplates[2].questions.slice(0, 1))
   assert.deepEqual(officialTemplates[1].questions, officialTemplates[3].questions.slice(0, 1))
@@ -54,6 +54,36 @@ test('multi-question validation reports every missing or foreign selection', () 
   assert.deepEqual(Object.keys(validateOfficialAnswers(template, {})), [first.id, second.id])
   assert.ok(validateOfficialAnswers(template, { [first.id]: first.options[0].id, [second.id]: first.options[0].id })[second.id])
   assert.deepEqual(validateOfficialAnswers(template, { [first.id]: first.options[0].id, [second.id]: second.options[4].id }), {})
+})
+
+test('complete catalogs match the source order, metadata, sections and choice counts', () => {
+  const expected = [
+    [[1, 1, 53], [1, 2, 53], [1, 3, 54], [1, 4, 54], [1, 5, 55], [2, 1, 55], [2, 2, 56], [3, 1, 56], [3, 2, 57], [3, 3, 57], [3, 4, 58], [4, 1, 58]],
+    [[1, 1, 60], [1, 2, 60], [1, 3, 61], [2, 1, 61], [2, 2, 62], [3, 1, 62], [3, 2, 63], [3, 3, 63], [3, 4, 64], [4, 1, 64]],
+  ]
+  for (const [formIndex, template] of officialTemplates.slice(4).entries()) {
+    assert.deepEqual(template.questions.map(q => [Number(q.source.section[7]), q.source.number, q.source.page]), expected[formIndex])
+    assert.deepEqual([...new Set(template.questions.map(q => q.source.section[7]))], ['1', '2', '3', '4'])
+    for (const q of template.questions) {
+      assert.equal(q.source.form, formIndex + 1)
+      assert.equal(q.wording, 'adapted')
+      assert.equal(q.kind, 'single_choice')
+      assert.ok(!('score' in q) && !('weight' in q))
+      assert.ok(q.options.every(o => !('score' in o) && !('weight' in o)))
+      assert.equal(q.options.length, q.source.section.startsWith('Розділ 3.') && q.source.number === 3 ? 6 : 5)
+    }
+  }
+  assert.equal(officialTemplates[5].audience, 'ambiguous')
+})
+
+test('complete forms require every answer and reject foreign selections', () => {
+  for (const template of officialTemplates.slice(4)) {
+    assert.equal(Object.keys(validateOfficialAnswers(template, {})).length, template.questions.length)
+    const answers = Object.fromEntries(template.questions.map(q => [q.id, q.options[0].id]))
+    assert.deepEqual(validateOfficialAnswers(template, answers), {})
+    answers[template.questions.at(-1).id] = template.questions[0].options[0].id
+    assert.ok(validateOfficialAnswers(template, answers)[template.questions.at(-1).id])
+  }
 })
 
 test('self and expert render distinct preview modes without a submit action', () => {
