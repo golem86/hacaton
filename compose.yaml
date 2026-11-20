@@ -9,7 +9,10 @@ services:
       INTEGRITY_DB: /data/integrity.db
       V2_AUTH_DB: /data/v2_auth.db
       INTEGRITY_DEMO_XROLE: "0"
-      INTEGRITY_ANALYTICS_DEMO: ${INTEGRITY_ANALYTICS_DEMO:-0}
+      # Synthetic demo DB only: this stack always seeds a fresh synthetic SQLite in its own demo_data
+      # volume, so Integrity Index, recommendations and comparisons are on by default (else HTTP 503).
+      # Never set 1 for a real or shared database: the flag does not verify where the data came from.
+      INTEGRITY_ANALYTICS_DEMO: ${INTEGRITY_ANALYTICS_DEMO:-1}
       V2_AUTH_DEV_MAIL: "1"
       V2_AUTH_SECURE_COOKIE: "0"
       V2_SECRET_KEY: ${V2_SECRET_KEY:?Set a random 32+ character V2_SECRET_KEY in .env}
