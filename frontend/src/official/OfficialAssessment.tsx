@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getAssessments, getManagedAssessments, type Assessment } from '../api/assessments'
 import { ANNEX_V_VERSION, AnnexVOutcomeUnknownError, submitAnnexVResponse, submitExpertAssessment, type AnnexVForm } from '../api/annexV'
 import { ALL_CATEGORIES, categoryLabel } from '../components/categories'
+import ExpertAssessmentList from '../v2/ExpertAssessmentList'
 import { getOfficialTemplate } from './catalog'
 import {
   ACCESS_CODE_MAX, EXPERT_LABEL_MAX, answersForTemplate, validateAccessCode, validateExpertLabel, validateOfficialAnswers, type OfficialAnswers,
@@ -56,6 +57,7 @@ export default function OfficialAssessment({ mode, cycles: preset }: { mode: Mod
   const [review, setReview] = useState(false)
   const [notice, setNotice] = useState('')
   const [submission, setSubmission] = useState<Submission>({ status: 'idle' })
+  const [savedExperts, setSavedExperts] = useState(0)
   const controller = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -118,6 +120,7 @@ export default function OfficialAssessment({ mode, cycles: preset }: { mode: Mod
     try {
       if (expert) {
         const result = await submitExpertAssessment(cycleId, { expert_label: label.trim(), form: 1, version: ANNEX_V_VERSION, answers: payload }, abort.signal)
+        setSavedExperts(value => value + 1)
         setSubmission({ status: 'done', message: `Експертну оцінку збережено${typeof result?.id === 'number' ? ` (запис № ${result.id})` : ''}. Позначка: «${label.trim()}».` })
       } else {
         await submitAnnexVResponse(cycleId, { access_token: code.trim(), category, form, version: ANNEX_V_VERSION, answers: payload }, abort.signal)
@@ -236,6 +239,7 @@ export default function OfficialAssessment({ mode, cycles: preset }: { mode: Mod
       <strong>{expert ? 'Збережено' : 'Надіслано'}</strong><span>{submission.message}</span>
       {expert && <button type="button" className="v2-button" onClick={startNextExpert}>Внести ще одну експертну оцінку</button>}
     </div>}
+    {expert && <ExpertAssessmentList assessmentId={cycleId} refreshKey={savedExperts} />}
   </section>
 }
 

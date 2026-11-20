@@ -316,6 +316,7 @@ Tracker порівнює ID циклів після приведення чис�
 |---|---|---|---|
 | POST | `/api/assessments/{id}/annex-v/responses` | публічний, лише одноразовий код | Анонімна анкета Додатка В |
 | POST | `/api/assessments/{id}/annex-v/expert` | admin, сесія + CSRF | Експертна оцінка за формою 1 |
+| GET | `/api/assessments/{id}/annex-v/expert` | admin (сесія з 2FA) | Внесені експертні оцінки циклу й підсумок за критеріями |
 | GET | `/api/assessments/{id}/checklist` | admin, data_officer, ролі аналітики | 20 пунктів чек-листа (Додаток Б, адаптовано) зі станом |
 | PUT | `/api/assessments/{id}/checklist/{code}` | data_officer або admin, сесія + CSRF | Внести стан пункту; скидає підтвердження |
 | POST | `/api/assessments/{id}/checklist/{code}/confirm` | admin, сесія + CSRF | Підтвердити пункт (інший користувач) |
@@ -345,6 +346,21 @@ Tracker порівнює ID циклів після приведення чис�
 ### `POST /api/assessments/{id}/annex-v/expert`
 
 Тіло: `{expert_label, form: 1, version: "2.0.0", answers}`. `expert_label` — посада або роль, 3–120 символів; ознаки ПІБ, email чи телефону → 422. Відповіді: 201 `{id}`; 404 — циклу немає; 409 — цикл чернетка; 422 — некоректні дані. Журнал: `annex_v.expert_create`.
+
+### `GET /api/assessments/{id}/annex-v/expert`
+
+Перегляд внесених експертних оцінок (Анкета 1) для адміністратора. Доступ: лише `admin` із сесією після 2FA; `data_officer`, ролі аналітики й `user` → 403; без сесії (або сесія до 2FA) → 401; некоректний id → 422; циклу немає → 404. Чернетка повертає порожній перелік. Читання не журналюється.
+
+```text
+{ assessment_id, form: 1, version: "2.0.0", count,
+  items: [{ id, expert_label, form, version, created_at: "РРРР-ММ-ДДTгг:хх:ссZ", entered_role, entered_by_user_id|null,
+            answers: [{ question_id, question, criterion, option_id, option, level }] }],
+  by_criterion: [{ criterion, title, levels: [...], mean|null }] }
+```
+
+- `items` — за `created_at` (потім за `id`); `expert_label` — посада або роль, без ПІБ; email, імен і інших персональних полів відповідь не містить. `entered_by_user_id` — id облікового запису адміністратора, що вніс (у демо-режимі X-Role — `null`).
+- `answers` — у порядку питань форми 1. Тексти питань і варіантів (`question`, `option`) і `level` береться з серверного каталогу `annex_v` (`QUESTION_TEXTS`, `OPTION_TEXTS`, `LEVEL_MAPS` — дзеркало `catalog-v2.ts`, редакція 2.0.0), а не з БД. Для варіанта поза каталогом `option` і `level` — `null`.
+- `by_criterion` — 11 критеріїв форми 1 у порядку каталогу, `title` — `CRITERIA[...].name_uk`. `levels` — рівні критерію в кожному записі (у порядку `items`; для `openness` — середнє двох питань запису), `mean` — середнє, округлене «половина вгору» до 0,01; без записів — `levels: []`, `mean: null`. Записи іншої версії каталогу показуються в `items`, але до підсумку не входять.
 
 ### Чек-лист
 

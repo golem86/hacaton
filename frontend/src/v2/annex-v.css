@@ -59,6 +59,21 @@
 .annex-indicator-form .annex-wide { grid-column: span 3; }
 .annex-indicator-form > .v2-button { grid-column: 1 / -1; justify-self: start; min-height: 2.75rem; }
 
+/* Внесені експертні оцінки циклу (розділ «Експертне оцінювання») */
+.expert-list { display: grid; gap: .8rem; margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
+.expert-list h3, .expert-list h4, .expert-list > p { margin: 0; }
+.expert-list > p { color: var(--muted); line-height: 1.5; }
+.expert-levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .25rem .8rem; margin: 0; min-width: 16rem; }
+.expert-levels div { display: flex; justify-content: space-between; gap: .5rem; padding: .15rem 0; border-bottom: 1px dotted #dfe8e3; }
+.expert-levels dt { color: var(--muted); font-size: .78rem; }
+.expert-levels dd { margin: 0; color: #153b35; font-weight: 800; }
+.expert-answers { margin: 0; min-width: 12rem; }
+.expert-answer-list { display: grid; gap: .55rem; margin: .3rem 0 .4rem; padding-left: 1.2rem; }
+.expert-answer-list li { line-height: 1.45; }
+.expert-answer-list strong, .expert-answer-list span, .expert-answer-list small { display: block; }
+.expert-answer-list small { color: var(--muted); }
+.expert-summary td strong { color: #153b35; }
+
 @media (max-width: 900px) {
   .annex-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .annex-table, .annex-table tbody, .annex-table tr, .annex-table th, .annex-table td { display: block; width: 100%; box-sizing: border-box; }
@@ -66,7 +81,7 @@
   .annex-table th, .annex-table td { padding: .5rem 0; border-bottom: 1px solid #edf2ef; }
   .annex-table td:last-child { border-bottom: 0; }
   .annex-table [data-label]::before { content: attr(data-label); display: block; margin-bottom: .2rem; color: var(--muted); font-size: .7rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
-  .annex-text, .annex-entry { min-width: 0; }
+  .annex-text, .annex-entry, .expert-levels, .expert-answers { min-width: 0; }
   .annex-table code { white-space: normal; overflow-wrap: anywhere; }
   .annex-indicator-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .annex-indicator-form .annex-wide { grid-column: 1 / -1; }

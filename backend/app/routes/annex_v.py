@@ -5,6 +5,7 @@
 Маршрути:
   POST /api/assessments/{id}/annex-v/responses        — ПУБЛІЧНИЙ, анонімно за одноразовим кодом циклу;
   POST /api/assessments/{id}/annex-v/expert           — admin (сесія + CSRF), експерт — посада, не ПІБ;
+  GET  /api/assessments/{id}/annex-v/expert           — admin: внесені експертні оцінки й підсумок за критеріями;
   GET  /api/assessments/{id}/checklist                 — admin, data_officer, ролі аналітики;
   PUT  /api/assessments/{id}/checklist/{code}          — data_officer або admin (CSRF), скидає підтвердження;
   POST /api/assessments/{id}/checklist/{code}/confirm  — admin (CSRF), не той самий користувач, що вніс;
@@ -28,8 +29,8 @@ from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
 from .. import audit
-from ..annex_v import (ANNEX_V_VERSION, CHECKLIST, CHECKLIST_BY_CODE, CHECKLIST_SOURCE, FORMS, INDEX_CRITERIA,
-                       criterion_levels, validate_answers)
+from ..annex_v import (ANNEX_V_VERSION, CHECKLIST, CHECKLIST_BY_CODE, CHECKLIST_SOURCE, CRITERIA, FORMS,
+                       INDEX_CRITERIA, QUESTION_TEXTS, criterion_levels, option_text, validate_answers)
 from ..database import get_db
 from ..models import (AccessToken, AccessTokenPolicy, AnnexVAnswer, AnnexVExpertAssessment, AnnexVResponse,
                       ChecklistEntry, Cycle, CycleConfig, MaturityIndicator, hash_access_code)
@@ -187,6 +188,58 @@ def create_expert_assessment(assessment_id: BoundedId, body: ExpertIn, request: 
     audit.record(db, role, "annex_v.expert_create", assessment_id, actor_user_id=uid)
     db.commit()
     return {"id": row.id}
+
+
+def _expert_answers(row: AnnexVExpertAssessment) -> tuple[list[dict], dict | None]:
+    """
+    Відповіді запису в порядку питань каталогу: тексти й рівні — з каталогу annex_v, не з БД.
+    Другий елемент — рівні критеріїв запису (None, якщо запис не відповідає поточному каталогу).
+    """
+    try:
+        answers = json.loads(row.answers_json)
+    except ValueError:
+        answers = {}
+    if not isinstance(answers, dict):
+        answers = {}
+    questions = FORMS.get(row.form, {})
+    ordered = [qid for qid in questions if qid in answers] + sorted(qid for qid in answers if qid not in questions)
+    items = []
+    for qid in ordered:
+        option = answers[qid] if isinstance(answers[qid], str) else None
+        question = questions.get(qid)
+        criterion = question["criterion"] if question else None
+        known = question is not None and option in question["options"]
+        items.append({"question_id": qid, "question": QUESTION_TEXTS.get(qid) if row.form == 1 else None,
+                      "criterion": criterion, "option_id": option,
+                      "option": option_text(criterion, option) if known and row.form == 1 else None,
+                      "level": question["options"][option] if known else None})
+    valid = row.version == ANNEX_V_VERSION and row.form in FORMS and not validate_answers(row.form, answers)
+    return items, criterion_levels(row.form, answers) if valid else None
+
+
+@router.get("/assessments/{assessment_id}/annex-v/expert", dependencies=[Depends(require_role("admin"))])
+def read_expert_assessments(assessment_id: BoundedId, db: Session = Depends(get_db)):
+    """
+    Внесені експертні оцінки циклу (форма 1) для адміністратора: записи за часом внесення
+    і підсумок за критеріями. Експерт — посада (expert_label), без ПІБ. Читання не журналюється.
+    """
+    get_assessment(assessment_id, db)
+    rows = (db.query(AnnexVExpertAssessment).filter_by(cycle_id=assessment_id)
+            .order_by(AnnexVExpertAssessment.created_at, AnnexVExpertAssessment.id).all())
+    items, per_criterion = [], {key: [] for key in dict.fromkeys(q["criterion"] for q in FORMS[1].values())}
+    for row in rows:
+        answers, levels = _expert_answers(row)
+        items.append({"id": row.id, "expert_label": row.expert_label, "form": row.form, "version": row.version,
+                      "created_at": _iso(row.created_at), "entered_role": row.entered_role,
+                      "entered_by_user_id": row.entered_by_user_id, "answers": answers})
+        for key, level in (levels or {}).items():
+            per_criterion.setdefault(key, []).append(level)
+    by_criterion = [{"criterion": key, "title": CRITERIA[key]["name_uk"],
+                     "levels": [maturity.show(level) for level in levels],
+                     "mean": maturity.show(maturity.round_half_up(sum(levels) / len(levels), 2)) if levels else None}
+                    for key, levels in per_criterion.items()]
+    return {"assessment_id": assessment_id, "form": 1, "version": ANNEX_V_VERSION, "count": len(items),
+            "items": items, "by_criterion": by_criterion}
 
 
 # ---------------------------------------------------------------------------
