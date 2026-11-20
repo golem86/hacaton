@@ -58,5 +58,8 @@ def admin_report_export(assessment_id: BoundedId, format: Literal["pdf", "xlsx"]
 # Керування користувачами, ролями й сесіями (docs/V2_HARDENING_CONTRACT.md, розділ 3) — окремий модуль
 # з тим самим префіксом /v2/admin; підключається тут, тому main.py змінювати не потрібно.
 from .v2_admin_users import router as users_router  # noqa: E402
+from .v2_narrative import router as narrative_router  # noqa: E402
 
 router.include_router(users_router)
+# Чернетки текстів звіту локальною LM (docs/LOCAL_LM.md) — той самий префікс /v2/admin
+router.include_router(narrative_router)

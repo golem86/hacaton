@@ -317,6 +317,18 @@ Tracker порівнює ID циклів після приведення чис�
 | `POST /v2/admin/users/{user_id}/revoke-sessions` | admin + CSRF | `{"revoked": n}`; гасить і відкриті коди 2FA |
 | `GET /v2/admin/role-changes` | admin | `{id, actor_user_id, target_user_id, old_role, new_role, changed_at}`, до 500 |
 
+### Чернетки текстів звіту локальною ШІ (llama-server)
+Опис, налаштування й ручна перевірка — `docs/LOCAL_LM.md`. Усі маршрути — сесія `admin` з 2FA; POST — з CSRF. Факти для моделі беруться лише з `/results` (без прихованих груп), підсумків участі й лічильників трекера; тексти ніде не зберігаються і не потрапляють у трекер.
+
+| Маршрут | Доступ | Примітки |
+|---|---|---|
+| `POST /v2/admin/reports/{assessment_id}/narrative` | admin + CSRF | тіло `{"kind":"summary"\|"recommendations"}` → 202 `{"job_id","status":"queued"}`; 404 — циклу немає; 409 — цикл не закритий; 422 — інше тіло/зайві поля/id поза `1..2^63-1`; 429 — черга заповнена (5 завдань); 503 `"Локальна LM не налаштована"` — не задано `V2_LM_URL` |
+| `POST /v2/admin/reports/compare/narrative` | admin + CSRF | тіло `{"base_assessment_id","target_assessment_id"}` (base — попередній, target — поточний) → 202 як вище; однакові id → 422; будь-який цикл відсутній → 404, не закритий → 409 |
+| `GET /v2/admin/lm/jobs/{job_id}` | admin (лише автор завдання) | `{job_id, status: queued\|running\|done\|failed, kind: summary\|recommendations\|compare, assessment_ids, created_at, finished_at?, text?, verified?, unverified_numbers?, error?}`; `text` — простий текст без HTML; `verified=false` — у тексті є числа, яких немає у фактах (`unverified_numbers`); `error` — загальне повідомлення без деталей сервера. 404 — немає, чуже або минуло 1 год після завершення; некоректний `job_id` → 422 |
+| `GET /v2/admin/lm/status` | admin | `{enabled, reachable, model}`; `enabled=false` — `V2_LM_URL` не задано (`model: null`); `reachable` — `GET /health` llama-server за 3 с повернув 200 |
+
+Журнал: дія `report.narrative` — роль, `actor_user_id`, `assessment_id` (для порівняння — target) і `details: {"count": 1|2}` (кількість циклів); тексту, виду й промпту в журналі немає. Черга одна на процес (один фоновий виконавець), завдання в пам'яті: перезапуск сервісу їх втрачає.
+
 ### Формати відповідей
 - Результати й участь: приховані групи не повертаються взагалі; булеве `suppressed` на верхньому рівні (і в розрізах компонентів). Поле `hidden` лишено для сумісності й завжди `false`.
 - 413 `{"detail":"Request body too large"}` — тіло понад `V2_MAX_BODY_BYTES` (типово 65536).

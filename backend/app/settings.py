@@ -14,7 +14,15 @@ APP_ENV:
   - TRUSTED_PROXIES непорожній (IP клієнта для лімітів — лише через довірений reverse proxy);
   - V2_CATALOG_NOW заборонено (підміна часу — лише для тестів);
   - якщо задано V2_SMTP_HOST — потрібна справжня адреса V2_SMTP_FROM; V2_SMTP_TLS_MODE — starttls|implicit;
-  - автоматичні міграції БД вимкнено (MIG-1).
+  - автоматичні міграції БД вимкнено (MIG-1);
+  - V2_LM_URL (локальна LM, llama-server) — лише loopback: 127.0.0.1, ::1 або localhost.
+
+Локальна LM для чернеток звітів (app/services/narrative.py):
+  V2_LM_URL         — база OpenAI-сумісного llama-server, напр. http://127.0.0.1:8200; не задано → вимкнено;
+  V2_LM_API_KEY     — необов'язковий Bearer-ключ до llama-server (--api-key);
+  V2_LM_MODEL       — ім'я моделі в запиті (типово qwen3-8b);
+  V2_LM_TIMEOUT_S   — таймаут одного запиту генерації, с (типово 300);
+  V2_LM_MAX_TOKENS  — максимум токенів відповіді (типово 900).
 
 Значення читаються з оточення під час кожного виклику, тож тести можуть
 змінювати їх через monkeypatch.setenv без перезапуску застосунку.
@@ -22,6 +30,7 @@ APP_ENV:
 import os
 import secrets
 from email.utils import parseaddr
+from urllib.parse import urlsplit
 
 _DEV_SECRET = secrets.token_hex(32)   # лише для development: новий при кожному запуску
 SMTP_TLS_MODES = ("starttls", "implicit")
@@ -100,6 +109,75 @@ def _smtp_sender_problem() -> str | None:
     return None
 
 
+LM_LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
+LM_DEFAULT_MODEL = "qwen3-8b"
+LM_DEFAULT_TIMEOUT_S = 300
+LM_DEFAULT_MAX_TOKENS = 900
+
+
+def _positive_int(name: str, default: int, maximum: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if not 1 <= value <= maximum:
+        raise RuntimeError(f"{name} має бути цілим числом від 1 до {maximum}")
+    return value
+
+
+def lm_url() -> str | None:
+    """База llama-server без кінцевого «/»; None — функцію чернеток вимкнено."""
+    value = os.environ.get("V2_LM_URL", "").strip().rstrip("/")
+    return value or None
+
+
+def lm_api_key() -> str:
+    return os.environ.get("V2_LM_API_KEY", "").strip()
+
+
+def lm_model() -> str:
+    return os.environ.get("V2_LM_MODEL", "").strip() or LM_DEFAULT_MODEL
+
+
+def lm_timeout_s() -> int:
+    return _positive_int("V2_LM_TIMEOUT_S", LM_DEFAULT_TIMEOUT_S, 3600)
+
+
+def lm_max_tokens() -> int:
+    return _positive_int("V2_LM_MAX_TOKENS", LM_DEFAULT_MAX_TOKENS, 8192)
+
+
+def lm_url_problem(url: str | None, *, release: bool) -> str | None:
+    """Опис проблеми з V2_LM_URL (без самої адреси) або None. У release — лише loopback."""
+    if url is None:
+        return None
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        parts.port                                    # некоректний порт → ValueError
+    except ValueError:
+        return "V2_LM_URL має бути адресою http(s)://host:port"
+    if parts.scheme not in ("http", "https") or not host:
+        return "V2_LM_URL має бути адресою http(s)://host:port"
+    if parts.username or parts.password or parts.query or parts.fragment:
+        return "V2_LM_URL не може містити облікових даних, query чи fragment (ключ — у V2_LM_API_KEY)"
+    if release and host not in LM_LOOPBACK_HOSTS:
+        return "V2_LM_URL у release має вказувати лише на loopback (127.0.0.1, ::1 або localhost)"
+    return None
+
+
+def check_lm_config() -> None:
+    """Некоректні V2_LM_* — сервер не стартує (у будь-якому режимі)."""
+    problem = lm_url_problem(lm_url(), release=is_release())
+    if problem:
+        raise RuntimeError(problem)
+    lm_timeout_s()
+    lm_max_tokens()
+
+
 def validate_release_config() -> None:
     """Сервер не стартує в release з небезпечною конфігурацією."""
     if not is_release():
@@ -124,5 +202,8 @@ def validate_release_config() -> None:
             problems.append(sender_problem)
     if os.environ.get("V2_SMTP_TLS_MODE", "").strip().lower() not in ("",) + SMTP_TLS_MODES:
         problems.append("V2_SMTP_TLS_MODE має бути starttls або implicit")
+    lm_problem = lm_url_problem(lm_url(), release=True)
+    if lm_problem:
+        problems.append(lm_problem)
     if problems:
         raise RuntimeError("Небезпечна release-конфігурація: " + "; ".join(problems))
