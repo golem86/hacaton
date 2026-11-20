@@ -95,13 +95,14 @@ export async function listUsers(signal?: AbortSignal): Promise<AdminUser[]> {
 }
 
 /**
- * GET /v2/admin/users?email= — пошук за точною адресою. null, якщо такого користувача немає (404).
- * Email передається лише в цьому запиті й не зберігається в UI після нового пошуку.
+ * POST /v2/admin/users/lookup з тілом `{"email": "..."}` і CSRF сесії — пошук за точною адресою.
+ * Email іде лише в тілі запиту (не в URL, тож не потрапляє в журнали адрес). null — користувача немає (404).
+ * У UI адреса не зберігається після нового пошуку.
  */
 export async function findUserByEmail(email: string, signal?: AbortSignal): Promise<AdminUserMatch | null> {
   const exact = email.trim()
   if (!exact) throw new ApiError(422, 'Введіть email повністю.')
-  const response = await request(`/v2/admin/users?email=${encodeURIComponent(exact)}`, { signal })
+  const response = await request('/v2/admin/users/lookup', { method: 'POST', body: JSON.stringify({ email: exact }), signal })
   if (response.status === 404) return null
   if (!response.ok) return fail(response, { ...READ_MESSAGES, 422: 'Введіть коректний email повністю.' })
   const body = await readJson<unknown>(response)

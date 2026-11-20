@@ -170,9 +170,9 @@ const listed = [
 
 test('users API: list, exact email search, role change with expected_role, revoke sessions, history', async () => {
   client.setCsrfToken('session-csrf')
-  const { calls, handler } = recorder(url => {
+  const { calls, handler } = recorder((url, options) => {
     if (url === '/v2/admin/users') return reply(listed)
-    if (url.startsWith('/v2/admin/users?email=')) return url.includes('missing') ? reply({ detail: 'Not found' }, 404) : reply({ id: 3, name: 'Користувач', role: 'user', email: 'user+qa@example.test', created_at: '2026-11-03T08:00:00Z' })
+    if (url === '/v2/admin/users/lookup') return JSON.parse(options.body).email.startsWith('missing') ? reply({ detail: 'Not found' }, 404) : reply({ id: 3, name: 'Користувач', email: 'user+qa@example.test', role: 'user', created_at: '2026-11-03T08:00:00Z' })
     if (url.endsWith('/role')) return reply({ id: 3, role: 'data_officer' })
     if (url.endsWith('/revoke-sessions')) return reply({ revoked: 2 })
     if (url === '/v2/admin/role-changes') return reply([{ id: 9, actor_user_id: 1, target_user_id: 3, old_role: 'user', new_role: 'data_officer', changed_at: '2026-11-20T10:00:00Z' }])
@@ -188,12 +188,16 @@ test('users API: list, exact email search, role change with expected_role, revok
   })
   assert.deepEqual(calls.map(call => [call.method, call.url]), [
     ['GET', '/v2/admin/users'],
-    ['GET', '/v2/admin/users?email=user%2Bqa%40example.test'],
-    ['GET', '/v2/admin/users?email=missing%40example.test'],
+    ['POST', '/v2/admin/users/lookup'],
+    ['POST', '/v2/admin/users/lookup'],
     ['POST', '/v2/admin/users/3/role'],
     ['POST', '/v2/admin/users/3/revoke-sessions'],
     ['GET', '/v2/admin/role-changes'],
   ])
+  // Email іде лише в JSON-тілі lookup (обрізаний), ніколи в URL.
+  assert.deepEqual(calls[1].body, { email: 'user+qa@example.test' })
+  assert.deepEqual(calls[2].body, { email: 'missing@example.test' })
+  assert.ok(calls.every(call => !/email|%40|@/.test(call.url)), 'no email in any URL')
   assert.deepEqual(calls[3].body, { expected_role: 'user', new_role: 'data_officer' })
   assert.ok(calls.every(call => call.credentials === 'include'))
   assert.ok(calls.filter(call => call.method === 'POST').every(call => call.csrf === 'session-csrf'))
