@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Chart from 'chart.js/auto'
 import type { ResultComponent } from './types'
 import { scoreText } from './format'
+import { describeScore, scoreZone, ZONE_META, ZoneBadge, zoneColor, ZoneLegend } from './maturity'
+import { ComponentDetail, useComponentDetail } from './ComponentDetail'
 import './dashboard.css'
 
 interface Props {
@@ -9,6 +11,8 @@ interface Props {
 }
 
 type SortMode = 'methodology' | 'highest' | 'lowest'
+
+const DETAIL_ID = 'component-scores-detail'
 
 function sortComponents(components: ResultComponent[], mode: SortMode) {
   return [...components].sort((left, right) => {
@@ -20,11 +24,17 @@ function sortComponents(components: ResultComponent[], mode: SortMode) {
   })
 }
 
+function zoneLabel(raw: unknown): string {
+  return ZONE_META[scoreZone(typeof raw === 'number' ? raw : null)].label
+}
+
 export function ComponentScores({ components }: Props) {
   const [mode, setMode] = useState<'chart' | 'radar' | 'list'>('chart')
   const [sortMode, setSortMode] = useState<SortMode>('methodology')
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sorted = useMemo(() => sortComponents(components, sortMode), [components, sortMode])
+  const detail = useComponentDetail()
+  const selected = components.find(component => component.code === detail.selected)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -40,9 +50,11 @@ export function ComponentScores({ components }: Props) {
             data: sorted.map(component => component.score),
             borderColor: '#276456',
             backgroundColor: 'rgba(77, 149, 135, .18)',
-            pointBackgroundColor: '#276456',
+            pointBackgroundColor: sorted.map(component => zoneColor(component.score)),
             pointBorderColor: '#ffffff',
-            pointHoverRadius: 6,
+            pointBorderWidth: 1.5,
+            pointRadius: 5,
+            pointHoverRadius: 7,
             borderWidth: 2,
             spanGaps: false,
           }],
@@ -71,7 +83,7 @@ export function ComponentScores({ components }: Props) {
                   const component = sorted[items[0]?.dataIndex ?? -1]
                   return component ? `${component.code} · ${component.name}` : ''
                 },
-                label: context => `Бал: ${scoreText(Number(context.raw))}`,
+                label: context => `Бал: ${scoreText(Number(context.raw))} · ${zoneLabel(context.raw)}`,
               },
             },
           },
@@ -87,7 +99,7 @@ export function ComponentScores({ components }: Props) {
         datasets: [{
           label: 'Бал компонента',
           data: sorted.map(component => component.score),
-          backgroundColor: sorted.map((_, index) => index === 0 ? '#276456' : '#4d9587'),
+          backgroundColor: sorted.map(component => zoneColor(component.score)),
           borderRadius: 4,
           borderSkipped: false,
           maxBarThickness: 24,
@@ -115,7 +127,7 @@ export function ComponentScores({ components }: Props) {
           legend: { display: false },
           tooltip: {
             filter: item => item.raw !== null,
-            callbacks: { label: context => ` ${Number(context.raw).toLocaleString('uk-UA', { maximumFractionDigits: 1 })} зі 100` },
+            callbacks: { label: context => ` ${Number(context.raw).toLocaleString('uk-UA', { maximumFractionDigits: 1 })} зі 100 · ${zoneLabel(context.raw)}` },
           },
         },
       },
@@ -129,7 +141,7 @@ export function ComponentScores({ components }: Props) {
         <div>
           <p className="dashboard-kicker">Агреговані результати</p>
           <h2 id="component-scores-heading">Бали компонентів</h2>
-          <p className="dashboard-panel-description">Сортування показує порядок балів. Повні назви компонентів доступні в підказках і списку.</p>
+          <p className="dashboard-panel-description">Колір і мітка показують зону за демонстраційним правилом команди. У режимі «Список» натисніть на компонент, щоб відкрити деталізацію.</p>
         </div>
         <div className="dashboard-panel-tools">
           <span className="dashboard-scale">Шкала 0–100</span>
@@ -153,23 +165,31 @@ export function ComponentScores({ components }: Props) {
           </label>
           {mode === 'chart' || mode === 'radar' ? (
             <div className={`chart-frame component-chart-frame${mode === 'radar' ? ' radar-chart-frame' : ''}`}>
-              <canvas ref={canvasRef} role="img" aria-label={mode === 'radar' ? 'Радарна діаграма оцінок компонентів C1–C7 за фіксованою шкалою від 0 до 100; повні назви й точні значення доступні у списку нижче та підказці графіка.' : 'Горизонтальна діаграма агрегованих балів компонентів за шкалою від 0 до 100'} />
-              <ul className="sr-only">{sorted.map(component => <li key={component.code}>{component.code}, {component.name}: {scoreText(component.score)}</li>)}</ul>
+              <canvas ref={canvasRef} role="img" aria-label={mode === 'radar' ? 'Радарна діаграма оцінок компонентів C1–C7 за фіксованою шкалою від 0 до 100; точки зафарбовано за зонами; повні назви й точні значення доступні у списку нижче та підказці графіка.' : 'Горизонтальна діаграма агрегованих балів компонентів за шкалою від 0 до 100; стовпці зафарбовано за зонами'} />
+              <ul className="sr-only">{sorted.map(component => <li key={component.code}>{component.code}, {component.name}: {scoreText(component.score)}; {describeScore(component.score)}</li>)}</ul>
             </div>
           ) : (
             <div className="dashboard-score-list">
               <div className="dashboard-score-axis-row" aria-hidden="true"><span /><div className="dashboard-score-axis"><span>0</span><span>50</span><span>100</span></div><span /></div>
               {sorted.map(component => (
                 <div className="dashboard-score-row" key={component.code}>
-                  <div className="dashboard-score-label"><span className="dashboard-code">{component.code}</span><span>{component.name}</span></div>
-                  <div className="dashboard-score-track" role="img" aria-label={`${component.code}: ${scoreText(component.score)}`}>
-                    {component.score !== null && <span className="dashboard-score-fill" style={{ width: `${Math.max(0, Math.min(100, component.score))}%` }} />}
+                  <div className="dashboard-score-label">
+                    <button type="button" className="dashboard-score-open" aria-expanded={detail.selected === component.code} aria-controls={DETAIL_ID}
+                      onClick={event => detail.open(component.code, event.currentTarget)}>
+                      <span className="dashboard-code">{component.code}</span><span>{component.name}</span>
+                    </button>
                   </div>
-                  <strong className="dashboard-score-value">{scoreText(component.score)}</strong>
+                  <div className="dashboard-score-track" role="img" aria-label={`${component.code}: ${scoreText(component.score)}; ${describeScore(component.score)}`}>
+                    {component.score !== null && <span className="dashboard-score-fill" style={{ width: `${Math.max(0, Math.min(100, component.score))}%`, background: zoneColor(component.score) }} />}
+                  </div>
+                  <div className="dashboard-score-value"><strong>{scoreText(component.score)}</strong><ZoneBadge zone={scoreZone(component.score)} short /></div>
                 </div>
               ))}
             </div>
           )}
+          <ZoneLegend />
+          {selected && <ComponentDetail id={DETAIL_ID} component={selected} onClose={detail.close}
+            analyticsNote="Внесок в Integrity Index і рекомендації за правилами показано в аналітичних блоках нижче та в розділі «Огляд»." />}
         </>
       )}
     </section>
