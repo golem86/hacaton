@@ -1,0 +1,15 @@
+/* Чернетки текстів звіту локальною ШІ (розділ «Звіти»). Кольори — як у v2.css і tracker.css. */
+.narrative { display: grid; gap: .75rem; min-width: 0; padding-top: 1rem; border-top: 1px solid var(--line); }
+.narrative h3 { margin: 0; }
+.narrative__note, .narrative__hint { margin: 0; font-size: .82rem; }
+.narrative__pair { display: flex; flex-wrap: wrap; gap: .75rem; }
+.narrative__pair .cycle-select { margin: 0; }
+.narrative__progress { margin: 0; color: var(--muted); font-size: .86rem; }
+.narrative__error { margin: 0; }
+.narrative__result { display: grid; gap: .7rem; min-width: 0; padding: .95rem 1rem; border: 1px solid #e1ebe6; border-radius: .75rem; background: #fbfdfc; }
+.narrative__notice { margin: 0; padding: .6rem .8rem; border-left: 3px solid #d0aa63; border-radius: .45rem; background: #fcf8ed; color: #614914; font-size: .84rem; }
+.narrative__warning { padding: .6rem .8rem; border-left: 3px solid #b55649; border-radius: .45rem; background: #fff4f1; color: #873c32; font-size: .84rem; }
+.narrative__warning p { margin: 0 0 .35rem; }
+.narrative__warning ul { display: flex; flex-wrap: wrap; gap: .35rem .9rem; margin: 0; padding-left: 1.1rem; }
+.narrative__text { color: #17302f; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.narrative__copy { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; font-size: .82rem; }

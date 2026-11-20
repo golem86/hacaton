@@ -25,6 +25,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   'tracker.in_progress': 'Захід розпочато',
   'tracker.completed': 'Захід виконано',
   'tracker.verified': 'Результат заходу перевірено',
+  'report.narrative': 'Чернетка тексту звіту (локальна ШІ)',
 }
 
 /** Ролі виконавця: сесійні ролі V2 (admin, user, data_officer) і демонстраційні ролі V1 з backend/app/roles.py. */
@@ -57,6 +58,7 @@ const ACTION_KINDS: Readonly<Record<string, string>> = {
   'tracker.in_progress': 'tracker',
   'tracker.completed': 'tracker',
   'tracker.verified': 'tracker',
+  'report.narrative': 'cycle',
 }
 
 const ALL = 'all'
