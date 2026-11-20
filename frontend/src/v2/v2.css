@@ -195,6 +195,7 @@
 .official-review-item { padding: 1rem 0; border-bottom: 1px solid #dfeae4; }
 .official-review-item p { line-height: 1.5; }
 .official-demo-note { max-width: 72ch; padding: .7rem .9rem; border-left: 3px solid #28777a; border-radius: .45rem; background: #eef6f3; color: #2b4a44; font-size: .88rem; line-height: 1.5; }
+.official-partial-note { max-width: 72ch; padding: .6rem .9rem; border-left: 3px solid #b7791f; border-radius: .45rem; background: #fdf6e7; color: #5f3b06; font-size: .88rem; line-height: 1.5; }
 @media (max-width: 600px) { .official-actions { flex-wrap: wrap; } .official-actions .v2-button { width: 100%; } .official-option { padding: .4rem 0; } }
 
 /* Shared form controls and consistent compact navigation for the V2 shell. */
