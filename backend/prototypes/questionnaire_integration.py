@@ -40,7 +40,7 @@ GUARD_TABLE = "__questionnaire_prototype_guard"
 GUARD_VALUE = "synthetic-schema5-copy-only-v1"
 # Прототип працює лише з копією поточної integrity schema 5. Нова версія схеми застосунку
 # має свідомо оновити це значення (тест звіряє його з app.migrations.SCHEMA_VERSION).
-PROTOTYPE_SCHEMA_VERSION = 5
+PROTOTYPE_SCHEMA_VERSION = 6
 SYNTHETIC_SOURCE_SUFFIX = ".schema5-synthetic.sqlite"
 SYNTHETIC_CYCLE_NAME = "Synthetic schema5 cycle"
 SYNTHETIC_CODE = "synthetic-assessment-code"

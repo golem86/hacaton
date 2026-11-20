@@ -123,7 +123,7 @@ def test_schema5_migration_backup_preservation_constraints_and_idempotency(migra
     assert current["cycles"][0] == before["cycles"][0]
     assert __import__("hashlib").sha256(source.read_bytes()).hexdigest() == source_digest
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert con.execute("PRAGMA user_version").fetchone()[0] == PROTOTYPE_SCHEMA_VERSION
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
         assert MIGRATION_TABLES <= {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -142,7 +142,7 @@ def test_schema5_migration_backup_preservation_constraints_and_idempotency(migra
 
 
 def test_prototype_pins_current_integrity_schema_version():
-    assert PROTOTYPE_SCHEMA_VERSION == SCHEMA_VERSION == 5
+    assert PROTOTYPE_SCHEMA_VERSION == SCHEMA_VERSION == 6
 
 
 CORE_TABLES_FOR_TEST = (
@@ -183,7 +183,7 @@ def test_synthetic_database_helpers_fail_closed_on_protected_or_non_temp_paths(t
 
     bogus_source = tmp_path / "unverified.schema5-synthetic.sqlite"
     with sqlite3.connect(bogus_source) as con:
-        con.execute("PRAGMA user_version=5")
+        con.execute(f"PRAGMA user_version={PROTOTYPE_SCHEMA_VERSION}")
         con.execute("CREATE TABLE made_up(value TEXT)")
     copy_path = tmp_path / "unverified.prototype.sqlite"
     with pytest.raises(ValueError, match="expected schema-5 synthetic"):
@@ -215,7 +215,7 @@ def test_migration_failure_injection_rolls_back_and_backup_restores(fail_at, tmp
     with sqlite3.connect(target) as con:
         tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert not (MIGRATION_TABLES & tables)
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert con.execute("PRAGMA user_version").fetchone()[0] == PROTOTYPE_SCHEMA_VERSION
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     backups = list(tmp_path.glob("*.verified-backup-*.sqlite"))
     assert len(backups) == 1
@@ -230,7 +230,7 @@ def test_restore_removes_prototype_tables_and_preserves_synthetic_legacy_rows(mi
     with sqlite3.connect(db_path) as con:
         tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert not (MIGRATION_TABLES & tables)
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert con.execute("PRAGMA user_version").fetchone()[0] == PROTOTYPE_SCHEMA_VERSION
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
@@ -316,7 +316,7 @@ def test_full_2_1_catalog_submission_persists_after_reopening_sqlite(
     assert response.status_code == 201, response.text
     # Verify durable state from a fresh SQLite connection, as after process restart.
     with sqlite3.connect(db_path) as reopened:
-        assert reopened.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert reopened.execute("PRAGMA user_version").fetchone()[0] == PROTOTYPE_SCHEMA_VERSION
         stored = reopened.execute("SELECT cycle_id,template_id,version,category "
                                   "FROM official_response_sets").fetchall()
         assert stored == [(cycle_id, form, "2.1.0", "staff")]
