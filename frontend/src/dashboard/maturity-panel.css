@@ -1,0 +1,110 @@
+/* Панель «Зрілість за Додатком В». Префікс mp- щоб не перетинатися з наявними стилями. */
+.mp-panel { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.mp-heading h2 { margin: .28rem 0 .35rem; color: #102725; font-size: clamp(1.3rem, 2.3vw, 1.62rem); letter-spacing: -.025em; line-height: 1.25; }
+.mp-muted { color: var(--muted); }
+.mp-small { margin: 0 0 .6rem; font-size: .84rem; }
+.mp-nowrap { white-space: nowrap; }
+.mp-empty { margin: .4rem 0 0; padding: 1rem 1.1rem; border-radius: 6px; background: #f4f8f6; color: var(--muted); }
+
+.mp-select { display: block; margin: 1rem 0 .4rem; color: var(--ink); font-size: .83rem; font-weight: 700; }
+.mp-select-input { display: block; width: min(100%, 34rem); min-height: 2.75rem; margin-bottom: 1rem; padding: .6rem .8rem; border: 1px solid #a7beb4; border-radius: .58rem; background: #fff; color: var(--ink); font: inherit; }
+.mp-select-input:focus-visible { outline: 3px solid rgba(40, 119, 122, .28); outline-offset: 2px; border-color: var(--teal); }
+
+.mp-state { margin: .5rem 0 0; padding: .9rem 1.1rem; border-radius: 8px; background: #f4f8f6; color: var(--ink); }
+.mp-state p { margin: 0 0 .5rem; }
+.mp-state p:last-child { margin-bottom: 0; }
+.mp-state-info { border-left: 4px solid #4b7f8c; background: #e8f1f3; }
+.mp-state-error { border-left: 4px solid #a3261f; background: #fbe9e7; color: #7f1d17; }
+.mp-button { min-height: 2.5rem; padding: .45rem 1rem; border: 1px solid var(--green); border-radius: .5rem; background: #fff; color: var(--green); font: inherit; font-weight: 650; cursor: pointer; }
+.mp-button:focus-visible, .mp-expand:focus-visible, .mp-method summary:focus-visible { outline: 3px solid rgba(40, 119, 122, .35); outline-offset: 2px; }
+
+.mp-notice { margin: 0 0 1rem; padding: .7rem .9rem; border: 1px solid #f0d49b; border-radius: 8px; background: #fff8e8; color: #5c3d00; font-size: .9rem; }
+
+.mp-indices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; }
+.mp-index { display: flex; flex-direction: column; gap: .3rem; min-width: 0; padding: .9rem 1rem; border: 1px solid var(--line); border-top: 4px solid var(--teal); border-radius: 10px; background: #fff; }
+.mp-index[data-source="expert"] { border-top-color: #6b4a9b; }
+.mp-index[data-source="checklist"] { border-top-color: #b35c00; }
+.mp-index-overall { border-top-color: #8a9a96; background: #f7faf9; }
+.mp-index > span { color: var(--muted); font-size: .88rem; font-weight: 600; }
+.mp-index > strong { color: var(--ink); font-size: clamp(1.45rem, 2.4vw, 2rem); font-weight: 740; line-height: 1.15; }
+.mp-index > strong small { color: var(--muted); font-size: .85rem; font-weight: 500; }
+.mp-index > small { color: var(--muted); font-size: .8rem; line-height: 1.35; }
+
+.mp-method { margin: 1rem 0 0; padding: .7rem .9rem; border: 1px solid var(--line); border-radius: 8px; background: #fbfdfc; }
+.mp-method summary { color: var(--ink); font-weight: 700; cursor: pointer; }
+.mp-method dl { display: grid; gap: .55rem; margin: .7rem 0 0; }
+.mp-method dl > div { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: .75rem; }
+.mp-method dt { color: var(--muted); font-size: .86rem; font-weight: 650; }
+.mp-method dd { margin: 0; color: var(--ink); font-size: .9rem; }
+
+.mp-block { margin-top: 1.5rem; min-width: 0; }
+.mp-block h3 { margin: 0 0 .5rem; color: var(--ink); font-size: 1.1rem; }
+.mp-chart { position: relative; width: 100%; min-width: 0; }
+
+.mp-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem 1rem; margin-top: .75rem; color: var(--ink); font-size: .84rem; }
+.mp-legend-title { font-weight: 700; }
+.mp-legend-item { display: inline-flex; align-items: center; gap: .35rem; max-width: 100%; }
+.mp-swatch { flex: none; }
+.mp-swatch { display: inline-block; width: .95rem; height: .95rem; padding: 0 !important; border-radius: 3px; }
+
+.mp-level { display: inline-flex; align-items: baseline; gap: .3rem; padding: .15rem .45rem; border-radius: 4px; font-size: .88rem; white-space: nowrap; }
+.mp-level-band { font-size: .76rem; font-weight: 600; }
+.mp-level-low { background: #fbe9e7; color: #7f1d17; box-shadow: inset 3px 0 0 #a3261f; }
+.mp-level-medium { background: #fdf0dc; color: #7a4300; box-shadow: inset 3px 0 0 #c06a00; }
+.mp-level-high { background: #e3f2e8; color: #1d5434; box-shadow: inset 3px 0 0 #2f7a4d; }
+.mp-level-none { background: #f1f4f3; color: #4f625e; box-shadow: inset 3px 0 0 #8a9a96; }
+.mp-swatch.mp-level-low { background: #a3261f; }
+.mp-swatch.mp-level-medium { background: #c06a00; }
+.mp-swatch.mp-level-high { background: #2f7a4d; }
+.mp-swatch.mp-level-none { background: #f1f4f3; border: 1px dashed #8a9a96; box-shadow: none; }
+.mp-level-hidden { font-style: italic; }
+.mp-level-wrap { display: grid; justify-items: start; gap: .2rem; }
+.mp-cell-detail { display: block; color: var(--muted); font-size: .78rem; }
+
+.mp-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; scrollbar-color: #9cbab1 #edf3f0; }
+.mp-table-scroll:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+.mp-table { width: 100%; min-width: 980px; border-collapse: collapse; text-align: left; font-size: .88rem; }
+.mp-table caption { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.mp-table th, .mp-table td { padding: .65rem .6rem; border-bottom: 1px solid #e5ece9; vertical-align: top; overflow-wrap: normal; }
+.mp-table thead th { border-bottom: 2px solid #a8beb6; color: var(--ink); font-weight: 700; background: #f7faf9; }
+.mp-table thead small { display: block; margin-top: .15rem; color: var(--muted); font-size: .76rem; font-weight: 500; }
+.mp-table tbody th { min-width: 13rem; color: var(--ink); font-weight: 560; }
+.mp-row-flagged > th { box-shadow: inset 4px 0 0 #a3261f; }
+.mp-expand { display: inline-flex; align-items: baseline; gap: .35rem; margin: -.2rem -.3rem; padding: .2rem .3rem; border: 0; border-radius: .35rem; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mp-expand:hover > span:last-child { text-decoration: underline; text-underline-offset: 3px; }
+.mp-expand[aria-expanded="true"] { background: #eaf4ee; }
+.mp-chevron { color: var(--green); }
+.mp-detail-row > td { background: #f7faf9; }
+.mp-detail-title { margin: 0 0 .5rem; font-weight: 650; }
+.mp-categories { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .4rem 1rem; margin: 0 0 .5rem; padding: 0; list-style: none; }
+.mp-categories li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+
+.mp-objective, .mp-gaps-cell { display: grid; gap: .35rem; margin: 0; padding: 0; list-style: none; }
+.mp-gaps-cell li { white-space: nowrap; }
+.mp-rule { display: block; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .74rem; overflow-wrap: anywhere; }
+.mp-badge { display: inline-block; padding: .08rem .4rem; border-radius: 999px; font-size: .74rem; font-weight: 650; white-space: nowrap; }
+.mp-badge-ok { background: #e3f2e8; color: #1d5434; }
+.mp-badge-warn { background: #fdf0dc; color: #7a4300; }
+.mp-badge-alert { background: #fbe9e7; color: #7f1d17; }
+.mp-badge-neutral { background: #f1f4f3; color: #4f625e; }
+.mp-badge-decision { background: #e8eefa; color: #23407a; white-space: normal; }
+
+.mp-list { display: grid; gap: .6rem; margin: 0; padding: 0; list-style: none; }
+.mp-list > li { padding: .7rem .9rem; border: 1px solid var(--line); border-left: 4px solid #a3261f; border-radius: 8px; background: #fff; }
+.mp-recs > li { border-left-color: #23407a; }
+.mp-recs p { margin: 0 0 .4rem; }
+.mp-rec-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.mp-rec-head .mp-rule { display: inline; }
+.mp-basis { display: flex; flex-wrap: wrap; gap: .3rem .9rem; margin: 0; font-size: .82rem; }
+.mp-basis > div { display: flex; gap: .3rem; }
+.mp-basis dt { color: var(--muted); }
+.mp-basis dt::after { content: ':'; }
+.mp-basis dd { margin: 0; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+
+@media (max-width: 900px) {
+  .mp-indices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .mp-indices { grid-template-columns: minmax(0, 1fr); }
+  .mp-method dl > div { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
+}
