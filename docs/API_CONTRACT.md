@@ -452,6 +452,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Set-V2UserRole.ps1 -Email 
 - Не мігрує БД (лише перевірка схем), не потребує `V2_SECRET_KEY`; зі змінних середовища читає `INTEGRITY_DB`, `V2_AUTH_DB` (у release обов'язкові) і `APP_ENV`. Backend зупиняти не потрібно.
 - Email у виводі лише замаскований. Коди виходу: `0` — виконано або план, `2` — відмова (немає користувача, та сама роль, останній адміністратор, неправильні аргументи), `1` — помилка.
 
+#### Синтетичний демо-цикл (серверна команда)
+
+`python -m app.demo_cycle --responses 150 --seed 2026 [--name "..."] [--confirm]` (на сервері — `installer/windows-v2/ops/New-V2DemoCycle.ps1 [-Apply]`; опис — `docs/DEMO_DATA.md`). Нових маршрутів API немає: створений закритий цикл читається наявними `GET /api/assessments/{id}/results`, `/participation` і чернетками LM. Лише БД з позначкою `instance_meta.dataset = 'synthetic'` (інакше відмова), назва циклу унікальна, схема лише перевіряється. Одна транзакція; журнал — дія `demo.cycle_generated` з `actor_role = "server"`, `actor_user_id = null`, `details: {"count": N}`. Коди виходу: `0` — виконано або план, `2` — відмова, `1` — помилка.
+
 ### Чернетки текстів звіту локальною ШІ (llama-server)
 Опис, налаштування й ручна перевірка — `docs/LOCAL_LM.md`. Усі маршрути — сесія `admin` з 2FA; POST — з CSRF. Факти для моделі беруться лише з `/results` (без прихованих груп), підсумків участі й лічильників трекера; тексти ніде не зберігаються і не потрапляють у трекер.
 
