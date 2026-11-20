@@ -45,6 +45,22 @@
 
 **Примітка:** демонстраційні показники базуються на синтетичних даних. Їх не слід трактувати як висновки про реальну організацію.
 
+## Як влаштовано
+
+- Стек: frontend React + TypeScript + Vite (`frontend/src`), backend Python + FastAPI + SQLAlchemy (`backend/app`), дві SQLite-бази (`INTEGRITY_DB` — цикли, анкети, агрегати, трекер, аудит; `V2_AUTH_DB` — користувачі, сесії, 2FA).
+- Компоненти: браузер → Caddy (HTTPS, статичний frontend, проксі `/api/*` і `/v2/*`) → FastAPI → SQLite; необов'язково — локальна LM (llama.cpp) лише через loopback. На сервері Windows кожен процес — окрема служба WinSW. Схема й потоки даних — у [docs/architecture.md](docs/architecture.md).
+- Основна логіка: маршрути `backend/app/routes/`, розрахунки — у `backend/app/services/` (індекс, рекомендації, зрілість і звіти — без БД і мережі); анонімність і приховування малих груп (k) — `backend/app/anonymity.py`.
+- Висновки рахують явні правила, а не ШІ: Integrity Index — `services/scoring.py`, рекомендації — `services/recommendations.py` ([docs/methodology.md](docs/methodology.md)); зони й рівні зрілості — [docs/maturity-levels.md](docs/maturity-levels.md) і `services/maturity.py` ([docs/maturity-annex-v.md](docs/maturity-annex-v.md)). Локальна модель лише пише чернетки текстів з агрегатів ([docs/ai.md](docs/ai.md)).
+
+## Що використали
+
+- Backend (`backend/requirements.txt`): FastAPI 0.163.1, Starlette 1.10.0, Uvicorn 0.54.0, SQLAlchemy 2.1.8, Pydantic 2.14.3, ReportLab 5.1.0 (PDF), XlsxWriter 3.3.3 (XLSX), Pillow 13.0.0. Тести (`backend/requirements-dev.txt`): pytest, httpx, trustme.
+- Frontend (`frontend/package.json`): React 19, React DOM 19, Chart.js 4.6.1; збірка й тести — Vite 7, TypeScript 5.9, `@vitejs/plugin-react`, Playwright, node:test.
+- Шрифт PDF-звітів: DejaVu Sans (`backend/app/static/report-font/DejaVuSans.ttf`, ліцензія Bitstream Vera / DejaVu — `backend/app/static/report-font/LICENSE`).
+- Swagger UI 5.17.14 з пакета `swagger-ui-dist`, локально без CDN (`backend/app/static/swagger-ui/`, Apache-2.0 — `LICENSE` і `NOTICE` там само).
+- HTTPS reverse proxy: Caddy (`installer/windows-v2/deploy/Caddyfile`); служби Windows: WinSW 2.12.0.
+- Локальна мовна модель (необов'язково, працює на сервері): llama.cpp `llama-server` b12180 і модель `Qwen3-8B-Q4_K_M.gguf` (Hugging Face `Qwen/Qwen3-8B-GGUF`); завантаження, контрольні суми й параметри — [docs/LOCAL_LM.md](docs/LOCAL_LM.md). Ліцензії llama.cpp і моделі в репозиторії не зберігаються — звіряйте їх на сторінках джерел.
+
 ## Analytics для синтетичної демонстрації
 
 Методика `team-results-demo-0.1` — авторська пропозиція зі статусом `approval_status=proposed`, а не офіційна або затверджена оцінка. Її ваги C1–C7 взято з поточного синтетичного seed. Розрахунок використовує округлені агрегати `/results`; експертний індекс відсутній, приховані категорії не відновлюються, а порівняння циклів має статус `limited_comparability` через відсутність зафіксованих історичних версій анкет і популяцій.
@@ -124,6 +140,7 @@ git diff --check
 ## Документація
 
 - [docs/architecture.md](docs/architecture.md) — архітектурні домовленості.
+- [docs/ai.md](docs/ai.md) — як команда використала ШІ і як працює вбудована локальна модель.
 - [docs/security.md](docs/security.md) — правила роботи з даними.
 - [docs/anonymity.md](docs/anonymity.md) — механізм захисту анонімності респондентів.
 - [docs/methodology.md](docs/methodology.md) — методика розрахунку Integrity Index і правила рекомендацій.
