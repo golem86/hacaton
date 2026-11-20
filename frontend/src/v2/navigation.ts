@@ -5,7 +5,7 @@ import type { PersonalView } from './PersonalModule'
  * Розмітка кабінетів за серверною роллю (docs/V2_HARDENING_CONTRACT.md, розділ 1).
  * Меню лише допомагає зорієнтуватися: доступ до кожного маршруту перевіряє сервер.
  */
-export type AdminSection = 'overview' | 'analytics' | 'tracker' | 'testing' | 'users' | 'expert' | 'checklist' | 'objective' | 'audit' | 'reports'
+export type AdminSection = 'overview' | 'analytics' | 'maturity' | 'tracker' | 'testing' | 'users' | 'expert' | 'checklist' | 'objective' | 'audit' | 'reports'
 export type OfficerSection = 'codes' | 'participation' | 'checklist' | 'objective'
 export type UserSection = PersonalView | 'official'
 
@@ -21,6 +21,7 @@ const ROOTS: Readonly<Record<UserRole, string>> = { admin: '/admin', user: '/app
 const ADMIN_ITEMS: readonly { key: AdminSection; title: string }[] = [
   { key: 'overview', title: 'Огляд' },
   { key: 'analytics', title: 'Аналітика' },
+  { key: 'maturity', title: 'Зрілість (Додаток В)' },
   { key: 'tracker', title: 'Трекер рекомендацій' },
   { key: 'testing', title: 'Цикли оцінювання' },
   { key: 'users', title: 'Користувачі й ролі' },

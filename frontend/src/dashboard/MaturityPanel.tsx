@@ -394,7 +394,7 @@ export function MaturityContent({ report }: { report: MaturityReport }) {
       <details className="mp-method" open>
         <summary>Методика: {report.methodology_version}</summary>
         <dl>
-          <div><dt>Правило рівнів</dt><dd>варіант a = рівень 1, b = 2, c = 3, d = 4, e = рівень 5; варіант f не має рівня й не враховується. <span className="mp-muted">(сервер: {report.level_rule})</span></dd></div>
+          <div><dt>Правило рівнів</dt><dd>варіант a = рівень 1, b = 2, c = 3, d = 4, e = рівень 5; у питанні про викривачів (6 варіантів) — a = 1, b = 2, c = 3, d = 4, e = 4, f = 5 (Додаток Г, с. 73). <span className="mp-muted">(сервер: {report.level_rule})</span></dd></div>
           <div><dt>Формула індексу</dt><dd>(середній рівень критеріїв − 1) / 4 × 100; рівні ваги (1/10) для 10 критеріїв без загального рівня зрілості. Якщо хоча б один критерій джерела прихований або відсутній, індекс джерела не обчислюється.</dd></div>
           <div><dt>Рівень чеклиста</dt><dd>1 + 4 × (так + 0,5 × частково) / підтверджені пункти; враховуються лише підтверджені пункти.</dd></div>
           <div><dt>Анонімність</dt><dd>Мінімальний розмір групи k = {report.min_group_size}.</dd></div>

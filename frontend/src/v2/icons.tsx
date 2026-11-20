@@ -49,6 +49,27 @@ export const ListCheckIcon = icon(<>
   <path d="M12.5 6.5h8M12.5 12.5h8M12.5 18.5h8" />
 </>)
 
+/** Зрілість за Додатком В: сходинки рівнів 1–5. */
+export const MaturityStepsIcon = icon(<>
+  <path d="M3 20.5h18" />
+  <path d="M4 20.5v-4h4v-4h4v-4h4v-4h4v16" />
+</>)
+
+/** Чеклист Додатка Б: аркуш із позначками. */
+export const ChecklistIcon = icon(<>
+  <rect x="4" y="3" width="16" height="18" rx="2" />
+  <path d="m7.5 8.5 1.5 1.5 3-3" />
+  <path d="m7.5 14.5 1.5 1.5 3-3" />
+  <path d="M14 9h3M14 15h3" />
+</>)
+
+/** Об’єктивні показники: шкала-індикатор. */
+export const GaugeIcon = icon(<>
+  <path d="M4 17a8 8 0 1 1 16 0" />
+  <path d="m12 17 4-5" />
+  <path d="M12 17h.01" />
+</>)
+
 /** Цикли оцінювання: календар із круговою стрілкою. */
 export const CalendarCycleIcon = icon(<>
   <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
@@ -171,6 +192,9 @@ export type NavIconKey = AdminSection | OfficerSection | UserSection | typeof SU
 export const NAV_ICONS = {
   overview: DashboardIcon,
   analytics: BarChartIcon,
+  maturity: MaturityStepsIcon,
+  checklist: ChecklistIcon,
+  objective: GaugeIcon,
   tracker: ListCheckIcon,
   testing: CalendarCycleIcon,
   users: UsersIcon,
