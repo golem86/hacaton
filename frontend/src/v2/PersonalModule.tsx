@@ -10,7 +10,8 @@ import {
   type PersonalAttempt,
   type PersonalStats,
 } from '../api/v2User'
-import { TestListFilterPanel, TestListPageSize, TestListPagination } from './TestListControls'
+import { ListPagination, Pager, usePagination } from './ListPagination'
+import { TestListFilterPanel, TestListPageSize } from './TestListControls'
 import {
   DEFAULT_FILTERS,
   DEFAULT_PAGE_SIZE,
@@ -189,6 +190,7 @@ export function AvailableTests({ assessments, attempts, onStart, now, timeZone, 
         <p className="test-list__count" role="status">{current.total ? shownLabel(current) : 'Нічого не знайдено'}{activeCount > 0 && ` · усього ${assessments.length}`}</p>
         <TestListPageSize pageSize={current.pageSize} onChange={(size) => { setPageSize(size); setPage(1) }} />
       </div>
+      <Pager page={current.page} pageCount={current.pageCount} label="Сторінки списку тестувань (угорі)" onPageChange={goToPage} />
       {current.total ? (
         <ol className="v2-test-list test-list__items" aria-labelledby={`${headingId}-list`} start={current.start}>
           {current.items.map((assessment, index) => {
@@ -221,7 +223,25 @@ export function AvailableTests({ assessments, attempts, onStart, now, timeZone, 
           {activeCount > 0 && <button className="v2-button" type="button" onClick={resetFilters}>Скинути фільтри</button>}
         </div>
       )}
-      <TestListPagination page={current.page} pageCount={current.pageCount} onPageChange={goToPage} />
+      <Pager page={current.page} pageCount={current.pageCount} label="Сторінки списку тестувань (унизу)" onPageChange={goToPage} />
+    </section>
+  )
+}
+
+/** «Мої результати»: завершені проходження з пагінацією вгорі й унизу; лічильник у заголовку — за всіма записами. */
+export function CompletedAttempts({ attempts }: { attempts: PersonalAttempt[] }) {
+  const completed = attempts.filter((attempt) => attempt.status === 'completed')
+  const { current, setPage, setPageSize } = usePagination(completed)
+  return (
+    <section className="v2-card">
+      <div className="v2-section-heading"><div><p className="v2-overline">Історія проходжень</p><h2>Завершені проходження</h2></div><span className="v2-pill">{recordsLabel(completed.length)}</span></div>
+      {completed.length ? (
+        <ListPagination current={current} onPageChange={setPage} onPageSizeChange={setPageSize} name="результатів">
+          <div className="v2-history-list">
+            {current.items.map((attempt) => <article className="v2-history-item" key={attempt.id}><div><strong>{attempt.assessment_name}</strong><p className="v2-muted">{attempt.completed_at ? formatDate(attempt.completed_at) : 'Чернетка'}</p></div><span className="v2-score-chip">{formatAverage(averageAnswer(attempt))} / 5</span></article>)}
+          </div>
+        </ListPagination>
+      ) : <div className="v2-empty"><strong>Історія поки порожня</strong><p className="v2-muted">Завершіть тестування, щоб побачити запис.</p></div>}
     </section>
   )
 }
@@ -338,8 +358,7 @@ export function PersonalModule({ view, userName, onStart, onFinish }: Props) {
   }
 
   if (view === 'history') {
-    const completed = attempts.filter((attempt) => attempt.status === 'completed')
-    return <section className="v2-card"><div className="v2-section-heading"><div><p className="v2-overline">Історія проходжень</p><h2>Завершені проходження</h2></div><span className="v2-pill">{recordsLabel(completed.length)}</span></div>{completed.length ? <div className="v2-history-list">{completed.map((attempt) => <article className="v2-history-item" key={attempt.id}><div><strong>{attempt.assessment_name}</strong><p className="v2-muted">{attempt.completed_at ? formatDate(attempt.completed_at) : 'Чернетка'}</p></div><span className="v2-score-chip">{formatAverage(averageAnswer(attempt))} / 5</span></article>)}</div> : <div className="v2-empty"><strong>Історія поки порожня</strong><p className="v2-muted">Завершіть тестування, щоб побачити запис.</p></div>}</section>
+    return <CompletedAttempts attempts={attempts} />
   }
 
   if (view === 'stats') {

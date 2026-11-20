@@ -8,6 +8,7 @@ import {
   parseEvidence, transitionAction, transitionLabel,
   type DecisionInput, type Tracker, type TrackerAction, type TransitionInput, type TransitionTarget,
 } from '../api/tracker'
+import { ListPagination, usePagination } from './ListPagination'
 import './tracker.css'
 
 export type LoadState<T> =
@@ -156,9 +157,9 @@ function TrackerCycle({ assessment, closed }: { assessment: Assessment; closed: 
       {tracker.status === 'ready' && <TrackerCounters actions={actions} today={today} />}
       <p className="tracker-rule"><span aria-hidden="true">⚑</span> {OVERDUE_RULE} Стан на {formatDate(today)}.</p>
       {notice && <p className="v2-success" role="status">{notice}</p>}
-      <ProposalsSection state={proposals} decided={decided} today={today} onDecide={decide}
+      <ProposalsSection state={proposals} decided={decided} today={today} onDecide={decide} resetKey={String(assessment.id)}
         onRetry={() => { setProposals({ status: 'loading' }); setProposalAttempt(value => value + 1) }} />
-      <ActionsSection state={tracker} today={today} current={assessment} closed={closed} onTransition={move}
+      <ActionsSection state={tracker} today={today} current={assessment} closed={closed} onTransition={move} resetKey={String(assessment.id)}
         onRetry={() => { setTracker({ status: 'loading' }); setTrackerVersion(value => value + 1) }} />
     </div>
   )
@@ -184,9 +185,11 @@ export function TrackerCounters({ actions, today }: { actions: TrackerAction[]; 
   )
 }
 
-export function ProposalsSection({ state, decided, today, onDecide, onRetry }: {
+export function ProposalsSection({ state, decided, today, onDecide, onRetry, resetKey }: {
   state: LoadState<Recommendations>; decided: Set<string> | null; today: string
   onDecide: (input: DecisionInput) => Promise<void>; onRetry: () => void
+  /** Зміна ключа (id циклу) повертає список на першу сторінку. */
+  resetKey?: string
 }) {
   return (
     <section className="tracker-section" aria-labelledby="tracker-proposals-title">
@@ -202,16 +205,18 @@ export function ProposalsSection({ state, decided, today, onDecide, onRetry }: {
       ) : state.status === 'loading' || decided === null ? (
         <p role="status">Завантажуємо пропозиції…</p>
       ) : (
-        <ProposalsList proposals={state.data.proposals} decided={decided} today={today} onDecide={onDecide} />
+        <ProposalsList proposals={state.data.proposals} decided={decided} today={today} onDecide={onDecide} resetKey={resetKey} />
       )}
     </section>
   )
 }
 
-export function ProposalsList({ proposals, decided, today, onDecide }: {
+export function ProposalsList({ proposals, decided, today, onDecide, resetKey }: {
   proposals: Recommendation[]; decided: Set<string>; today: string; onDecide: (input: DecisionInput) => Promise<void>
+  resetKey?: string
 }) {
   const pending = proposals.filter(proposal => !decided.has(proposal.id))
+  const { current, setPage, setPageSize } = usePagination(pending, { resetKey })
   if (proposals.length === 0) {
     return <p className="v2-empty">За правилами методики для цього циклу пропозицій немає.</p>
   }
@@ -219,9 +224,11 @@ export function ProposalsList({ proposals, decided, today, onDecide }: {
     return <p className="v2-empty">Усі пропозиції цього циклу вже розглянуто: рішення — у таблиці нижче.</p>
   }
   return (
-    <ul className="tracker-proposals">
-      {pending.map(proposal => <ProposalItem key={proposal.id} proposal={proposal} today={today} onDecide={onDecide} />)}
-    </ul>
+    <ListPagination current={current} onPageChange={setPage} onPageSizeChange={setPageSize} name="пропозицій">
+      <ul className="tracker-proposals">
+        {current.items.map(proposal => <ProposalItem key={proposal.id} proposal={proposal} today={today} onDecide={onDecide} />)}
+      </ul>
+    </ListPagination>
   )
 }
 
@@ -311,9 +318,11 @@ export function DecisionForm({ proposal, decision, today, onSubmit, onCancel }: 
   )
 }
 
-export function ActionsSection({ state, today, current, closed, onTransition, onRetry }: {
+export function ActionsSection({ state, today, current, closed, onTransition, onRetry, resetKey }: {
   state: LoadState<Tracker>; today: string; current: Assessment; closed: Assessment[]
   onTransition: (action: TrackerAction, input: TransitionInput) => Promise<void>; onRetry: () => void
+  /** Зміна ключа (id циклу) повертає таблицю на першу сторінку. */
+  resetKey?: string
 }) {
   return (
     <section className="tracker-section" aria-labelledby="tracker-actions-title">
@@ -330,7 +339,7 @@ export function ActionsSection({ state, today, current, closed, onTransition, on
       )}
       {state.status === 'ready' && (
         <>
-          <ActionsTable actions={state.data.actions} today={today} current={current} closed={closed} onTransition={onTransition} />
+          <ActionsTable actions={state.data.actions} today={today} current={current} closed={closed} onTransition={onTransition} resetKey={resetKey} />
           <RejectedList actions={state.data.actions} />
         </>
       )}
@@ -338,32 +347,36 @@ export function ActionsSection({ state, today, current, closed, onTransition, on
   )
 }
 
-export function ActionsTable({ actions, today, current, closed, onTransition }: {
+export function ActionsTable({ actions, today, current, closed, onTransition, resetKey }: {
   actions: TrackerAction[]; today: string; current: Assessment; closed: Assessment[]
   onTransition: (action: TrackerAction, input: TransitionInput) => Promise<void>
+  resetKey?: string
 }) {
   const accepted = actions.filter(action => action.status !== 'rejected')
+  const { current: page, setPage, setPageSize } = usePagination(accepted, { resetKey })
   if (accepted.length === 0) {
     return <p className="v2-empty">Прийнятих заходів ще немає. Прийміть пропозицію вище, щоб призначити відповідального і строк.</p>
   }
   const verifiers = laterClosedAssessments(closed, current)
   const names = new Map(closed.map(cycle => [cycle.id, cycle.name]))
   return (
-    <div className="tracker-table-wrap">
-      <table className="tracker-table">
-        <thead>
-          <tr>
-            <th scope="col">Компонент</th><th scope="col">Рекомендація</th><th scope="col">Відповідальний</th>
-            <th scope="col">Строк</th><th scope="col">Статус</th><th scope="col">Дії</th>
-          </tr>
-        </thead>
-        <tbody>
-          {accepted.map(action => (
-            <ActionRow key={action.id} action={action} today={today} verifiers={verifiers} names={names} onTransition={onTransition} />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ListPagination current={page} onPageChange={setPage} onPageSizeChange={setPageSize} name="прийнятих заходів">
+      <div className="tracker-table-wrap">
+        <table className="tracker-table">
+          <thead>
+            <tr>
+              <th scope="col">Компонент</th><th scope="col">Рекомендація</th><th scope="col">Відповідальний</th>
+              <th scope="col">Строк</th><th scope="col">Статус</th><th scope="col">Дії</th>
+            </tr>
+          </thead>
+          <tbody>
+            {page.items.map(action => (
+              <ActionRow key={action.id} action={action} today={today} verifiers={verifiers} names={names} onTransition={onTransition} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </ListPagination>
   )
 }
 
