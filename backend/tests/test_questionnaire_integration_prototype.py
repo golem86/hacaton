@@ -962,7 +962,7 @@ def test_cycle_bind_and_activation_are_serialized_and_never_open_unbound(migrate
     with sqlite3.connect(db_path) as con:
         status = con.execute("SELECT status FROM cycles WHERE id=2").fetchone()[0]
         bindings = con.execute("SELECT COUNT(*) FROM cycle_questionnaires WHERE cycle_id=2").fetchone()[0]
-    assert outcomes in (["bound", "open"], [409, "bound"]), outcomes
+    assert outcomes in (["bound", "open"], ["bound", 409]), outcomes
     assert (status, bindings) in {("open", 1), ("draft", 1)}
     if status == "open":
         with sqlite3.connect(db_path) as con, pytest.raises(sqlite3.IntegrityError, match="requires draft"):
