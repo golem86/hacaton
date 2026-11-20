@@ -4,7 +4,10 @@ param(
   [Parameter(Mandatory)] [string] $LogDir,
   [Parameter(Mandatory)] [string] $Py,           # Python для auth/job/PS-тестів (stdlib)
   [Parameter(Mandatory)] [string] $BackendPy,    # Python із залежностями backend (rehearse, AREL)
-  [Parameter(Mandatory)] [string] $DeployZip,    # integrity-v2-dde86e6-deploy.zip (release backend для A00/AREL)
+  [Parameter(Mandatory)] [string] $PackageDir,   # пакет ПОТОЧНОГО релізу (формат пакета оновлення; deploy\Build-V2CleanPackage.ps1)
+  [Parameter(Mandatory)] [string] $ApprovedSums, # APPROVED-SHA256.txt цього пакета
+  [Parameter(Mandatory)] [string] $ReleaseId,    # integrity-v2-<sha7>
+  [string] $DeployZip,                          # ІСТОРИЧНИЙ integrity-v2-dde86e6-deploy.zip (auth v1 / AREL, C9); без нього ці набори — NOT RUN
   [string] $Caddy,                              # caddy.exe 2.11.9 (adapt/validate для test-caddy-config і test-upgrade-inplace; без нього — NOT RUN)
   [string] $DistZip,                            # zip зібраного frontend (сумісність із CSP SPA, test-caddy-config C10)
   [switch] $WithMutation,
@@ -52,7 +55,9 @@ function Complete-Suites {
   }
 }
 try {
-  # release backend (для A00 / AREL): лише з перевіреного deploy ZIP
+  # історичний release backend dde86e6 (для A00 / AREL — таблиця очікувань auth v1): лише з перевіреного deploy ZIP
+  $rel = $null; $relMan = $null
+  if ($DeployZip) {
   if ((Get-FileHash -LiteralPath $DeployZip -Algorithm SHA256).Hash.ToLower() -ne 'd7c523a167eec578a03ed9b0ede62868aed1d4c59f50fbf2b78f997fbb79a5db') { throw 'deploy ZIP: SHA256 ≠ d7c523a1…' }
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $z = [IO.Compression.ZipFile]::OpenRead($DeployZip); try { $e = $z.GetEntry('integrity-v2-dde86e6-backend-src.zip'); [IO.Compression.ZipFileExtensions]::ExtractToFile($e, "$tmp\backend-src.zip") } finally { $z.Dispose() }
@@ -62,15 +67,17 @@ try {
   $relMan = "$tmp\rel-BACKEND-SHA256.txt"
   [IO.File]::WriteAllLines($relMan, [string[]]@(Get-ChildItem -LiteralPath $rel -Recurse -File | Sort-Object FullName | ForEach-Object { "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower())  backend/$($_.FullName.Substring($rel.Length + 1).Replace('\', '/'))" }), (New-Object Text.UTF8Encoding $false))
   Start-Suite 'test_v2_auth_schema' $Py @('-I', "$K\test_v2_auth_schema.py", '--tool', "$K\v2_db_tool.py", '--release-backend', $rel, '--release-manifest', $relMan, '--release-py', $BackendPy)
+  } else { $sum.Add('test_v2_auth_schema    NOT RUN (немає історичного -DeployZip dde86e6: A00/AREL для auth v1) → FAIL') }
   Start-Suite 'test_v2_db_tool' $BackendPy @('-I', '-B', '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-rA', "$K\test_v2_db_tool.py")
-  $cfgArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-caddy-config.ps1", '-Py', $BackendPy, '-DeployZip', $DeployZip)
+  $cfgArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-caddy-config.ps1", '-Py', $BackendPy); if ($DeployZip) { $cfgArgs += @('-DeployZip', $DeployZip) }
   if ($Caddy) { $cfgArgs += @('-Caddy', $Caddy) }; if ($DistZip) { $cfgArgs += @('-DistZip', $DistZip) }
   Start-Suite 'test-caddy-config' $PSX $cfgArgs
   $upArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\upgrade\test-upgrade-inplace.ps1", '-Py', $BackendPy); if ($Caddy) { $upArgs += @('-Caddy', $Caddy) }
   Start-Suite 'test-upgrade-inplace' $PSX $upArgs
   Start-Suite 'test-ops-scripts' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\upgrade\test-ops-scripts.ps1", '-Py', $BackendPy)
   Start-Suite 'static-upgrade' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\upgrade\static-upgrade.ps1")
-  Start-Suite 'test-clean-bootstrap' $Py @('-I', "$K\test-clean-bootstrap.py", '--deploy-zip', $DeployZip)
+  Start-Suite 'test-clean-bootstrap' $Py @('-I', "$K\test-clean-bootstrap.py", '--package-dir', $PackageDir, '--release-id', $ReleaseId)
+  Start-Suite 'test-clean-install-current' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-clean-install-current.ps1", '-Py', $BackendPy, '-PackageDir', $PackageDir, '-ApprovedSums', $ApprovedSums, '-ReleaseId', $ReleaseId) @(0)
   Start-Suite 'test-clean-root-race' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-clean-root-race.ps1")
   Start-Suite 'test-service-partial-ownership' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-service-partial-ownership.ps1")
   Start-Suite 'test-atomic-compile' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-atomic-compile.ps1")
@@ -83,11 +90,11 @@ try {
   Start-Suite 'test-audit-gate' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-audit-gate.ps1", '-Py', $Py)
   Start-Suite 'static-rev3' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\static-rev3.ps1")
   Start-Suite 'static-clean-install' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\static-clean-install.ps1")
-  Start-Suite 'rehearse-rev3' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\rehearse-rev3.ps1", '-Root', "$tmp\rehearse", '-Py', $BackendPy, '-DeployZip', $DeployZip)
+  Start-Suite 'rehearse-rev3' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\rehearse-rev3.ps1", '-Root', "$tmp\rehearse", '-Py', $BackendPy, '-PackageDir', $PackageDir, '-ApprovedSums', $ApprovedSums, '-ReleaseId', $ReleaseId)
   # RH0: runtime-harness на НЕпогодженому хості має відмовити (exit 3) і нічого не створити
   $rhRoot = "$tmp\rh0-must-not-exist"
   Start-Suite 'runtime-harness-RH0' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\runtime-harness.ps1", '-TestRoot', $rhRoot, '-BasePython', $Py, '-WinSWExe', "$tmp\no-winsw.exe", '-ApprovalRef', 'NONE') @(3)
-  if ($WithMutation) { Start-Suite 'mutation' $Py @('-I', "$K\mutate.py", '--ps', $PSX, '--py', $Py, '--release-backend', $rel, '--release-py', $BackendPy, '--deploy-zip', $DeployZip, '--jobs', $MutationJobs) }
+  if ($WithMutation) { Start-Suite 'mutation' $Py @('-I', "$K\mutate.py", '--ps', $PSX, '--py', $Py, '--release-backend', $rel, '--release-py', $BackendPy, '--package-dir', $PackageDir, '--release-id', $ReleaseId, '--jobs', $MutationJobs) }
   Complete-Suites
   if ($LocalOnly) { $sum.Add('HOST-RUNTIME J10/J18 WinSW → NOT RUN; окремий host gate потрібний, C8/GO не визначено') }
   try { $svcCount = @(Get-CimInstance Win32_Service -Filter "Name='integrity-v2-jobtest'" -ErrorAction Stop).Count }

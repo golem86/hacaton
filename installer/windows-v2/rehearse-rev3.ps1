@@ -1,8 +1,11 @@
 ﻿# Локальна репетиція (позитивний шлях) — кандидат REV3 + P1–P6. Безпечність: процеси зупиняються лише через власні handle (I0 у test-rev3-negative.ps1) на ПК №2 (без прав адміністратора; служби, ACL і Caddy не чіпаються).
-param([Parameter(Mandatory)] [string]$Root, [Parameter(Mandatory)] [string]$Py, [Parameter(Mandatory)] [string]$DeployZip)
+# Пакет — поточного релізу у форматі пакета оновлення (-PackageDir, -ApprovedSums, -ReleaseId); версії БД — $V2ReleaseSchema.
+param([Parameter(Mandatory)] [string]$Root, [Parameter(Mandatory)] [string]$Py, [Parameter(Mandatory)] [string]$PackageDir,
+      [Parameter(Mandatory)] [string]$ApprovedSums, [Parameter(Mandatory)] [string]$ReleaseId)
 $T0 = $PSScriptRoot
 . "$T0\V2-install-common.ps1"
 $results = New-Object System.Collections.Generic.List[string]
+$Vi = $V2ReleaseSchema.integrity; $Va = $V2ReleaseSchema.auth
 function Add-Res([string]$id, [bool]$ok, [string]$d) { $results.Add(('{0,-4} {1,-5} {2}' -f $id, $(if ($ok) { 'PASS' } else { 'FAIL' }), $d)) }
 function Sd([string]$sddl) { $x = New-Object System.Security.AccessControl.DirectorySecurity; $x.SetSecurityDescriptorSddlForm($sddl); $x }
 function Expect-Stop([scriptblock]$b) { try { & $b; $false } catch { "$($_.Exception.Message)".StartsWith('STOP:') } }
@@ -34,15 +37,11 @@ Add-Res 'R3' (Expect-Stop { Assert-V2Http -Url 'http://127.0.0.1:9/' -Expected 2
 
 # R4: етап 2 — пакет (як у плані)
 New-Item -ItemType Directory -Path $Root, "$Root\pkg", "$Root\app", "$Root\app\frontend", "$Root\data", "$Root\backups" | Out-Null
-$Zip = $DeployZip
-if ((Get-FileHash -LiteralPath $Zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'd7c523a167eec578a03ed9b0ede62868aed1d4c59f50fbf2b78f997fbb79a5db') { throw 'STOP: невірний SHA256 deployment ZIP' }
-if ((Get-FileHash $Zip -Algorithm SHA256).Hash.ToLower() -ne 'd7c523a167eec578a03ed9b0ede62868aed1d4c59f50fbf2b78f997fbb79a5db') { throw 'STOP: транспортний ZIP' }
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::ExtractToDirectory($Zip, "$Root\pkg")
-foreach ($l in Get-Content "$Root\pkg\SHA256SUMS.txt") { $h, $n = $l -split '\s+', 2; if ((Get-FileHash "$Root\pkg\$n" -Algorithm SHA256).Hash.ToLower() -ne $h) { throw "STOP: $n" } }
-[IO.Compression.ZipFile]::ExtractToDirectory("$Root\pkg\integrity-v2-dde86e6-backend-src.zip", "$Root\app")
-$Backend = "$Root\app\integrity-v2-dde86e6\backend"; $DbTool = "$T0\v2_db_tool.py"
-Add-Res 'R4' (@(Get-ChildItem $Backend -Recurse -File).Count -eq 55) 'пакет: суми, 55 файлів коду'
+$Pkg = Assert-V2CleanPackage -PackageDir $PackageDir -ApprovedSums $ApprovedSums -ReleaseId $ReleaseId
+$r4 = Expand-V2ReleaseBackend -Package $Pkg -AppDir "$Root\app\$ReleaseId" -PkgManifestPath "$Root\pkg\$ReleaseId-BACKEND-SHA256.txt"
+$Backend = "$Root\app\$ReleaseId\backend"; $DbTool = "$T0\v2_db_tool.py"
+$nCode = @($Pkg.BackendManifest.Keys | Where-Object { $_ -notmatch $V2BootstrapRx }).Count
+Add-Res 'R4' ($r4 -like 'PASS*' -and @(Get-ChildItem $Backend -Recurse -File).Count -eq $nCode) "пакет $ReleaseId`: суми окремого каналу, $nCode файлів коду = маніфест (без bootstrap)"
 
 # R5 (I05): репетиція 5а — try/finally, автоматичні HTTP-критерії, відбиток
 $envBefore = @(Get-ChildItem Env: | Where-Object { $_.Name -match '^(APP_ENV|INTEGRITY_|V2_|FRONTEND_|TRUSTED_)' } | ForEach-Object { "$($_.Name)=$($_.Value)" })
@@ -59,21 +58,21 @@ $reh | ForEach-Object { "   $_" } | ForEach-Object { $results.Add($_) }
 $D = "$Root\data"
 $out6 = Use-V2Env -Vars @{ APP_ENV = 'release'; INTEGRITY_DB = "$D\integrity_v2.db"; V2_AUTH_DB = "$D\v2_auth.db"; V2_SECRET_KEY = (New-V2RandomKey) } -Body {
   if (@(Get-ChildItem -LiteralPath $D -Force).Count) { Stop-V2 'data\ не порожній' }
-  Set-Content -LiteralPath "$D\CREATED-BY-V2-INSTALL.txt" -Value "created $(Get-Date -Format s) by app.seed (package dde86e6)" -Encoding UTF8
-  $null = Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-m', 'app.seed') -What 'seed'
-  $v = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('verify', "$D\integrity_v2.db", '--expect-version', '3')
+  Set-Content -LiteralPath "$D\CREATED-BY-V2-INSTALL.txt" -Value "created $(Get-Date -Format s) by app.seed (package $ReleaseId)" -Encoding UTF8
+  $null = Invoke-V2Seed -Py $Py -Backend $Backend -What 'seed'
+  $v = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('verify', "$D\integrity_v2.db", '--expect-version', "$Vi")
   $fp = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('fingerprint', "$D\integrity_v2.db"); if ($fp -ne $fp5a) { Stop-V2 'відбиток ≠ 5а' }
-  $b1 = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', "$D\integrity_v2.db", "$Root\backups\integrity_v2-pre-migration.db", '--expect-version', '3')
+  $b1 = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', "$D\integrity_v2.db", "$Root\backups\integrity_v2-pre-migration.db", '--expect-version', "$Vi")
   $null = Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-m', 'app.migrations', '--apply', '--confirm-verified-backup') -What 'migrations'
   $sc = @(Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-c', 'from app.migrations import check_schema; from app.database import engine; check_schema(engine); from app.v2_auth import check_auth_schema; check_auth_schema(); print(''SCHEMA OK'')') -What 'schema')[-1]
   $null = Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-c', 'from app.v2_auth import create_user; create_user(''Rehearsal Admin'', ''admin@example.test'', ''Rehearsal-Pass-123'', role=''admin''); print(''ADMIN'')') -What 'admin (репетиція замість getpass)'
   $syn = Assert-V2SyntheticDb -Py $Py -DbTool $DbTool -DataDir $D -ReferenceFingerprint $fp5a
-  $b2 = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', "$D\v2_auth.db", "$Root\backups\v2_auth-final.db", '--expect-version', '1')
-  $b3 = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', "$D\integrity_v2.db", "$Root\backups\integrity_v2-final.db", '--expect-version', '3')
+  $b2 = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', "$D\v2_auth.db", "$Root\backups\v2_auth-final.db", '--expect-version', "$Va")
+  $b3 = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('backup', "$D\integrity_v2.db", "$Root\backups\integrity_v2-final.db", '--expect-version', "$Vi")
   @($v, $b1, $sc, $syn, $b2, $b3)
 }
 $ok6 = ($out6[0] -like 'VERIFY OK*') -and ($out6[1] -like 'BACKUP OK*restore-test=ok*') -and ($out6[2] -eq 'SCHEMA OK') -and ($out6[3] -like 'PASS*') -and ($out6[4] -like 'BACKUP OK*') -and ($out6[5] -like 'BACKUP OK*')
-Add-Res 'R6' $ok6 'нові БД: seed → verify v2 → відбиток = 5а → backup + тест відновлення → migrations --confirm-verified-backup → схема → DEMO-умова → фінальні копії'
+Add-Res 'R6' $ok6 "нові БД: seed (development) → verify v$Vi → відбиток = 5а → backup + тест відновлення → migrations --confirm-verified-backup → схема → DEMO-умова → фінальні копії (auth v$Va)"
 $out6 | ForEach-Object { "   $_" } | ForEach-Object { $results.Add($_) }
 
 # R7 (I06): DEMO заборонено для невідомої БД (інший відбиток) і без маркера
@@ -132,8 +131,8 @@ try {
   Add-Res 'R9j' ($pr9.Mid -ge 1 -and [int]$pr9.Post.active -eq 0 -and @($pr9.Post.pids).Count -eq 0 -and $pr9.Post.verdict -eq 'PASS') "справжній Job Object: після аварії launcher-а процеси job живі ($($pr9.Mid)), бо handle утримує installer → terminate лише цього job → ActiveProcesses 0, PID-list порожній, сканування 0 → доказ рівня job із lease"
   $o9.Add("доказ: Job Object $($pr9.Job) (ActiveProcesses до terminate $($pr9.Mid), після 0); дерево launcher-а ($($pr9.Tree)) завершено; lease — процес утримання")
   $bk9 = @{ 'integrity_v2.db' = "$Root\backups\integrity_v2-final.db"; 'v2_auth.db' = "$Root\backups\v2_auth-final.db" }
-  function New-R9Items { @(@{ Db = 'integrity_v2.db'; Backup = $bk9['integrity_v2.db']; Sha256 = (Get-FileHash -LiteralPath $bk9['integrity_v2.db'] -Algorithm SHA256).Hash.ToLower(); Version = 3 },
-                           @{ Db = 'v2_auth.db'; Backup = $bk9['v2_auth.db']; Sha256 = (Get-FileHash -LiteralPath $bk9['v2_auth.db'] -Algorithm SHA256).Hash.ToLower(); Version = 1 }) }
+  function New-R9Items { @(@{ Db = 'integrity_v2.db'; Backup = $bk9['integrity_v2.db']; Sha256 = (Get-FileHash -LiteralPath $bk9['integrity_v2.db'] -Algorithm SHA256).Hash.ToLower(); Version = $Vi },
+                           @{ Db = 'v2_auth.db'; Backup = $bk9['v2_auth.db']; Sha256 = (Get-FileHash -LiteralPath $bk9['v2_auth.db'] -Algorithm SHA256).Hash.ToLower(); Version = $Va }) }
   function New-R9Data([string]$Name) { $t9 = Join-Path $Root $Name; $null = New-Item -ItemType Directory -Path $t9; foreach ($f in 'integrity_v2.db', 'v2_auth.db') { Copy-Item -LiteralPath (Join-Path $D $f) -Destination $t9 }; Set-Content -LiteralPath (Join-Path $t9 'integrity_v2.db-wal') 'stale-wal'; $t9 }   # не $d: імена змінних PowerShell нечутливі до регістру ($D — data\)
   function Get-R9State([string]$s9) { (@(Get-ChildItem -LiteralPath $s9 -File | ForEach-Object Name | Sort-Object) -join ',') }
   # R9a: успіх — обидві БД відновлено, справжня перевірка схеми, .broken-* збережено, RESTORE-OK
@@ -147,7 +146,7 @@ try {
   #      seed є), але без решти таблиць V2 → обидві БД уже замінено, СПРАВЖНЯ check_schema падає → RESTORE-FAILED
   $bad9 = "$Root\backups\integrity_v2-noschema.db"
   $ddl9 = (('answers', 'components', 'cycles', 'objective_indicators', 'questions', 'recommendations', 'response_sets', 'units') | ForEach-Object { "c.execute('create table $_(x)'); " }) -join ''
-  $null = Invoke-V2Native -Exe $Py -ArgList @('-c', "import sqlite3; c=sqlite3.connect(r'$bad9'); $ddl9 c.execute('pragma user_version=3'); c.commit(); c.close()") -What 'R9b: копія без повної схеми'
+  $null = Invoke-V2Native -Exe $Py -ArgList @('-c', "import sqlite3; c=sqlite3.connect(r'$bad9'); $ddl9 c.execute('pragma user_version=$Vi'); c.commit(); c.close()") -What 'R9b: копія без повної схеми'
   $bk9['integrity_v2.db'] = $bad9
   $d9b = New-R9Data 'data-r9b'; $null = New-R9Proof
   $mb = $null; try { $null = Invoke-V2DbRestore -DataDir $d9b -Known @() -Py $Py -DbTool $DbTool -Items (New-R9Items) } catch { $mb = $_.Exception.Message }
@@ -166,18 +165,19 @@ try {
   $o9.Add("R9c: $mc")
   # R9d: неповна копія v2_auth.db, яку check_auth_schema backend пропустив би (лише user_version) → строгий checker STOP до мутації
   $bad9a = "$Root\backups\v2_auth-incomplete.db"
-  $null = Invoke-V2Native -Exe $Py -ArgList @('-c', "import sqlite3; c=sqlite3.connect(r'$bad9a'); c.execute('create table t(x)'); c.execute('pragma user_version=1'); c.commit(); c.close()") -What 'R9d: неповна auth-копія'
+  $null = Invoke-V2Native -Exe $Py -ArgList @('-c', "import sqlite3; c=sqlite3.connect(r'$bad9a'); c.execute('create table t(x)'); c.execute('pragma user_version=$Va'); c.commit(); c.close()") -What 'R9d: неповна auth-копія'
   $bk9['v2_auth.db'] = $bad9a
   $d9d = New-R9Data 'data-r9d'; $s9d = Get-R9State $d9d; $null = New-R9Proof
   $md = $null; try { $null = Invoke-V2DbRestore -DataDir $d9d -Known @() -Py $Py -DbTool $DbTool -Items (New-R9Items) } catch { $md = $_.Exception.Message }
-  Add-Res 'R9d' ($md -like 'STOP:*auth-schema: FAIL A05*' -and (Get-R9State $d9d) -eq $s9d) 'етап 1: неповна копія v2_auth.db (v1 без таблиць V2) → строгий checker STOP ДО мутації; RESTORE-OK неможливий'
+  Add-Res 'R9d' ($md -like 'STOP:*auth-schema: FAIL A05*' -and (Get-R9State $d9d) -eq $s9d) 'етап 1: неповна копія v2_auth.db (версія релізу без таблиць V2) → строгий checker STOP ДО мутації; RESTORE-OK неможливий'
   $o9.Add("R9d: $md")
   $bk9['v2_auth.db'] = "$Root\backups\v2_auth-final.db"
   # Спостереження (не тест кандидата; backend не змінюється): check_auth_schema перевіряє лише user_version v2_auth.db
   $t9a = "$Root\auth-probe.db"
-  $null = Invoke-V2Native -Exe $Py -ArgList @('-c', "import sqlite3; c=sqlite3.connect(r'$t9a'); c.execute('create table t(x)'); c.execute('pragma user_version=1'); c.commit(); c.close()") -What 'R9 probe'
-  $pa = @(Use-V2Env -Vars @{ V2_AUTH_DB = $t9a } -Body { Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-c', 'from app.v2_auth import check_auth_schema; check_auth_schema(); print(''AUTH SCHEMA OK'')') -What 'R9 probe auth' })[-1]
-  $o9.Add("СПОСТЕРЕЖЕННЯ: v2_auth.db без жодної таблиці V2, user_version=1 → check_auth_schema: $pa (перевіряється лише версія)")
+  $null = Invoke-V2Native -Exe $Py -ArgList @('-c', "import sqlite3; c=sqlite3.connect(r'$t9a'); c.execute('create table t(x)'); c.execute('pragma user_version=$Va'); c.commit(); c.close()") -What 'R9 probe'
+  # спостереження: release dde86e6 перевіряв лише user_version; поточний check_auth_schema перевіряє й склад схеми (відмова — очікувано)
+  $pa = try { @(Use-V2Env -Vars @{ V2_AUTH_DB = $t9a } -Body { Invoke-V2Py -Py $Py -Backend $Backend -ArgList @('-c', 'from app.v2_auth import check_auth_schema; check_auth_schema(); print(''AUTH SCHEMA OK'')') -What 'R9 probe auth' })[-1] } catch { 'відмова (схема перевіряється, не лише версія)' }
+  $o9.Add("СПОСТЕРЕЖЕННЯ: v2_auth.db без жодної таблиці V2, user_version=$Va → check_auth_schema коду релізу: $pa")
 } finally { if ($script:holder9 -and -not $script:holder9.HasExited) { try { Stop-V2JobHolder -Holder $script:holder9 } catch { } }; $V2Root = $savedRoot9; $V2StopProof.Clear(); $V2JobTool.Py = $null; $V2JobTool.Script = $null; $script:V2JobLocalRehearsal = $null; $V2Services['integrity-v2-backend'].Job = $savedJob9 }
 $o9 | ForEach-Object { "   " + ($_ -replace "\r?\n", " | ") } | ForEach-Object { $results.Add($_) }
 
