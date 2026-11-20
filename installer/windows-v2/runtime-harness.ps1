@@ -97,7 +97,8 @@ try {
       $null = Invoke-V2Py -Py $BackendPy -Backend $be -ArgList @('-m', 'app.seed') -What 'seed (тест-хост)'
       $null = Invoke-V2Py -Py $BackendPy -Backend $be -ArgList @('-m', 'app.migrations', '--apply', '--confirm-verified-backup') -What 'migrations (тест-хост)'
     }
-    $items = foreach ($db in @(@('integrity_v2.db', 2), @('v2_auth.db', 1))) {
+    # I4 (hardening): версії — з $V2DbSet (release dde86e6: integrity_v2.db 3, v2_auth.db 1), а не закріплене 2
+    $items = foreach ($db in @($V2DbSet.Keys | ForEach-Object { , @($_, $V2DbSet[$_]) })) {
       $dst = "$bk\$($db[0])"; $null = Invoke-V2DbTool -Py $BackendPy -DbTool "$tr\kit\v2_db_tool.py" -ArgList @('backup', "$dd\$($db[0])", $dst, '--expect-version', "$($db[1])")
       @{ Db = $db[0]; Backup = $dst; Sha256 = (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLower(); Version = $db[1] }
     }

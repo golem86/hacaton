@@ -840,6 +840,13 @@ function Test-V2WinswXml {
   if (-not $exe.StartsWith("$V2Root\", [StringComparison]::OrdinalIgnoreCase)) { Stop-V2 "XML: executable поза ${V2Root}: $exe" }
   $envNames = @($s.SelectNodes('env') | ForEach-Object { $_.GetAttribute('name') })
   foreach ($n in 'INTEGRITY_DEMO_XROLE', 'V2_AUTH_DEV_MAIL', 'V2_AUTH_SECURE_COOKIE') { if ($envNames -contains $n) { Stop-V2 "XML: заборонена змінна $n" } }
+  # I3 (hardening): з --no-proxy-headers IP клієнта береться з X-Forwarded-For лише від TRUSTED_PROXIES; без точного
+  # TRUSTED_PROXIES=127.0.0.1,::1 усі клієнти стають 127.0.0.1 (Caddy) і ліміти спроб стають глобальними
+  $argTokens = @(([string](& $one 'arguments')) -split '\s+' | Where-Object { $_ })
+  if ($argTokens -contains '--no-proxy-headers') {
+    $tp = @($s.SelectNodes('env') | Where-Object { $_.GetAttribute('name') -eq 'TRUSTED_PROXIES' })
+    if ($tp.Count -ne 1 -or $tp[0].GetAttribute('value') -cne '127.0.0.1,::1') { Stop-V2 'XML: --no-proxy-headers вимагає рівно одну змінну TRUSTED_PROXIES=127.0.0.1,::1' }
+  }
   if (-not $AllowPlaceholders -and (Select-String -LiteralPath $XmlPath -Pattern '__V2_' -Quiet)) { Stop-V2 'XML: незаповнені плейсхолдери' }
   "PASS  XML $Name — схема WinSW $WinswRefVersion, Manual, NT SERVICE\$Name"
 }
@@ -1529,7 +1536,11 @@ function New-V2TargetConfig {
         [switch]$UseFileTls)
   $prodHost = 'desktop-jtgc2sg.taild5c033.ts.net'
   $prodBind = 'bind 100.111.221.74 [fd7a:115c:a1e0::ef01:dddc]'
-  $caddy = [IO.File]::ReadAllText($CaddySource, [Text.Encoding]::GetEncoding(1251))
+  # I2 (hardening): Caddyfile — UTF-8 без BOM; невалідний UTF-8 → виняток (раніше cp1251 давав подвійне кодування коментарів)
+  $strictUtf8 = New-Object Text.UTF8Encoding($false, $true)
+  $caddyBytes = [IO.File]::ReadAllBytes($CaddySource)
+  if ($caddyBytes.Length -ge 3 -and $caddyBytes[0] -eq 0xEF -and $caddyBytes[1] -eq 0xBB -and $caddyBytes[2] -eq 0xBF) { Stop-V2 'target config: Caddyfile має бути UTF-8 без BOM' }
+  try { $caddy = $strictUtf8.GetString($caddyBytes) } catch { Stop-V2 "target config: Caddyfile не є коректним UTF-8: $($_.Exception.Message)" }
   $xml = [IO.File]::ReadAllText($BackendSource, [Text.Encoding]::UTF8)
   if ([regex]::Matches($caddy, [regex]::Escape($prodHost)).Count -ne 1 -or [regex]::Matches($caddy, [regex]::Escape($prodBind)).Count -ne 1 -or
       [regex]::Matches($xml, 'name="FRONTEND_ORIGINS" value="https://' + [regex]::Escape($prodHost) + '"').Count -ne 1) { Stop-V2 'target config: production template не відповідає закріпленій формі' }
@@ -1546,7 +1557,7 @@ function New-V2TargetConfig {
   if (Test-Path -LiteralPath $Destination) { Stop-V2 'target config: staging каталог уже існує' }
   $null = New-Item -ItemType Directory -Path $Destination -ErrorAction Stop
   $cf = Join-Path $Destination 'Caddyfile'; $xf = Join-Path $Destination 'integrity-v2-backend.xml'
-  [IO.File]::WriteAllText($cf, $caddy, (New-Object Text.UTF8Encoding $false))
+  [IO.File]::WriteAllText($cf, $caddy, $strictUtf8)
   [IO.File]::WriteAllText($xf, $xml, (New-Object Text.UTF8Encoding $false))
   $manifest = @("target=$HostName", "bind=$($Addresses -join ',')", "Caddyfile=$((Get-FileHash -LiteralPath $cf -Algorithm SHA256).Hash.ToLower())", "integrity-v2-backend.xml=$((Get-FileHash -LiteralPath $xf -Algorithm SHA256).Hash.ToLower())")
   [IO.File]::WriteAllLines((Join-Path $Destination 'TARGET-CONFIG-MANIFEST.txt'), [string[]]$manifest, (New-Object Text.UTF8Encoding $false))

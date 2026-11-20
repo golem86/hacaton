@@ -5,6 +5,8 @@ param(
   [Parameter(Mandatory)] [string] $Py,           # Python для auth/job/PS-тестів (stdlib)
   [Parameter(Mandatory)] [string] $BackendPy,    # Python із залежностями backend (rehearse, AREL)
   [Parameter(Mandatory)] [string] $DeployZip,    # integrity-v2-dde86e6-deploy.zip (release backend для A00/AREL)
+  [string] $Caddy,                              # caddy.exe 2.11.9 (adapt/validate для test-caddy-config і test-upgrade-inplace; без нього — NOT RUN)
+  [string] $DistZip,                            # zip зібраного frontend (сумісність із CSP SPA, test-caddy-config C10)
   [switch] $WithMutation,
   [switch] $LocalOnly,                       # T0: тільки локально виконувані suite; J10/WinSW J18 — окремий host gate
   [ValidateRange(1, 16)] [int] $MutationJobs = 6,   # > 1 — мутанти паралельно (кожен у власній копії комплекту)
@@ -56,7 +58,18 @@ try {
   $z = [IO.Compression.ZipFile]::OpenRead($DeployZip); try { $e = $z.GetEntry('integrity-v2-dde86e6-backend-src.zip'); [IO.Compression.ZipFileExtensions]::ExtractToFile($e, "$tmp\backend-src.zip") } finally { $z.Dispose() }
   [IO.Compression.ZipFile]::ExtractToDirectory("$tmp\backend-src.zip", "$tmp\rel")
   $rel = "$tmp\rel\integrity-v2-dde86e6\backend"
-  Start-Suite 'test_v2_auth_schema' $Py @('-I', "$K\test_v2_auth_schema.py", '--tool', "$K\v2_db_tool.py", '--release-backend', $rel, '--release-py', $BackendPy)
+  # маніфест релізу (BACKEND-SHA256.txt) — із перевіреного deploy ZIP; SHA джерел схеми checker бере лише з нього
+  $relMan = "$tmp\rel-BACKEND-SHA256.txt"
+  [IO.File]::WriteAllLines($relMan, [string[]]@(Get-ChildItem -LiteralPath $rel -Recurse -File | Sort-Object FullName | ForEach-Object { "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower())  backend/$($_.FullName.Substring($rel.Length + 1).Replace('\', '/'))" }), (New-Object Text.UTF8Encoding $false))
+  Start-Suite 'test_v2_auth_schema' $Py @('-I', "$K\test_v2_auth_schema.py", '--tool', "$K\v2_db_tool.py", '--release-backend', $rel, '--release-manifest', $relMan, '--release-py', $BackendPy)
+  Start-Suite 'test_v2_db_tool' $BackendPy @('-I', '-B', '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-rA', "$K\test_v2_db_tool.py")
+  $cfgArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-caddy-config.ps1", '-Py', $BackendPy, '-DeployZip', $DeployZip)
+  if ($Caddy) { $cfgArgs += @('-Caddy', $Caddy) }; if ($DistZip) { $cfgArgs += @('-DistZip', $DistZip) }
+  Start-Suite 'test-caddy-config' $PSX $cfgArgs
+  $upArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\upgrade\test-upgrade-inplace.ps1", '-Py', $BackendPy); if ($Caddy) { $upArgs += @('-Caddy', $Caddy) }
+  Start-Suite 'test-upgrade-inplace' $PSX $upArgs
+  Start-Suite 'test-ops-scripts' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\upgrade\test-ops-scripts.ps1", '-Py', $BackendPy)
+  Start-Suite 'static-upgrade' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\upgrade\static-upgrade.ps1")
   Start-Suite 'test-clean-bootstrap' $Py @('-I', "$K\test-clean-bootstrap.py", '--deploy-zip', $DeployZip)
   Start-Suite 'test-clean-root-race' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-clean-root-race.ps1")
   Start-Suite 'test-service-partial-ownership' $PSX @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "$K\test-service-partial-ownership.ps1")

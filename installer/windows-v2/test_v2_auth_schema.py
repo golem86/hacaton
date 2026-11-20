@@ -2,7 +2,8 @@
 test_v2_auth_schema.py — тести строгого checker-а V2_AUTH_DB (етап 1): A00–A13 (позитивні), N01–N15 (негативні, кожен
 підвипадок окремо). Лише синтетичні БД у тимчасовому каталозі; production БД не використовується.
 
-Запуск:  python -I test_v2_auth_schema.py --tool <v2_db_tool.py> [--release-backend <…\\integrity-v2-dde86e6\\backend> --release-py <python з залежностями backend>]
+Запуск:  python -I test_v2_auth_schema.py --tool <v2_db_tool.py> [--release-backend <…\\integrity-v2-dde86e6\\backend> --release-manifest <BACKEND-SHA256.txt>
+         --release-py <python з залежностями backend>]
 Код виходу: 0 — усі PASS; 1 — будь-який FAIL. Без --release-backend тести A00/AREL позначаються NOT RUN (не PASS).
 """
 import sys as _sys
@@ -124,8 +125,16 @@ try:
         tree = ast.parse(raw.decode("utf-8"))
         schema = next(n.value.value for n in ast.walk(tree) if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "_SCHEMA" for t in n.targets))
         ver = next(n.value.value for n in ast.walk(tree) if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "AUTH_SCHEMA_VERSION" for t in n.targets))
-        add("A00", hashlib.sha256(raw).hexdigest() == tool.RELEASE_AUTH_SOURCE_SHA256 and schema == DDL and ver == tool.RELEASE_AUTH_VERSION,
-            f"DDL checker-а = _SCHEMA release v2_auth.py (SHA {hashlib.sha256(raw).hexdigest()[:16]}…), версія {ver}")
+        # SHA256 v2_auth.py не закріплено в коді checker-а: еталон — маніфест релізу (BACKEND-SHA256.txt), bind-check звіряє і DDL
+        MAN = opt("--release-manifest")
+        if MAN:
+            r = subprocess.run([sys.executable, "-I", "-E", "-s", TOOL, "bind-check", "--kind", "auth", "--expect-version", "1",
+                                "--release-backend", REL, "--release-manifest", MAN], capture_output=True, timeout=60)
+            bout = r.stdout.decode("utf-8", "replace")
+            add("A00", r.returncode == 0 and "BIND OK kind=auth version=1" in bout and schema == DDL and ver == tool.RELEASE_AUTH_VERSION,
+                f"DDL checker-а = _SCHEMA release v2_auth.py (SHA {hashlib.sha256(raw).hexdigest()[:16]}… = маніфест релізу), версія {ver}")
+        else:
+            add("A00", False, "немає --release-manifest (SHA джерела береться лише з маніфесту релізу)", "NOT RUN")
         for mode, want_ok in (("release", True), ("development", False)):
             db = os.path.join(TMP, f"rel-{mode}.db")
             env = {k: v for k, v in os.environ.items() if not k.startswith(("APP_ENV", "V2_", "INTEGRITY_"))}
