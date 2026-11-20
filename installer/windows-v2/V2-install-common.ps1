@@ -1308,13 +1308,16 @@ function Set-V2Secrets {
 # --- P2: тимчасове оточення — помилки відновлення не приховуються ----------------------------------------------------------
 function Use-V2Env {
   param([Parameter(Mandatory)] [hashtable] $Vars, [Parameter(Mandatory)] [scriptblock] $Body)
-  $saved = @{}; foreach ($k in $Vars.Keys) { $saved[$k] = Get-V2EnvVar $k }
-  $bodyErr = $null; $result = $null
-  try { foreach ($k in $Vars.Keys) { Set-V2EnvVar $k ([string]$Vars[$k]) }; $result = @(& $Body) } catch { $bodyErr = $_ }
-  $restoreErr = New-Object System.Collections.Generic.List[string]
-  foreach ($k in $saved.Keys) {
-    try { Set-V2EnvVar $k $saved[$k]; $now = Get-V2EnvVar $k; if ("$now" -ne "$($saved[$k])") { $restoreErr.Add("$k не відновлено") } } catch { $restoreErr.Add("${k}: $($_.Exception.Message)") }
+  # імена локальних змінних — з префіксом __: тіло (-Body) бачить змінні цієї функції (динамічна область видимості), а імена
+  # PowerShell нечутливі до регістру — звичайний $k перекривав би $K викликача (каталог інсталятора в clean-install.ps1)
+  $__saved = @{}; foreach ($__k in $Vars.Keys) { $__saved[$__k] = Get-V2EnvVar $__k }
+  $__bodyErr = $null; $__result = $null
+  try { foreach ($__k in $Vars.Keys) { Set-V2EnvVar $__k ([string]$Vars[$__k]) }; $__k = $null; $__result = @(& $Body) } catch { $__bodyErr = $_ }
+  $__restoreErr = New-Object System.Collections.Generic.List[string]
+  foreach ($__k in $__saved.Keys) {
+    try { Set-V2EnvVar $__k $__saved[$__k]; $__now = Get-V2EnvVar $__k; if ("$__now" -ne "$($__saved[$__k])") { $__restoreErr.Add("$__k не відновлено") } } catch { $__restoreErr.Add("${__k}: $($_.Exception.Message)") }
   }
+  $bodyErr = $__bodyErr; $restoreErr = $__restoreErr; $result = $__result
   if ($bodyErr -and $restoreErr.Count) { Stop-V2 "$($bodyErr.Exception.Message -replace '^STOP: ', ''); ВІДНОВЛЕННЯ ENV: $($restoreErr -join '; ')" }
   if ($bodyErr) { throw $bodyErr }
   if ($restoreErr.Count) { Stop-V2 "відновлення env: $($restoreErr -join '; ')" }
