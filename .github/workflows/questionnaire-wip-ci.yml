@@ -148,7 +148,6 @@ jobs:
         working-directory: frontend
     env:
       PYTHONUTF8: "1"
-      V2_E2E_TEMP_DIR: ${{ runner.temp }}/questionnaire-e2e
       V2_E2E_BACKEND_PORT: "8018"
       V2_E2E_QUESTIONNAIRE_PORT: "8020"
       V2_E2E_FRONTEND_PORT: "5175"
@@ -176,6 +175,8 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium
       - name: Run full browser suite with JUnit
+        env:
+          V2_E2E_TEMP_DIR: ${{ runner.temp }}/questionnaire-e2e
         run: |
           mkdir -p "$V2_E2E_TEMP_DIR"
           pnpm exec playwright test --config=playwright.config.ts
