@@ -15,8 +15,12 @@
   4 — додано recommendation_actions (Recommendations Tracker: рішення
       посадової особи, відповідальний, строк, статус, історія). Як і для версій 2–3:
       лише нова таблиця, тож резервна копія + create_all без перебудови наявних.
-  5 — поточна: посилення за аудитом — access_tokens.token_hash замість відкритого коду,
+  5 — посилення за аудитом — access_tokens.token_hash замість відкритого коду,
       audit_events.actor_user_id, таблиця instance_meta (див. нижче «Крок до версії 5»).
+  6 — поточна: зрілість за Додатком В — нові таблиці annex_v_responses, annex_v_answers,
+      annex_v_expert_assessments, checklist_entries, maturity_indicators. Наявні таблиці
+      не змінюються; крок 5 → 6 виконує той самий _upgrade_to_current (перевірена резервна
+      копія, нові таблиці в одній транзакції, перевірки, user_version = 6).
 
 Що робить migrate() для старої бази:
   1. Робить резервну копію файлу бази (integrity.backup-<дата-час>.db) і перевіряє її:
@@ -28,14 +32,14 @@
   4. Якщо хоч щось не так — відкат: база лишається точно такою, як була.
 
 Крок до версії 5 (посилення за аудитом, docs/V2_HARDENING_CONTRACT.md, розділ 2) працює
-з будь-якої версії 1..4 (версія 0 спершу доводиться до 1). Після перевіреної резервної копії
+з будь-якої версії 1..4 (а крок до 6 — і з версії 5; версія 0 спершу доводиться до 1). Після перевіреної резервної копії
 в ОДНІЙ транзакції BEGIN IMMEDIATE:
   - створюються відсутні таблиці поточних моделей (cycle_configs, access_token_policies,
     recommendation_actions, instance_meta) — так само, як раніше create_all для версій 2–4;
   - access_tokens перебудовується: token → token_hash, наявні коди хешуються (SHA-256) у Python;
   - audit_events отримує колонку actor_user_id INTEGER NULL;
   - перевіряються кількість рядків усіх таблиць, хеші кодів, колонки моделей,
-    foreign_key_check та integrity_check; лише тоді user_version = 5, інакше ROLLBACK.
+    foreign_key_check та integrity_check; лише тоді user_version = SCHEMA_VERSION, інакше ROLLBACK.
 БД версії, новішої за підтримувану, не змінюється взагалі (ні запису, ні резервної копії).
 УВАГА: резервна копія перед кроком до 5 — точна копія старої БД, тож містить відкриті коди
 access_tokens.token. Її зберігають з тим самим обмеженим доступом, що й саму БД, і знищують
@@ -52,7 +56,7 @@ from sqlalchemy.schema import CreateIndex, CreateTable
 from .database import Base
 from .models import AccessToken, Answer, ResponseSet, Unit, hash_access_code
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 LEGACY_TOKEN_COLUMNS = {"id", "cycle_id", "token", "used"}   # access_tokens у версіях 1..4
 
 

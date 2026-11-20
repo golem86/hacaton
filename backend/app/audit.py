@@ -32,7 +32,11 @@ ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "ass
                    # Recommendations Tracker: рішення посадової особи і зміни статусу
                    # (лише роль і цикл; відповідальний, обґрунтування й докази — не в журналі)
                    "tracker.accepted", "tracker.rejected", "tracker.in_progress",
-                   "tracker.completed", "tracker.verified"}
+                   "tracker.completed", "tracker.verified",
+                   # Зрілість за Додатком В: лише роль і цикл (без відповідей, статусів і доказів);
+                   # анонімні анкети Додатка В не журналюються взагалі
+                   "annex_v.expert_create", "checklist.update", "checklist.confirm",
+                   "objective.create", "objective.confirm"}
 # Роль auditor не вводиться до рішення №5 — журнал бачить лише admin (S12)
 AUDIT_ROLES = ("admin",)
 

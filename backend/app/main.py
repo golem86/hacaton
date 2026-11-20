@@ -10,7 +10,11 @@ from .migrations import check_schema, migrate
 from .request_limits import BodySizeLimitMiddleware, max_body_bytes, validation_error_handler
 from .routes import analytics, assessments, results, v2_admin, v2_auth, v2_user
 from .routes import tracker  # Recommendations Tracker
+from .routes import annex_v  # Зрілість за Додатком В
 from .v2_auth import check_auth_schema, migrate_auth_db
+
+# Анонімні подання: анкета персоналу (/submissions) і анкета Додатка В (/annex-v/responses)
+ANONYMOUS_SUBMISSION_PATHS = ("/submissions", "/annex-v/responses")
 
 
 class DropSurveySubmissionAccessLog(logging.Filter):
@@ -19,7 +23,7 @@ class DropSurveySubmissionAccessLog(logging.Filter):
     інакше IP і час подання можна було б зіставити з людиною.
     """
     def filter(self, record: logging.LogRecord) -> bool:
-        return not any("/submissions" in str(arg) for arg in (record.args or ()))
+        return not any(path in str(arg) for arg in (record.args or ()) for path in ANONYMOUS_SUBMISSION_PATHS)
 
 
 def prepare_databases() -> None:
@@ -56,7 +60,7 @@ def create_app() -> FastAPI:
     application.add_middleware(
         CORSMiddleware,
         allow_origins=sorted(settings.frontend_origins()),
-        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Content-Type", "X-CSRF-Token"],
         allow_credentials=True,
     )
@@ -67,6 +71,7 @@ def create_app() -> FastAPI:
     application.include_router(results.router)
     application.include_router(analytics.router)
     application.include_router(tracker.router)  # трекер рекомендацій: рішення, строки, статуси
+    application.include_router(annex_v.router)  # зрілість за Додатком В: анкети, чек-лист, показники
     application.include_router(v2_auth.router)
     application.include_router(v2_user.router)
     application.include_router(v2_admin.router)
