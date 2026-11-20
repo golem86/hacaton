@@ -1,0 +1,38 @@
+<!--
+  WinSW: окремий екземпляр Caddy для V2 (шаблон; секретів немає). Caddy V1, його служба й Caddyfile не змінюються.
+  Розміщення: C:\srv\integrity-v2\services\caddy\integrity-v2-caddy.xml поруч із integrity-v2-caddy.exe (копія WinSW V1).
+  caddy.exe — копія бінарника Caddy 2.11.9 сервера (SHA256 = бінарник, який перевіряв release-preflight).
+  Обліковий запис служби: NT SERVICE\integrity-v2-caddy (у <serviceaccount>; перевіряється програмно до старту).
+-->
+<service>
+  <id>integrity-v2-caddy</id>
+  <name>Integrity Dashboard V2 - Caddy (HTTPS, Tailscale only)</name>
+  <description>Private HTTPS for Integrity Management Dashboard V2 on the Tailscale address only. V1 Caddy is not affected.</description>
+  <executable>C:\srv\integrity-v2\caddy\bin\caddy.exe</executable>
+  <arguments>run --config C:\srv\integrity-v2\caddy\Caddyfile --adapter caddyfile</arguments>
+  <workingdirectory>C:\srv\integrity-v2\caddy\bin</workingdirectory>
+  <env name="XDG_DATA_HOME" value="C:\srv\integrity-v2\caddy\data"/>
+  <env name="XDG_CONFIG_HOME" value="C:\srv\integrity-v2\caddy\config"/>
+  <env name="APPDATA" value="C:\srv\integrity-v2\caddy\config"/>
+  <depend>Tailscale</depend>
+  <!-- без залежності від backend: backend можна перезапустити окремо (Caddy тим часом віддає 502) -->
+
+  <!-- REV2 (I01): лише Manual; старт — вручну після програмної перевірки StartName/PathName/StartMode/State -->
+  <startmode>Manual</startmode>
+  <!-- REV2 (I01, D2): віртуальний акаунт служби, без пароля. Якщо WinSW не застосує його під час install —
+       sc.exe config obj= "NT SERVICE\integrity-v2-caddy"; LocalSystem/LocalService не використовуються; без підтвердження — STOP -->
+  <serviceaccount>
+    <domain>NT SERVICE</domain>
+    <user>integrity-v2-caddy</user>
+  </serviceaccount>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="none"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>15 sec</stoptimeout>
+  <logpath>C:\srv\integrity-v2\logs\caddy</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

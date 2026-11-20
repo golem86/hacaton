@@ -1,0 +1,59 @@
+# Integrity Management Dashboard V2 — Caddy V2 (окремий екземпляр; Caddy V1 не змінюється).
+# Кандидат dde86e68f4405c23ec4aad14db80f0b764fb4556. Застосовувати лише після DEPLOYMENT GO №5.
+{
+	admin off
+	storage file_system C:/srv/integrity-v2/caddy/data
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2
+	}
+}
+
+desktop-jtgc2sg.taild5c033.ts.net:443 {
+	bind 100.111.221.74 [fd7a:115c:a1e0::ef01:dddc]
+
+	request_header -X-Role
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	# Swagger (PR #19): /docs, /docs/swagger-ui/*, /openapi.json — до backend; доступ лише admin з 2FA (перевіряє backend)
+	handle /docs* {
+		reverse_proxy 127.0.0.1:8100 {
+			header_up -X-Role
+		}
+	}
+	handle /openapi.json {
+		reverse_proxy 127.0.0.1:8100 {
+			header_up -X-Role
+		}
+	}
+	handle /redoc* {
+		respond 404
+	}
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8100 {
+			header_up -X-Role
+		}
+	}
+	handle /v2/* {
+		reverse_proxy 127.0.0.1:8100 {
+			header_up -X-Role
+		}
+	}
+	handle /assets/* {
+		root * C:/srv/integrity-v2/app/frontend/dist
+		file_server
+	}
+	handle {
+		root * C:/srv/integrity-v2/app/frontend/dist
+		try_files {path} /index.html
+		file_server
+	}
+	# Журнал доступу навмисно не вмикається (S10)
+}

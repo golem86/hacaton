@@ -86,6 +86,11 @@ def migrate(engine: Engine) -> dict:
     con: sqlite3.Connection = raw.driver_connection
     report: dict = {"action": "up_to_date", "backup": None}
     try:
+        version = con.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise MigrationError(
+                f"INTEGRITY_DB schema version {version} is newer than supported {SCHEMA_VERSION}; "
+                "migration refused without changes")
         if not _tables(con):
             report["action"] = "created"
         elif needs_migration(con):
