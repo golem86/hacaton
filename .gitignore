@@ -1,15 +1,39 @@
-
+# Local configuration and secrets
 .env
 .env.*
 !.env.example
-__pycache__/
-*.py[cod]
-.venv/
-node_modules/
-dist/
-*.log
-*.sqlite
-*.sqlite3
-*.db
 *.pem
 *.key
+*.p12
+*.pfx
+*credentials*.json
+
+# Dependencies and build output
+node_modules/
+.pnpm-store/
+dist/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+
+# Local data and logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.csv
+*.tsv
+*.bak
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
