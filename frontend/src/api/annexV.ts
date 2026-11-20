@@ -168,6 +168,89 @@ export function submitExpertAssessment(assessmentId: number, body: AnnexVExpertB
   return json<{ id: number }>(`/api/assessments/${assessmentId}/annex-v/expert`, { method: 'POST', body: JSON.stringify(body) }, signal, EXPERT_MESSAGES, [409])
 }
 
+/** Відповідь внесеної експертної оцінки: тексти й рівень — із серверного каталогу Додатка В. */
+export interface ExpertAnswer {
+  question_id: string
+  question: string | null
+  criterion: string | null
+  option_id: string | null
+  option: string | null
+  level: number | null
+}
+
+/** Запис експертної оцінки. Експерт — посада (expert_label), без ПІБ. */
+export interface ExpertRecord {
+  id: number
+  expert_label: string
+  form: number
+  version: string
+  created_at: string | null
+  entered_role: string | null
+  entered_by_user_id: number | null
+  answers: ExpertAnswer[]
+}
+
+/** Підсумок критерію: рівні окремих експертів (у порядку записів) і середній рівень. */
+export interface ExpertCriterionSummary {
+  criterion: string
+  title: string
+  levels: number[]
+  mean: number | null
+}
+
+export interface ExpertAssessmentList {
+  assessment_id: number
+  form: 1
+  version: string
+  count: number
+  items: ExpertRecord[]
+  by_criterion: ExpertCriterionSummary[]
+}
+
+export const EXPERT_LIST_MESSAGES: Readonly<Partial<Record<number, string>>> = {
+  403: 'Внесені експертні оцінки переглядає лише адміністратор.',
+  404: 'Цикл оцінювання не знайдено. Оновіть перелік циклів.',
+}
+
+const safeId = (value: unknown) => Number.isSafeInteger(value) ? value as number : null
+
+export function normalizeExpertAnswer(raw: unknown): ExpertAnswer | null {
+  if (!isRecord(raw) || typeof raw.question_id !== 'string' || !raw.question_id) return null
+  return {
+    question_id: raw.question_id, question: text(raw.question), criterion: text(raw.criterion),
+    option_id: text(raw.option_id), option: text(raw.option), level: num(raw.level),
+  }
+}
+
+export function normalizeExpertRecord(raw: unknown): ExpertRecord | null {
+  if (!isRecord(raw) || safeId(raw.id) === null || typeof raw.expert_label !== 'string') return null
+  const answers = Array.isArray(raw.answers) ? raw.answers.map(normalizeExpertAnswer).filter((item): item is ExpertAnswer => item !== null) : []
+  return {
+    id: raw.id as number, expert_label: raw.expert_label, form: num(raw.form) ?? 1, version: text(raw.version) ?? '',
+    created_at: text(raw.created_at), entered_role: text(raw.entered_role), entered_by_user_id: safeId(raw.entered_by_user_id), answers,
+  }
+}
+
+function normalizeCriterionSummary(raw: unknown): ExpertCriterionSummary | null {
+  if (!isRecord(raw) || typeof raw.criterion !== 'string' || !raw.criterion) return null
+  const levels = Array.isArray(raw.levels) ? raw.levels.map(num).filter((value): value is number => value !== null) : []
+  return { criterion: raw.criterion, title: text(raw.title) ?? raw.criterion, levels, mean: num(raw.mean) }
+}
+
+export function normalizeExpertList(raw: unknown, assessmentId: number): ExpertAssessmentList {
+  if (!isRecord(raw) || !Array.isArray(raw.items) || !Array.isArray(raw.by_criterion)) throw new ApiError(200, 'API повернув некоректний перелік експертних оцінок.')
+  const items = raw.items.map(normalizeExpertRecord).filter((item): item is ExpertRecord => item !== null)
+  return {
+    assessment_id: safeId(raw.assessment_id) ?? assessmentId, form: 1, version: text(raw.version) ?? ANNEX_V_VERSION, count: items.length, items,
+    by_criterion: raw.by_criterion.map(normalizeCriterionSummary).filter((item): item is ExpertCriterionSummary => item !== null),
+  }
+}
+
+/** Внесені експертні оцінки циклу (лише admin). Читання сервер не журналює. */
+export async function getExpertAssessments(assessmentId: number, signal?: AbortSignal): Promise<ExpertAssessmentList> {
+  return normalizeExpertList(await json<unknown>(`/api/assessments/${assessmentId}/annex-v/expert`, {}, signal, EXPERT_LIST_MESSAGES), assessmentId)
+}
+
 // ---------------------------------------------------------------- 3. Чеклист Додатка Б
 
 export function normalizeChecklistItem(raw: unknown): ChecklistItem | null {
