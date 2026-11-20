@@ -19,7 +19,7 @@ import trustme
 from app import v2_auth
 from app.v2_auth import MailDeliveryError, auth_db_path, deliver_mail, smtp_tls_context
 
-from v2_helpers import PASSWORD, make_user, preauth_client
+from v2_helpers import PASSWORD, make_user, preauth_client, wait_mail_queue
 
 SYNTHETIC_USER = "synthetic-smtp-user"
 SYNTHETIC_PASSWORD = "synthetic-smtp-password"
@@ -276,11 +276,14 @@ def test_password_reset_response_is_unchanged_when_smtp_tls_fails(smtp_env, serv
     server = servers(trustme.CA().issue_cert("localhost"))
     smtp_env(server)
     email = make_user()
+    before = _challenge_count()
     client, preauth = preauth_client()
     response = client.post("/v2/auth/password-reset/request", json={"email": email},
                            headers={"X-CSRF-Token": preauth})
     assert response.status_code == 200
     assert response.json() == {"status": "sent_if_account_exists"}
+    wait_mail_queue()                              # фоновий воркер: TLS відхилено → код не збережено
+    assert _challenge_count() == before and not server.messages
 
 
 # --- A17: заголовки листа і неявний TLS (V2_SMTP_TLS_MODE=implicit) ------------------------------------------

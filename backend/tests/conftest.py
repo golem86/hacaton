@@ -31,3 +31,14 @@ from app import seed, v2_auth  # noqa: E402
 v2_auth.SCRYPT_N = 2 ** 14
 
 seed.run(reset=True)
+
+import pytest  # noqa: E402
+
+from app import v2_mail_queue  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _drain_mail_queue(monkeypatch):
+    """Фонова черга листів (скидання пароля) спорожнюється до відкату monkeypatch (env, SMTP) цього тесту."""
+    yield
+    assert v2_mail_queue.mail_queue.wait_idle(timeout=30), "фонова черга листів не спорожнилася"

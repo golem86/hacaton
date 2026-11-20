@@ -7,6 +7,10 @@
 # (секрети не читаються в змінні й не виводяться) → запускає venv\Scripts\python.exe -E -s -X utf8 -m app.v2_role_cli
 # з робочого каталогу backend. Без -Apply — лише план. Backend зупиняти не потрібно (транзакція SQLite).
 # Коди виходу: 0 — виконано/план, 2 — відмова (немає користувача, та сама роль, останній адміністратор), 1 — помилка.
+# Кодування: увесь вивід — UTF-8. [Console]::OutputEncoding встановлюється ДО першого рядка (Windows PowerShell 5.1
+# кодує ним перенаправлений stdout — SSH, «> файл»), stdout Python (-X utf8) читається як UTF-8 через
+# System.Diagnostics.Process і виводиться рядками PowerShell. В інтерактивній консолі кодування повертається наприкінці
+# (рядки там пишуться через Unicode-API консолі й читабельні за будь-якої кодової сторінки).
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)] [ValidatePattern('^[^\s@<>"]{1,200}@[^\s@<>"]{1,200}$')] [string] $Email,
@@ -17,7 +21,35 @@ param(
 $ErrorActionPreference = 'Stop'
 $xmlPath = Join-Path $Root 'services\backend\integrity-v2-backend.xml'
 $python = Join-Path $Root 'venv\Scripts\python.exe'
+$utf8 = New-Object Text.UTF8Encoding($false)
+$prevEncoding = $null
+try { $prevEncoding = [Console]::OutputEncoding; [Console]::OutputEncoding = $utf8 } catch { }   # без консолі — як є
+$OutputEncoding = $utf8
 
+function Invoke-RoleCli([string]$Exe, [string[]]$Arguments, [string]$WorkingDirectory) {
+  # Аргументи вже перевірені (без пробілів і лапок), тож їх можна з'єднати без додаткового екранування.
+  foreach ($a in $Arguments) { if ($a -match '[\s"]') { throw 'Недопустимий аргумент команди' } }
+  $psi = New-Object Diagnostics.ProcessStartInfo
+  $psi.FileName = $Exe
+  $psi.Arguments = $Arguments -join ' '
+  $psi.WorkingDirectory = $WorkingDirectory
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.StandardOutputEncoding = $utf8
+  $psi.StandardErrorEncoding = $utf8
+  $proc = [Diagnostics.Process]::Start($psi)
+  try {
+    $stderr = $proc.StandardError.ReadToEndAsync()      # паралельне читання — без взаємоблокування буферів
+    while ($null -ne ($line = $proc.StandardOutput.ReadLine())) { $line }
+    $proc.WaitForExit()
+    foreach ($line in ($stderr.Result -split "\r?\n")) { if ($line) { [Console]::Error.WriteLine($line) } }
+    $script:cliExitCode = $proc.ExitCode
+  } finally { $proc.Dispose() }
+}
+
+$code = 1
 try {
   if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Потрібні права адміністратора Windows' }
   if (-not (Test-Path -LiteralPath $xmlPath -PathType Leaf)) { throw "Немає XML служби: $xmlPath" }
@@ -51,24 +83,26 @@ try {
   # Дочірній процес отримує лише потрібні змінні; -E вимикає PYTHON*-змінні, -s — сторонні site-packages користувача.
   $saved = @{}
   foreach ($name in @('INTEGRITY_DB', 'V2_AUTH_DB', 'APP_ENV', 'V2_SECRET_KEY')) { $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
-  $prevEncoding = [Console]::OutputEncoding
-  Push-Location -LiteralPath $workDir
   try {
     [Environment]::SetEnvironmentVariable('INTEGRITY_DB', $integrityDb, 'Process')
     [Environment]::SetEnvironmentVariable('V2_AUTH_DB', $authDb, 'Process')
     [Environment]::SetEnvironmentVariable('APP_ENV', $appEnv, 'Process')
     [Environment]::SetEnvironmentVariable('V2_SECRET_KEY', $null, 'Process')     # команді секрет не потрібен
-    try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false) } catch { }   # без консолі (SSH) — як є
-    & $python @cliArgs
-    $code = $LASTEXITCODE
+    $script:cliExitCode = 1
+    Invoke-RoleCli -Exe $python -Arguments $cliArgs -WorkingDirectory $workDir
+    $code = $script:cliExitCode
   } finally {
-    Pop-Location
-    try { [Console]::OutputEncoding = $prevEncoding } catch { }
     foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process') }
   }
   if ($code -eq 0 -and -not $Apply) { 'Щоб виконати, повторіть з -Apply.' }
-  exit $code
 } catch {
   "FAIL  $($_.Exception.Message)"
-  exit 1
+  $code = 1
+} finally {
+  # Лише в інтерактивній консолі (кодова сторінка вікна лишилася б змінена). При перенаправленні (SSH, файл)
+  # не повертаємо: PowerShell 5.1 може дописати буферизований вивід уже в старому кодуванні.
+  $redirected = $true
+  try { $redirected = [Console]::IsOutputRedirected } catch { }
+  if ($null -ne $prevEncoding -and -not $redirected) { try { [Console]::OutputEncoding = $prevEncoding } catch { } }
 }
+exit $code

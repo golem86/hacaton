@@ -8,13 +8,16 @@
   - 10 невдалих кодів 2FA за 24 год → 429 на verify, resend і на видачу коду під час входу;
   - ліміти спроб за (email, IP) і за IP; IP лише через довірений reverse proxy (S6);
   - реєстрація і вхід не розкривають існування email ні відповіддю, ні часом (S9, фіктивний scrypt);
-  - скидання пароля: ліміти на акаунт, атомарне підтвердження, однакова відповідь на запит;
+  - скидання пароля: ліміти на акаунт, атомарне підтвердження, однакова й однаково швидка відповідь на запит
+    (лист — у фоновій черзі);
   - dev-mail реєструється лише в development (S3, див. dev_router);
   - вхід, вихід, скидання пароля і блокування 2FA журналюються лише з роллю та id (S12).
   - V2_AUTH_DB зайнята довше за busy_timeout → 503 (AuthRoute), а не 500.
 """
+import logging
 import os
 import re
+from functools import partial
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -22,7 +25,7 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
 
-from .. import audit
+from .. import audit, v2_mail_queue
 from ..database import SessionLocal
 from ..request_security import (client_ip, delete_cookie, ensure_preauth, require_preauth_csrf,
                                 require_session_csrf, session_csrf_token, set_cookie)
@@ -33,7 +36,9 @@ from ..v2_auth import (ACCOUNT_WINDOW_MINUTES, PENDING_SESSION_TTL_MINUTES, RESE
                        find_user_id, is_busy_error, is_rate_limited, issue_challenge, latest_dev_mail, logout_all,
                        register_user, reset_password_with_code, session_cookie_name, two_factor_locked)
 
-BUSY_DETAIL = "Сервіс тимчасово зайнятий. Спробуйте ще раз"
+log = logging.getLogger("app.v2_mail")
+
+BUSY_DETAIL ="Сервіс тимчасово зайнятий. Спробуйте ще раз"
 
 
 class AuthRoute(APIRoute):
@@ -220,20 +225,30 @@ def resend_2fa(request: Request) -> dict[str, str]:
 @router.post("/password-reset/request", dependencies=[Depends(require_preauth_csrf)])
 def request_password_reset(body: ResetRequestBody, request: Request) -> dict[str, str]:
     """
-    Не розкриває існування акаунта: відповідь однакова завжди. Код видається, лише якщо пройдено обидва ліміти:
-    3 за 15 хв на (email, IP) і RESET_ISSUE_LIMIT за 24 год на акаунт (незалежно від кількості IP).
+    Не розкриває існування акаунта ні відповіддю, ні часом: запит лише ставить завдання у фонову чергу листів
+    (app/v2_mail_queue.py) і одразу відповідає однаково для будь-якого email. Пошук акаунта, ліміти й видача
+    коду виконуються у воркері. Переповнена черга відкидає завдання без зміни відповіді.
     """
     email = validate_email(body.email)
+    v2_mail_queue.mail_queue.submit(partial(_issue_reset_code, email, client_ip(request)))
+    return {"status": "sent_if_account_exists"}
+
+
+def _issue_reset_code(email: str, ip: str) -> None:
+    """
+    Фонове завдання. Код видається, лише якщо акаунт існує й пройдено обидва ліміти: 3 за 15 хв на (email, IP)
+    і RESET_ISSUE_LIMIT за 24 год на акаунт (незалежно від кількості IP). Код зберігається лише після листа.
+    Помилки пошти лише логуються (без email і подробиць SMTP).
+    """
     user_id = find_user_id(email)
     if user_id is not None \
-            and consume_rate_limit("password_reset", f"{email}|{client_ip(request)}", limit=3, window_minutes=15) \
+            and consume_rate_limit("password_reset", f"{email}|{ip}", limit=3, window_minutes=15) \
             and consume_rate_limit("password_reset_account", str(user_id), limit=RESET_ISSUE_LIMIT,
                                    window_minutes=ACCOUNT_WINDOW_MINUTES):
         try:
             issue_challenge(user_id, "password_reset", email)
-        except (MailNotConfigured, MailDeliveryError):
-            pass   # відповідь та сама — не розкриваємо стан пошти й акаунта
-    return {"status": "sent_if_account_exists"}
+        except (MailNotConfigured, MailDeliveryError) as error:
+            log.error("Лист скидання пароля не надіслано: %s", type(error).__name__)
 
 
 @router.post("/password-reset/confirm", dependencies=[Depends(require_preauth_csrf)])
