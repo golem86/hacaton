@@ -26,10 +26,12 @@ SYNTHETIC_PASSWORD = "synthetic-smtp-password"
 
 
 class FakeSMTPServer:
-    """Мінімальний SMTP (EHLO, STARTTLS, AUTH PLAIN, MAIL/RCPT/DATA) для одного з'єднання за раз."""
+    """Мінімальний SMTP (EHLO, STARTTLS, AUTH PLAIN, MAIL/RCPT/DATA) для одного з'єднання за раз.
+    implicit=True — TLS з першого байта (SMTPS, V2_SMTP_TLS_MODE=implicit)."""
 
-    def __init__(self, cert: trustme.LeafCert | None, offer_starttls: bool = True):
-        self.offer_starttls = offer_starttls
+    def __init__(self, cert: trustme.LeafCert | None, offer_starttls: bool = True, implicit: bool = False):
+        self.offer_starttls = offer_starttls and not implicit
+        self.implicit = implicit
         self.server_context = None
         if cert is not None:
             self.server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -62,6 +64,9 @@ class FakeSMTPServer:
 
     def _handle(self, conn: socket.socket) -> None:
         tls = False
+        if self.implicit:
+            conn = self.server_context.wrap_socket(conn, server_side=True)
+            tls = self.tls_established = True
         reader = conn.makefile("rb")
 
         def send(line: str) -> None:
@@ -276,3 +281,49 @@ def test_password_reset_response_is_unchanged_when_smtp_tls_fails(smtp_env, serv
                            headers={"X-CSRF-Token": preauth})
     assert response.status_code == 200
     assert response.json() == {"status": "sent_if_account_exists"}
+
+
+# --- A17: заголовки листа і неявний TLS (V2_SMTP_TLS_MODE=implicit) ------------------------------------------
+
+def test_message_has_date_and_message_id_headers(ca, trusted_ca, smtp_env, servers):
+    server = servers(ca.issue_cert("localhost"))
+    smtp_env(server)
+    deliver_mail("user@example.test", "Тема", "Ваш код: 123456.")
+    headers = re.split(r"\r?\n\r?\n", server.messages[0], maxsplit=1)[0]
+    assert re.search(r"^Date: \w{3}, \d{1,2} \w{3} \d{4} \d\d:\d\d:\d\d ([+-]0000|GMT)\r?$", headers, re.MULTILINE)
+    assert re.search(r"^Message-ID: <[^@>]+@example\.test>\r?$", headers, re.MULTILINE)
+    assert re.search(r"^From: no-reply@example\.test\r?$", headers, re.MULTILINE)
+
+
+def test_implicit_tls_delivers_mail_with_verified_context(ca, trusted_ca, smtp_env, servers, monkeypatch):
+    server = servers(ca.issue_cert("localhost"), implicit=True)
+    smtp_env(server)
+    monkeypatch.setenv("V2_SMTP_TLS_MODE", "implicit")
+    deliver_mail("user@example.test", "Тема", "Ваш код: 123456.")
+    assert server.tls_established and server.auth_seen and not server.auth_before_tls
+    assert len(server.messages) == 1
+    assert trusted_ca and all(c.verify_mode == ssl.CERT_REQUIRED and c.check_hostname for c in trusted_ca)
+
+
+@pytest.mark.parametrize("case", ["untrusted", "hostname"])
+def test_implicit_tls_refuses_untrusted_certificate(ca, smtp_env, servers, monkeypatch, case):
+    if case == "untrusted":
+        server = servers(trustme.CA().issue_cert("localhost"), implicit=True)
+    else:
+        trust_test_ca(monkeypatch, ca)
+        server = servers(ca.issue_cert("mail.example.test"), implicit=True)
+    smtp_env(server)
+    monkeypatch.setenv("V2_SMTP_TLS_MODE", "implicit")
+    with pytest.raises(MailDeliveryError) as error:
+        deliver_mail("user@example.test", "Тема", "Ваш код: 123456.")
+    assert isinstance(error.value.__cause__, ssl.SSLCertVerificationError)
+    assert not server.auth_seen and not server.messages
+
+
+def test_unknown_tls_mode_sends_nothing(ca, trusted_ca, smtp_env, servers, monkeypatch):
+    server = servers(ca.issue_cert("localhost"))
+    smtp_env(server)
+    monkeypatch.setenv("V2_SMTP_TLS_MODE", "none")
+    with pytest.raises(v2_auth.MailNotConfigured):
+        deliver_mail("user@example.test", "Тема", "Ваш код: 123456.")
+    assert not server.messages

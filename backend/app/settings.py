@@ -10,7 +10,10 @@ APP_ENV:
   - X-Role не обробляється (INTEGRITY_DEMO_XROLE заборонено);
   - dev-mail з OTP вимкнено (V2_AUTH_DEV_MAIL заборонено);
   - cookie лише Secure з префіксом __Host- (HTTPS);
-  - потрібен серверний секрет V2_SECRET_KEY (≥ 32 символи) для CSRF;
+  - потрібен серверний секрет V2_SECRET_KEY (≥ 32 символи) для CSRF і HMAC одноразових кодів;
+  - TRUSTED_PROXIES непорожній (IP клієнта для лімітів — лише через довірений reverse proxy);
+  - V2_CATALOG_NOW заборонено (підміна часу — лише для тестів);
+  - якщо задано V2_SMTP_HOST — потрібна справжня адреса V2_SMTP_FROM; V2_SMTP_TLS_MODE — starttls|implicit;
   - автоматичні міграції БД вимкнено (MIG-1).
 
 Значення читаються з оточення під час кожного виклику, тож тести можуть
@@ -18,8 +21,10 @@ APP_ENV:
 """
 import os
 import secrets
+from email.utils import parseaddr
 
 _DEV_SECRET = secrets.token_hex(32)   # лише для development: новий при кожному запуску
+SMTP_TLS_MODES = ("starttls", "implicit")
 
 
 def _flag(name: str) -> bool:
@@ -77,6 +82,24 @@ def trusted_proxies() -> set[str]:
     return {item.strip() for item in raw.split(",") if item.strip()}
 
 
+def smtp_tls_mode() -> str:
+    """V2_SMTP_TLS_MODE: starttls (типово, порт 587) або implicit (TLS з першого байта, порт 465)."""
+    value = os.environ.get("V2_SMTP_TLS_MODE", "").strip().lower() or "starttls"
+    if value not in SMTP_TLS_MODES:
+        raise RuntimeError("V2_SMTP_TLS_MODE має бути starttls або implicit")
+    return value
+
+
+def _smtp_sender_problem() -> str | None:
+    """У release справжня адреса відправника: з @ і доменом, не localhost (лист з no-reply@localhost відкинуть)."""
+    address = parseaddr(os.environ.get("V2_SMTP_FROM", "").strip())[1]
+    local, _, domain = address.rpartition("@")
+    domain = domain.lower().rstrip(".")
+    if not local or not domain or "." not in domain or domain == "localhost" or domain.endswith(".localhost"):
+        return "V2_SMTP_FROM має містити справжню адресу відправника (не no-reply@localhost), якщо задано V2_SMTP_HOST"
+    return None
+
+
 def validate_release_config() -> None:
     """Сервер не стартує в release з небезпечною конфігурацією."""
     if not is_release():
@@ -90,5 +113,16 @@ def validate_release_config() -> None:
         problems.append("V2_AUTH_SECURE_COOKIE=0 заборонено в release (потрібні Secure cookie через HTTPS)")
     if len(os.environ.get("V2_SECRET_KEY", "")) < 32:
         problems.append("V2_SECRET_KEY має містити щонайменше 32 символи")
+    if not trusted_proxies():
+        problems.append("TRUSTED_PROXIES має містити IP довіреного reverse proxy (без нього ліміти рахуються "
+                        "за адресою проксі, а не клієнта)")
+    if os.environ.get("V2_CATALOG_NOW"):
+        problems.append("V2_CATALOG_NOW заборонено в release (підміна поточного часу каталогу тестувань)")
+    if os.environ.get("V2_SMTP_HOST"):
+        sender_problem = _smtp_sender_problem()
+        if sender_problem:
+            problems.append(sender_problem)
+    if os.environ.get("V2_SMTP_TLS_MODE", "").strip().lower() not in ("",) + SMTP_TLS_MODES:
+        problems.append("V2_SMTP_TLS_MODE має бути starttls або implicit")
     if problems:
         raise RuntimeError("Небезпечна release-конфігурація: " + "; ".join(problems))

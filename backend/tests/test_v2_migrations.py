@@ -66,7 +66,7 @@ def test_mig4_prototype_auth_db_is_migrated_with_backup_and_no_data_loss(auth_db
     after = snapshot(auth_db)
     assert report["action"] == "migrated"
     assert Path(report["backup"]).exists() and snapshot(Path(report["backup"]))["version"] == 0
-    assert after["version"] == v2_auth.AUTH_SCHEMA_VERSION == 1
+    assert after["version"] == v2_auth.AUTH_SCHEMA_VERSION == 2      # auth schema 2: прототип → 2 одразу
     assert after["users"] == before["users"] and after["attempts"] == before["attempts"]
     assert after["sessions"] == before["sessions"]
     assert "two_factor_verified" in after["session_cols"]
@@ -88,7 +88,7 @@ def test_mig4_migration_is_idempotent(auth_db):
 
 def test_mig4_empty_auth_db_is_created_at_current_version(auth_db):
     assert v2_auth.migrate_auth_db()["action"] == "created"
-    assert snapshot(auth_db)["version"] == 1
+    assert snapshot(auth_db)["version"] == 2
 
 
 def test_mig4_release_check_refuses_old_or_missing_auth_db(auth_db):
@@ -117,6 +117,8 @@ def test_mig1_release_does_not_migrate_old_integrity_db(tmp_path, monkeypatch):
     monkeypatch.setenv("V2_SECRET_KEY", "x" * 40)
     monkeypatch.setenv("V2_AUTH_DEV_MAIL", "0")
     monkeypatch.setenv("INTEGRITY_DEMO_XROLE", "0")
+    monkeypatch.setenv("TRUSTED_PROXIES", "127.0.0.1")   # A15: обов'язковий у release
+    monkeypatch.delenv("V2_CATALOG_NOW", raising=False)   # A15: заборонений у release
     with pytest.raises(RuntimeError, match="Автоміграція в release вимкнена"):
         create_app()
     assert db.read_bytes() == before                    # файл БД не змінено
@@ -124,14 +126,17 @@ def test_mig1_release_does_not_migrate_old_integrity_db(tmp_path, monkeypatch):
 
 
 def test_mig1_explicit_migration_requires_confirmed_backup(tmp_path):
-    env = {**os.environ, "INTEGRITY_DB": str(tmp_path / "i.db"), "V2_AUTH_DB": str(tmp_path / "a.db")}
+    # Дочірній процес пише UTF-8 незалежно від кодової сторінки консолі (cp866/cp1251 у Windows)
+    env = {**os.environ, "INTEGRITY_DB": str(tmp_path / "i.db"), "V2_AUTH_DB": str(tmp_path / "a.db"),
+           "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     backend = Path(__file__).resolve().parents[1]
-    refused = subprocess.run([sys.executable, "-m", "app.migrations", "--apply"], cwd=backend, env=env,
+    refused = subprocess.run([sys.executable, "-X", "utf8", "-m", "app.migrations", "--apply"], cwd=backend, env=env,
                              capture_output=True, text=True, encoding="utf-8")
     assert refused.returncode != 0 and "--confirm-verified-backup" in (refused.stdout + refused.stderr)
     assert not (tmp_path / "i.db").exists() or (tmp_path / "i.db").stat().st_size == 0
-    applied = subprocess.run([sys.executable, "-m", "app.migrations", "--apply", "--confirm-verified-backup"],
+    applied = subprocess.run([sys.executable, "-X", "utf8", "-m", "app.migrations", "--apply",
+                              "--confirm-verified-backup"],
                              cwd=backend, env=env, capture_output=True, text=True, encoding="utf-8")
     assert applied.returncode == 0, applied.stderr
     with sqlite3.connect(tmp_path / "i.db") as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 5

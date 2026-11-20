@@ -23,6 +23,11 @@ os.environ["V2_CATALOG_NOW"] = "2026-11-18T12:00:00+00:00"
 os.environ.pop("V2_AUTH_SECURE_COOKIE", None)
 os.environ.pop("TRUSTED_PROXIES", None)
 
-from app import seed  # noqa: E402
+from app import seed, v2_auth  # noqa: E402
+
+# Тести працюють зі швидким scrypt (N=2^14 замість 2^17), як PASSWORD_HASHERS у тестах Django: сотні входів
+# інакше тривали б хвилини. Продакшн-параметри (N=2^17, r=8, p=1, maxmem 256 MiB) перевіряються в окремому
+# процесі без цього перевизначення (test_v2_passwords.py); тест часу відповіді вмикає їх явно.
+v2_auth.SCRYPT_N = 2 ** 14
 
 seed.run(reset=True)

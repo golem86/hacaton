@@ -10,10 +10,11 @@ from fastapi.testclient import TestClient
 from app import audit
 from app.database import SessionLocal
 from app.main import app
-from app.models import AccessToken, AuditEvent, Cycle, Question
+from app.models import AccessToken, AuditEvent, Cycle, Question, hash_access_code
 
 client = TestClient(app)
 ADMIN = {"X-Role": "admin"}
+DATA_OFFICER = {"X-Role": "data_officer"}   # коди видає лише data_officer (V2_HARDENING_CONTRACT, розділ 1)
 AUDITOR = {"X-Role": "auditor"}
 
 
@@ -43,10 +44,12 @@ def audit_rows_text() -> str:
 
 def test_issuing_tokens_is_logged_with_count_only():
     cycle_id = new_open_cycle()
-    tokens = client.post(f"/api/assessments/{cycle_id}/tokens", params={"count": 3}, headers=ADMIN).json()["tokens"]
+    tokens = client.post(f"/api/assessments/{cycle_id}/tokens", params={"count": 3},
+                         headers=DATA_OFFICER).json()["tokens"]
     [event] = events(cycle_id)
     assert event["action"] == "tokens.issue"
-    assert event["actor_role"] == "admin"
+    assert event["actor_role"] == "data_officer"
+    assert event["actor_user_id"] is None          # демо-заголовок X-Role — без користувача V2
     assert event["assessment_id"] == cycle_id
     assert event["details"] == {"count": 3}
     assert event["created_at"].endswith("Z")
@@ -62,7 +65,7 @@ def test_closing_assessment_is_logged():
 
 def test_events_are_newest_first():
     cycle_id = new_open_cycle()
-    client.post(f"/api/assessments/{cycle_id}/tokens", params={"count": 1}, headers=ADMIN)
+    client.post(f"/api/assessments/{cycle_id}/tokens", params={"count": 1}, headers=DATA_OFFICER)
     client.post(f"/api/assessments/{cycle_id}/close", headers=ADMIN)
     assert [e["action"] for e in events(cycle_id)] == ["assessment.close", "tokens.issue"]
 
@@ -73,9 +76,10 @@ def test_failed_operations_are_not_logged():
     cycle_id = new_open_cycle()
     client.post(f"/api/assessments/{cycle_id}/close", headers={"X-Role": "manager"})   # 403
     client.post(f"/api/assessments/{cycle_id}/tokens", headers={"X-Role": "respondent"})  # 403
+    client.post(f"/api/assessments/{cycle_id}/tokens", headers=ADMIN)                   # 403 (лише data_officer)
     client.post(f"/api/assessments/{cycle_id}/close", headers=ADMIN)                    # 200
     client.post(f"/api/assessments/{cycle_id}/close", headers=ADMIN)                    # 409
-    client.post(f"/api/assessments/{cycle_id}/tokens", headers=ADMIN)                   # 409 (закрито)
+    client.post(f"/api/assessments/{cycle_id}/tokens", headers=DATA_OFFICER)            # 409 (закрито)
     assert [e["action"] for e in events(cycle_id)] == ["assessment.close"]
 
 
@@ -83,7 +87,7 @@ def test_survey_submission_is_not_logged():
     """Подання анкет не журналюється: час подання міг би розкрити автора."""
     cycle_id = new_open_cycle()
     token = client.post(f"/api/assessments/{cycle_id}/tokens", params={"count": 1},
-                        headers=ADMIN).json()["tokens"][0]
+                        headers=DATA_OFFICER).json()["tokens"][0]
     db = SessionLocal()
     answers = [{"question_id": q.id, "value": 3} for q in db.query(Question).filter_by(kind="survey")]
     db.close()
@@ -133,7 +137,7 @@ def test_action_and_log_are_atomic():
     """Якщо дія не збереглася — не зберігся й запис журналу."""
     cycle_id = new_open_cycle()
     db = SessionLocal()
-    db.add(AccessToken(cycle_id=cycle_id, token="atomic-test", used=False))
+    db.add(AccessToken(cycle_id=cycle_id, token_hash=hash_access_code("atomic-test"), used=False))
     audit.record(db, "admin", "tokens.issue", cycle_id, count=1)
     db.rollback()
     db.close()

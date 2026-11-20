@@ -16,7 +16,7 @@ from starlette.requests import Request
 from app import request_security, settings
 from app.database import SessionLocal, engine
 from app.main import DropSurveySubmissionAccessLog, app, create_app
-from app.models import AccessToken, AuditEvent, Question, ResponseSet
+from app.models import AccessToken, AuditEvent, Question, ResponseSet, hash_access_code
 from app.v2_auth import auth_db_path, session_cookie_name, user_for_session
 
 from v2_helpers import PASSWORD, login, make_user, new_email, preauth_client, start_login, latest_code
@@ -31,6 +31,11 @@ def no_demo_xrole(monkeypatch):
 
 def admin_client():
     return login(make_user("admin"))
+
+
+def officer_client():
+    """Коди доступу видає лише data_officer (docs/V2_HARDENING_CONTRACT.md, розділ 1): admin отримує 403."""
+    return login(make_user("data_officer"))
 
 
 def issue_token(client, csrf, assessment_id=OPEN_ID) -> str:
@@ -94,7 +99,11 @@ def test_s1_admin_session_reaches_protected_routes():
     client, csrf = admin_client()
     assert client.get(f"/api/assessments/{CLOSED_ID}/results").status_code == 200
     assert client.get("/api/audit-events").status_code == 200
-    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=csrf).status_code == 201
+    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=csrf).status_code == 403     # n−1: не видає
+    officer, officer_csrf = officer_client()
+    assert officer.post(f"/api/assessments/{OPEN_ID}/tokens", headers=officer_csrf).status_code == 201
+    assert officer.get(f"/api/assessments/{CLOSED_ID}/results").status_code == 403              # і не бачить
+    assert officer.get("/api/audit-events").status_code == 403
 
 
 def test_s1_pending_session_without_2fa_is_not_a_principal():
@@ -112,7 +121,7 @@ def test_s2_prototype_anonymous_routes_do_not_exist():
 
 
 def test_s2_code_rules():
-    client, csrf = admin_client()
+    client, csrf = officer_client()
     anon = TestClient(app)
     token = issue_token(client, csrf)
     assert anon.post(f"/api/assessments/{OPEN_ID}/submissions", json=submission(token)).status_code == 201
@@ -124,7 +133,7 @@ def test_s2_code_rules():
 
 
 def test_s2_twenty_concurrent_posts_with_one_code_accept_exactly_one():
-    client, csrf = admin_client()
+    client, csrf = officer_client()
     token = issue_token(client, csrf)
     before = response_count()
     with ThreadPoolExecutor(max_workers=20) as pool:
@@ -141,6 +150,8 @@ def release_env(monkeypatch):
     monkeypatch.setenv("V2_SECRET_KEY", "x" * 40)
     monkeypatch.setenv("V2_AUTH_DEV_MAIL", "0")
     monkeypatch.setenv("INTEGRITY_DEMO_XROLE", "0")
+    monkeypatch.setenv("TRUSTED_PROXIES", "127.0.0.1")          # A15: у release обов'язковий
+    monkeypatch.delenv("V2_CATALOG_NOW", raising=False)          # A15: у release заборонений
     monkeypatch.delenv("V2_AUTH_SECURE_COOKIE", raising=False)
     monkeypatch.delenv("V2_SMTP_HOST", raising=False)
 
@@ -241,7 +252,7 @@ def test_s4_release_requires_origin_or_referer(monkeypatch):
 
 
 def test_s4_admin_api_write_requires_csrf():
-    client, csrf = admin_client()
+    client, csrf = officer_client()
     assert client.post(f"/api/assessments/{OPEN_ID}/tokens").status_code == 403
     assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=csrf).status_code == 201
 
@@ -263,8 +274,11 @@ def test_assessment_manager_requires_verified_admin_session_and_csrf():
     path = f"/api/assessments/{cycle_id}"
     assert admin.post(path + "/activate").status_code == 403
     assert admin.post(path + "/activate", headers=csrf).status_code == 200
-    assert admin.post(path + "/tokens?category=cadets").status_code == 403
-    assert admin.post(path + "/tokens?category=cadets", headers=csrf).status_code == 201
+    assert admin.post(path + "/tokens?category=cadets", headers=csrf).status_code == 403   # лише data_officer
+    officer, officer_csrf = officer_client()
+    assert officer.post(path + "/tokens?category=cadets").status_code == 403                # CSRF
+    assert officer.post(path + "/tokens?category=cadets", headers=officer_csrf).status_code == 201
+    assert officer.get(path + "/participation").status_code == 200
     assert anon.get(path + "/participation").status_code == 401
     assert user.get(path + "/participation").status_code == 403
     assert admin.get(path + "/participation").status_code == 200
@@ -397,8 +411,8 @@ def test_s10_access_log_drops_survey_submissions():
 # --- S11: наскрізна анонімність ------------------------------------------------
 
 def test_s11_end_to_end_anonymity():
-    admin, admin_csrf = admin_client()
-    token = issue_token(admin, admin_csrf)
+    officer, officer_csrf = officer_client()
+    token = issue_token(officer, officer_csrf)
     user, user_csrf = login(make_user())                 # респондент має активну сесію V2
     before_audit = SessionLocal().query(AuditEvent).count()
     response = user.post(f"/api/assessments/{OPEN_ID}/submissions", json=submission(token),
@@ -414,7 +428,7 @@ def test_s11_end_to_end_anonymity():
     token_fks = {fk["referred_table"] for fk in inspect(engine).get_foreign_keys("access_tokens")}
     assert token_fks == {"cycles"}
     db = SessionLocal()
-    assert db.query(AccessToken).filter_by(token=token).one().used is True
+    assert db.query(AccessToken).filter_by(token_hash=hash_access_code(token)).one().used is True
     assert db.query(AuditEvent).count() == before_audit  # подання не журналюється
     db.close()
     with sqlite3.connect(auth_db_path()) as con:          # V2_AUTH_DB не знає про анкети

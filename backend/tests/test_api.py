@@ -7,20 +7,38 @@ from sqlalchemy import inspect
 
 from app.database import SessionLocal, engine
 from app.main import app
-from app.models import AccessToken, Question, ResponseSet
+from app.models import AccessToken, Question, ResponseSet, hash_access_code
 
 client = TestClient(app)
 OPEN_ID = 3  # у демо-даних відкритий цикл 2026-II
 CLOSED_ID = 1
 
 ADMIN = {"X-Role": "admin"}
+DATA_OFFICER = {"X-Role": "data_officer"}   # коди видає лише data_officer (V2_HARDENING_CONTRACT, розділ 1)
 MANAGER = {"X-Role": "manager"}
 RESPONDENT = {"X-Role": "respondent"}
 
 
 def new_token(assessment_id: int = OPEN_ID) -> str:
     return client.post(f"/api/assessments/{assessment_id}/tokens", params={"count": 1},
-                       headers=ADMIN).json()["tokens"][0]
+                       headers=DATA_OFFICER).json()["tokens"][0]
+
+
+def stored_token(code: str) -> AccessToken | None:
+    """Рядок коду в БД (там лише SHA-256 коду)."""
+    db = SessionLocal()
+    row = db.query(AccessToken).filter_by(token_hash=hash_access_code(code)).one_or_none()
+    db.close()
+    return row
+
+
+def plant_token(cycle_id: int, code: str) -> str:
+    """Невикористаний код іншого циклу, записаний напряму (видати код закритому циклу API не дозволяє)."""
+    db = SessionLocal()
+    db.add(AccessToken(cycle_id=cycle_id, token_hash=hash_access_code(code), used=False))
+    db.commit()
+    db.close()
+    return code
 
 
 def full_answers(value: int = 4) -> list[dict]:
@@ -64,9 +82,11 @@ def test_respondent_cannot_see_participation_statistics():
     assert client.get(f"/api/assessments/{OPEN_ID}/participation", headers=RESPONDENT).status_code == 403
 
 
-def test_only_admin_issues_tokens():
+def test_only_data_officer_issues_tokens():
+    """D1: admin бачить результати, тож кодів не отримує (атака n−1); коди — лише data_officer."""
     assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=MANAGER).status_code == 403
-    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=ADMIN).status_code == 201
+    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=ADMIN).status_code == 403
+    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=DATA_OFFICER).status_code == 201
 
 
 def test_submission_depends_only_on_code_not_on_role():
@@ -95,9 +115,7 @@ def test_submission_is_saved_and_token_is_spent():
     assert response.status_code == 201
     assert response.json() == {"status": "accepted"}   # без номера анкети
     assert responses_count() == before + 1
-    db = SessionLocal()
-    assert db.query(AccessToken).filter_by(token=token).one().used is True
-    db.close()
+    assert stored_token(token).used is True
 
 
 def test_token_cannot_be_used_twice():
@@ -116,9 +134,7 @@ def test_fake_token_is_rejected():
 
 
 def test_token_from_other_assessment_is_rejected():
-    db = SessionLocal()
-    foreign = db.query(AccessToken).filter_by(cycle_id=2, used=False).first().token
-    db.close()
+    foreign = plant_token(2, "synthetic-foreign-cycle-code")
     response = client.post(f"/api/assessments/{OPEN_ID}/submissions",
                            json=submission(foreign), headers=RESPONDENT)
     assert response.status_code == 403
@@ -129,9 +145,7 @@ def test_incomplete_answers_are_rejected_and_token_kept():
     response = client.post(f"/api/assessments/{OPEN_ID}/submissions",
                            json=submission(token, answers=full_answers()[:-1]), headers=RESPONDENT)
     assert response.status_code == 422
-    db = SessionLocal()
-    assert db.query(AccessToken).filter_by(token=token).one().used is False  # можна спробувати ще раз
-    db.close()
+    assert stored_token(token).used is False  # можна спробувати ще раз
 
 
 def test_value_outside_scale_is_rejected():
@@ -141,9 +155,7 @@ def test_value_outside_scale_is_rejected():
 
 
 def test_closed_assessment_does_not_accept_answers():
-    db = SessionLocal()
-    token = db.query(AccessToken).filter_by(cycle_id=CLOSED_ID, used=False).first().token
-    db.close()
+    token = plant_token(CLOSED_ID, "synthetic-closed-cycle-code")
     response = client.post(f"/api/assessments/{CLOSED_ID}/submissions",
                            json=submission(token), headers=RESPONDENT)
     assert response.status_code == 409

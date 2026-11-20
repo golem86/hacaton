@@ -55,6 +55,8 @@ def report_tables(results: dict, generated_at: datetime) -> list[ReportTable]:
     components = results["components"]
     categories = results["categories"]
     total = results["responses_total"]
+    # /results не перелічує приховані категорії (D4): про приховування говорить лише прапорець
+    suppressed = results.get("suppressed", any(item.get("hidden") for item in categories))
     tables = [
         ReportTable(
             "Підсумок", ("Показник", "Значення"),
@@ -64,6 +66,7 @@ def report_tables(results: dict, generated_at: datetime) -> list[ReportTable]:
                 ("Стан циклу", "Закрито"),
                 ("Сформовано (UTC)", generated_at.strftime("%Y-%m-%d %H:%M")),
                 ("Поріг групи", results["min_group_size"]),
+                ("Групи, менші за поріг", HIDDEN if suppressed else "Немає"),
                 ("Анкет у циклі", _display(total, hidden=total is None)),
             ],
             (165, 340),

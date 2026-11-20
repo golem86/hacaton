@@ -14,7 +14,9 @@ from app.models import Answer, Cycle, ResponseSet
 
 client = TestClient(app)
 ADMIN = {"X-Role": "admin"}
+DATA_OFFICER = {"X-Role": "data_officer"}   # коди видає лише data_officer (V2_HARDENING_CONTRACT, розділ 1)
 MANAGER = {"X-Role": "manager"}
+PARTICIPATION = ADMIN                       # участь бачать admin і data_officer
 RESPONDENT = {"X-Role": "respondent"}
 CLOSED_ID = 1
 
@@ -59,7 +61,7 @@ def test_units_directory():
 
 
 def test_submission_with_free_text_unit_is_rejected():
-    token = client.post("/api/assessments/3/tokens", params={"count": 1}, headers=ADMIN).json()["tokens"][0]
+    token = client.post("/api/assessments/3/tokens", params={"count": 1}, headers=DATA_OFFICER).json()["tokens"][0]
     questionnaire = client.get("/api/assessments/3/questionnaires", headers=RESPONDENT).json()
     answers = [{"question_id": q["id"], "value": 3} for c in questionnaire for q in c["questions"]]
     response = client.post("/api/assessments/3/submissions", headers=RESPONDENT,
@@ -92,7 +94,7 @@ def test_only_admin_closes_assessment():
 def test_closed_assessment_rejects_new_tokens():
     cycle_id = new_open_cycle()
     client.post(f"/api/assessments/{cycle_id}/close", headers=ADMIN)
-    assert client.post(f"/api/assessments/{cycle_id}/tokens", headers=ADMIN).status_code == 409
+    assert client.post(f"/api/assessments/{cycle_id}/tokens", headers=DATA_OFFICER).status_code == 409
 
 
 # --- Агреговані результати --------------------------------------------------
@@ -117,18 +119,20 @@ def test_results_structure_and_scale():
         assert 0 <= comp["score"] <= 100
         assert len(comp["objective_indicators"]) == 1
         for cell in comp["by_category"]:
-            assert cell["hidden"] or 0 <= cell["score"] <= 100
+            assert cell["hidden"] is False and 0 <= cell["score"] <= 100
 
 
 def test_results_hide_small_categories_in_every_component():
-    """staff (4) прихована первинно, mgmt (6) — вторинно; у ВСІХ компонентах бал = None."""
+    """
+    staff (4) прихована первинно, mgmt (6) — вторинно. D4: приховані категорії не перелічуються
+    ні в categories, ні в by_category жодного компонента; suppressed=true.
+    """
     data = client.get(f"/api/assessments/{CLOSED_ID}/results", headers=MANAGER).json()
-    hidden = {c["category"] for c in data["categories"] if c["hidden"]}
-    assert hidden == {"mgmt", "staff"}
+    assert [c["category"] for c in data["categories"]] == ["cadets", "npp"]
+    assert data["suppressed"] is True
     for comp in data["components"]:
-        for cell in comp["by_category"]:
-            if cell["category"] in hidden:
-                assert cell == {"category": cell["category"], "score": None, "hidden": True}
+        assert [cell["category"] for cell in comp["by_category"]] == ["cadets", "npp"]
+    assert "staff" not in str(data) and "mgmt" not in str(data)
 
 
 def test_results_hidden_set_is_never_smaller_than_k():
@@ -142,15 +146,16 @@ def test_results_hidden_set_is_never_smaller_than_k():
     for rs in db.query(ResponseSet).filter_by(cycle_id=CLOSED_ID):
         true_sizes[rs.respondent_category] = true_sizes.get(rs.respondent_category, 0) + 1
     db.close()
-    hidden_total = sum(true_sizes[c["category"]] for c in data["categories"] if c["hidden"])
+    shown = {c["category"] for c in data["categories"]}
+    hidden_total = sum(n for category, n in true_sizes.items() if category not in shown)
     assert hidden_total == 0 or hidden_total >= data["min_group_size"]
 
 
 def test_secondary_suppression_prevents_count_reconstruction_across_api_slices():
     """A total minus visible groups must not reveal the size of a primary-small group."""
     results = client.get(f"/api/assessments/{CLOSED_ID}/results", headers=MANAGER).json()
-    participation = client.get(f"/api/assessments/{CLOSED_ID}/participation", headers=MANAGER).json()
-    by_unit = client.get(f"/api/assessments/{CLOSED_ID}/participation?by_unit=true", headers=MANAGER).json()
+    participation = client.get(f"/api/assessments/{CLOSED_ID}/participation", headers=PARTICIPATION).json()
+    by_unit = client.get(f"/api/assessments/{CLOSED_ID}/participation?by_unit=true", headers=PARTICIPATION).json()
     k = results["min_group_size"]
 
     db = SessionLocal()
@@ -162,33 +167,32 @@ def test_secondary_suppression_prevents_count_reconstruction_across_api_slices()
         db.close()
 
     primary_small = {category for category, size in actual.items() if size < k}
-    hidden = {row["category"] for row in results["categories"] if row["hidden"]}
+    hidden = set(actual) - {row["category"] for row in results["categories"]}   # приховані не перелічуються
     assert primary_small  # the seed must exercise primary suppression
     assert primary_small <= hidden
-    assert hidden == {row["category"] for row in participation["groups"] if row["hidden"]}
+    assert hidden == set(actual) - {row["category"] for row in participation["groups"]}
     assert hidden == {"staff", "mgmt"}  # staff=4; mgmt=6 is secondary suppression
+    assert results["suppressed"] is participation["suppressed"] is by_unit["suppressed"] is True
 
-    visible = {row["category"]: row["responses"] for row in results["categories"] if not row["hidden"]}
-    assert visible == {row["category"]: row["responses"] for row in participation["groups"] if not row["hidden"]}
+    visible = {row["category"]: row["responses"] for row in results["categories"]}
+    assert visible == {row["category"]: row["responses"] for row in participation["groups"]}
     assert results["responses_total"] == participation["responses_total"] == by_unit["responses_total"]
     remainder = results["responses_total"] - sum(visible.values())
     assert remainder == sum(actual[category] for category in hidden)
     assert remainder >= k
     assert all(remainder != actual[category] for category in primary_small)
-    assert all(row["responses"] is None for row in results["categories"] if row["hidden"])
+    assert all(row["hidden"] is False for row in results["categories"])
 
-    for row in by_unit["groups"]:
-        if row["category"] in hidden:
-            assert row["hidden"] and row["responses"] is None
+    assert not [row for row in by_unit["groups"] if row["category"] in hidden]
     for category, category_total in visible.items():
         cells = [row for row in by_unit["groups"] if row["category"] == category]
-        unit_remainder = category_total - sum(row["responses"] for row in cells if not row["hidden"])
+        unit_remainder = category_total - sum(row["responses"] for row in cells)
         assert unit_remainder == 0 or unit_remainder >= k
 
     assert [component["code"] for component in results["components"]] == [f"C{i}" for i in range(1, 8)]
     for component in results["components"]:
-        assert {cell["category"] for cell in component["by_category"] if cell["hidden"]} == hidden
-        assert all(cell["score"] is None for cell in component["by_category"] if cell["hidden"])
+        assert {cell["category"] for cell in component["by_category"]} == set(visible)
+        assert all(cell["hidden"] is False and cell["score"] is not None for cell in component["by_category"])
 
 
 def test_results_score_matches_manual_calculation():
