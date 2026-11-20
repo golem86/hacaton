@@ -57,8 +57,8 @@ test('сторінка входу показує базову форму авт�
 
 test('повний вхід з 2FA відкриває Dashboard, а вихід завершує сесію', async ({ page }) => {
   await loginInBrowser(page, adminEmail)
-  await expect(page.getByRole('button', { name: 'Вийти' })).toBeVisible()
-  await page.getByRole('button', { name: 'Вийти' }).click()
+  await expect(page.getByRole('button', { name: 'Вийти', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Вийти', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)
   expect((await page.request.get(`${apiBaseURL}/v2/auth/me`)).status()).toBe(401)
 })
