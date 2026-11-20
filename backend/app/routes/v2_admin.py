@@ -1,14 +1,15 @@
 """
-Адміністративні маршрути V2 — лише Reporting (V2 Integration Contract, розділ 3.3).
+Адміністративні маршрути V2 — Reporting (V2 Integration Contract, розділ 3.3).
+Керування користувачами, ролями й сесіями — у routes/v2_admin_users.py (підключено наприкінці файлу).
 
 Дані циклів, результатів і порівнянь frontend отримує з канонічних /api/* (сесія admin).
 Дублікати прототипу (/v2/admin/assessments*, /v2/admin/comparisons) вилучено,
 щоб на ті самі дані не було двох контрактів.
 """
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Path, Response
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -17,10 +18,12 @@ from ..services.reporting import render_pdf, render_xlsx, report_tables
 from .v2_auth import require_v2_role
 
 router = APIRouter(prefix="/v2/admin", tags=["Dashboard V2 Admin — Reporting"])
+# id циклу в межах 1..2^63-1: інакше SQLite не може зв'язати параметр і відповідь була б 500
+AssessmentId = Annotated[int, Path(ge=1, le=2 ** 63 - 1)]
 
 
 @router.get("/reports/{assessment_id}")
-def admin_report(assessment_id: int, response: Response,
+def admin_report(assessment_id: AssessmentId, response: Response,
                  _: dict = Depends(require_v2_role("admin")), db: Session = Depends(get_db)):
     results = assessment_results(assessment_id, db)
     response.headers["Cache-Control"] = "no-store"
@@ -41,7 +44,7 @@ XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 @router.get("/reports/{assessment_id}/export", response_class=Response,
             responses={200: {"content": {PDF_TYPE: {}, XLSX_TYPE: {}}}})
-def admin_report_export(assessment_id: int, format: Literal["pdf", "xlsx"],
+def admin_report_export(assessment_id: AssessmentId, format: Literal["pdf", "xlsx"],
                         _: dict = Depends(require_v2_role("admin")), db: Session = Depends(get_db)):
     results = assessment_results(assessment_id, db)
     tables = report_tables(results, datetime.now(timezone.utc))
@@ -51,3 +54,10 @@ def admin_report_export(assessment_id: int, format: Literal["pdf", "xlsx"],
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
     })
+
+
+# Керування користувачами, ролями й сесіями (docs/V2_HARDENING_CONTRACT.md, розділ 3) — окремий модуль
+# з тим самим префіксом /v2/admin; підключається тут, тому main.py змінювати не потрібно.
+from .v2_admin_users import router as users_router  # noqa: E402
+
+router.include_router(users_router)

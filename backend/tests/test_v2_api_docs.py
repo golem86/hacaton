@@ -51,12 +51,14 @@ EXPECTED_CSRF = {
     ("POST", "/v2/auth/2fa/resend"): "session",
     ("POST", "/v2/auth/logout"): "session",
     ("POST", "/v2/auth/logout-all"): "session",                          # docs/V2_HARDENING_CONTRACT.md, розділ 3
+    ("POST", "/v2/admin/users/{user_id}/role"): "session",
+    ("POST", "/v2/admin/users/{user_id}/revoke-sessions"): "session",
     ("POST", "/v2/user/attempts"): "session",
     ("PATCH", "/v2/user/attempts/{attempt_id}"): "session",
     ("POST", "/v2/user/attempts/{attempt_id}/complete"): "session",
 }
 PATH_VALUES = {"assessment_id": str(OPEN_ID), "attempt_id": "nonexistent", "version": "team-results-demo-0.1",
-               "action_id": "1"}
+               "action_id": "1", "user_id": "1"}
 
 
 @pytest.fixture(autouse=True)
