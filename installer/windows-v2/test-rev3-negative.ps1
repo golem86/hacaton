@@ -592,27 +592,28 @@ try {
   Add-Res 'Q14' ($m -like 'STOP:*НЕВІДОМИЙ або не завершено*CRITICAL*') 'wait-виняток, Kill виконано, але завершення не підтверджено → CRITICAL STOP'
 
   # ---------------- ДЕЛЬТА 3 + B3 — fail-fast відновлення SQLite (справжні файли й v2_db_tool; синтетичні БД: integrity_v2 v2 з порожніми таблицями seed, v2_auth v1; процеси фейкові)
+  $Vi = $V2DbSet['integrity_v2.db']; $Va = $V2DbSet['v2_auth.db']          # версії поточного релізу ($V2ReleaseSchema)
   $r3 = Join-Path $tmp 'srv3\integrity-v2'; $d3 = Join-Path $r3 'data'; $null = New-Item -ItemType Directory $d3
   $seedT = 'answers', 'components', 'cycles', 'objective_indicators', 'questions', 'recommendations', 'response_sets', 'units'
-  $ddlF = Join-Path $tmp 'auth-ddl.sql'; [IO.File]::WriteAllText($ddlF, ((Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'auth-ddl') -Utf8 -What 'auth-ddl') -join "`n"))
-  $mkA = { param($path) $null = Invoke-V2Native -Exe $Py -ArgList @('-I', '-c', 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.executescript(open(sys.argv[2],encoding=''utf-8'').read()); c.execute(''pragma user_version=1''); c.commit(); c.close()', $path, $ddlF) -What 'mkdb auth (release DDL)' }
-  $mk = { param($path, $ver) $ddl = if ($ver -eq 3) { ($seedT | ForEach-Object { "c.execute('create table if not exists $_(x)'); " }) -join '' } else { '' }
+  $ddlF = Join-Path $tmp 'auth-ddl.sql'; [IO.File]::WriteAllText($ddlF, ((Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'ddl', '--kind', 'auth', '--expect-version', "$Va") -Utf8 -What 'auth ddl') -join "`n"))
+  $mkA = { param($path) $null = Invoke-V2Native -Exe $Py -ArgList @('-I', '-c', 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.executescript(open(sys.argv[2],encoding=''utf-8'').read()); c.execute(''pragma user_version='' + sys.argv[3]); c.commit(); c.close()', $path, $ddlF, "$Va") -What 'mkdb auth (release DDL)' }
+  $mk = { param($path, $ver) $ddl = if ($ver -ge 3) { ($seedT | ForEach-Object { "c.execute('create table if not exists $_(x)'); " }) -join '' } else { '' }
           $null = Invoke-V2Native -Exe $Py -ArgList @('-c', "import sqlite3; c=sqlite3.connect(r'$path'); c.execute('create table if not exists t(x)'); $ddl c.execute('pragma user_version=$ver'); c.commit(); c.close()") -What 'mkdb' }
-  function New-DataSet([string]$dir) { & $mk (Join-Path $dir 'integrity_v2.db') 3; Set-Content (Join-Path $dir 'integrity_v2.db-wal') 'wal'; Set-Content (Join-Path $dir 'integrity_v2.db-shm') 'shm'; & $mkA (Join-Path $dir 'v2_auth.db') }
+  function New-DataSet([string]$dir) { & $mk (Join-Path $dir 'integrity_v2.db') $Vi; Set-Content (Join-Path $dir 'integrity_v2.db-wal') 'wal'; Set-Content (Join-Path $dir 'integrity_v2.db-shm') 'shm'; & $mkA (Join-Path $dir 'v2_auth.db') }
   New-DataSet $d3
   $bkd = Join-Path $tmp 'backups3'; $null = New-Item -ItemType Directory $bkd
-  $srcI = Join-Path $tmp 'srcI.db'; & $mk $srcI 3; $srcA = Join-Path $tmp 'srcA.db'; & $mkA $srcA
-  $bkI = Join-Path $bkd 'integrity_v2.db'; $null = Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'backup', $srcI, $bkI, '--expect-version', '3') -What 'mkbackup I'
-  $bkA = Join-Path $bkd 'v2_auth.db'; $null = Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'backup', $srcA, $bkA, '--expect-version', '1') -What 'mkbackup A'
+  $srcI = Join-Path $tmp 'srcI.db'; & $mk $srcI $Vi; $srcA = Join-Path $tmp 'srcA.db'; & $mkA $srcA
+  $bkI = Join-Path $bkd 'integrity_v2.db'; $null = Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'backup', $srcI, $bkI, '--expect-version', "$Vi") -What 'mkbackup I'
+  $bkA = Join-Path $bkd 'v2_auth.db'; $null = Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'backup', $srcA, $bkA, '--expect-version', "$Va") -What 'mkbackup A'
   $shaI = (Get-FileHash -LiteralPath $bkI -Algorithm SHA256).Hash.ToLower(); $shaA = (Get-FileHash -LiteralPath $bkA -Algorithm SHA256).Hash.ToLower()
-  function New-Items { @(@{ Db = 'integrity_v2.db'; Backup = $bkI; Sha256 = $shaI; Version = 3 }, @{ Db = 'v2_auth.db'; Backup = $bkA; Sha256 = $shaA; Version = 1 }) }
+  function New-Items { @(@{ Db = 'integrity_v2.db'; Backup = $bkI; Sha256 = $shaI; Version = $Vi }, @{ Db = 'v2_auth.db'; Backup = $bkA; Sha256 = $shaA; Version = $Va }) }
   $items = New-Items
   function Get-State([string]$dir) { (@(Get-ChildItem -LiteralPath $dir -File | ForEach-Object Name | Sort-Object) -join ',') }
   function Set-Proof($tree, [int]$unres = 0) { $global:Fake.Job = @{ Found = $true; SdOk = $true; LimitsOk = $true; Active = 0; Pids = @(); Alive = @(); Unknown = @(); TerminateWorks = $true; HoldFails = $false }; $V2StopProof['integrity-v2-backend'] = [pscustomobject]@{ Name = 'integrity-v2-backend'; Tree = $tree; Unresolved = $unres; VerifiedUtc = [datetime]::UtcNow
                                                 Completeness = 'job'; JobVerified = $true; JobName = 'Global\integrity-v2-backend-job'; JobActive = 0; OwnerScanAlive = 0; Lease = 'HOLDER' } }
   $before3 = Get-State $d3
   $V2Services['integrity-v2-backend'].Job = 'Global\integrity-v2-backend-job'
-  $savedRoot = $V2Root; $V2Root = $r3
+  $savedRoot = $V2Root; $V2Root = $r3; $V2AppRelease = 'integrity-v2-sim'          # каталог релізу: Invoke-V2Py тут підмінено
   $known3 = @([pscustomobject]@{ Pid = 500; StartUtcTicks = $T0.Ticks; Exe = $svcExe; CommandLine = ''; ParentPid = 1; ParentStartUtcTicks = 0; Owner = $acct; Handle = $null })
   try {
     Reset-Fake; $V2StopProof.Clear()
@@ -636,11 +637,11 @@ try {
     $kc = @(
       @('K1', 'одна БД замість двох', { , @((New-Items)[0]) }, '*рівно 2 БД*'),
       @('K2', 'три елементи', { $x = New-Items; @($x[0], $x[1], $x[1]) }, '*рівно 2 БД*'),
-      @('K3', 'дубль БД integrity_v2.db', { $x = New-Items; $x[1].Db = 'integrity_v2.db'; $x[1].Version = 3; $x }, '*integrity_v2.db указано двічі*'),
-      @('K4', 'дубль БД з іншим регістром', { $x = New-Items; $x[1].Db = 'INTEGRITY_V2.db'; $x[1].Version = 3; $x }, '*указано двічі*'),
-      @('K5', 'integrity_v2.db з user_version 1', { $x = New-Items; $x[0].Version = 1; $x }, '*integrity_v2.db — user_version 1, потрібно 3*'),
-      @('K6', 'v2_auth.db з user_version 2', { $x = New-Items; $x[1].Version = 2; $x }, '*v2_auth.db — user_version 2, потрібно 1*'),
-      @('K7', 'версія рядком', { $x = New-Items; $x[0].Version = '3'; $x }, '*user_version 3, потрібно 3*'),
+      @('K3', 'дубль БД integrity_v2.db', { $x = New-Items; $x[1].Db = 'integrity_v2.db'; $x[1].Version = $Vi; $x }, '*integrity_v2.db указано двічі*'),
+      @('K4', 'дубль БД з іншим регістром', { $x = New-Items; $x[1].Db = 'INTEGRITY_V2.db'; $x[1].Version = $Vi; $x }, '*указано двічі*'),
+      @('K5', 'integrity_v2.db з user_version 1', { $x = New-Items; $x[0].Version = 1; $x }, "*integrity_v2.db — user_version 1, потрібно $Vi*"),
+      @('K6', "v2_auth.db з user_version $($Va + 1)", { $x = New-Items; $x[1].Version = $Va + 1; $x }, "*v2_auth.db — user_version $($Va + 1), потрібно $Va*"),
+      @('K7', 'версія рядком', { $x = New-Items; $x[0].Version = "$Vi"; $x }, "*user_version $Vi, потрібно $Vi*"),
       @('K8', 'один шлях копії для обох БД', { $x = New-Items; $x[1].Backup = $bkI; $x }, '*указано для двох БД*'),
       @('K9', 'той самий шлях в іншому записі (регістр, ..)', { $x = New-Items; $x[1].Backup = (Join-Path $bkd '..\backups3\INTEGRITY_V2.DB'); $x }, '*указано для двох БД*'),
       @('K10', 'невідома БД', { $x = New-Items; $x[1].Db = 'other.db'; $x }, '*невідома БД*'),
@@ -681,8 +682,8 @@ try {
     Set-Item function:Invoke-V2Py { param([string]$Py, [string]$Backend, [string[]]$ArgList, [string]$What) $global:SchemaEnv = "$(Get-V2EnvVar 'INTEGRITY_DB')|$(Get-V2EnvVar 'V2_AUTH_DB')"; 'SCHEMA OK' }
     try { $r = @(Invoke-V2DbRestore -DataDir $d3b -Known @() -Py $Py -DbTool $dbTool -Items (New-Items)) } finally { Set-Item function:Invoke-V2Py $origPy }
     $st = Get-State $d3b
-    $verI = Invoke-V2DbTool -Py $Py -DbTool $dbTool -ArgList @('verify', (Join-Path $d3b 'integrity_v2.db'), '--expect-version', '3')
-    $verA = Invoke-V2DbTool -Py $Py -DbTool $dbTool -ArgList @('verify', (Join-Path $d3b 'v2_auth.db'), '--expect-version', '1')
+    $verI = Invoke-V2DbTool -Py $Py -DbTool $dbTool -ArgList @('verify', (Join-Path $d3b 'integrity_v2.db'), '--expect-version', "$Vi")
+    $verA = Invoke-V2DbTool -Py $Py -DbTool $dbTool -ArgList @('verify', (Join-Path $d3b 'v2_auth.db'), '--expect-version', "$Va")
     Add-Res 'D3i' ($r[0] -like 'PASS*набір відновлення*' -and $r[-1] -like 'PASS*відновлення завершено*' -and $st -match 'RESTORE-OK-' -and $st -notmatch 'RESTORE-(IN-PROGRESS|FAILED)' -and $st -match 'db-wal\.broken-' -and $st -match 'v2_auth\.db\.broken-' -and $verI -like 'VERIFY OK*' -and $verA -like 'VERIFY OK*' -and (@(Assert-V2NoRestoreBlock -DataDir $d3b))[-1] -like 'PASS*') 'успіх (доказ з деревом з 1 процесу): обидві БД verify OK, .broken-* збережено, RESTORE-OK, старт не заблоковано'
     Add-Res 'D3k' ($global:SchemaEnv -eq "$(Join-Path $d3b 'integrity_v2.db')|$(Join-Path $d3b 'v2_auth.db')" -and $null -eq (Get-V2EnvVar 'INTEGRITY_DB') -and $null -eq (Get-V2EnvVar 'V2_AUTH_DB')) 'B3: перевірка схеми запускається з INTEGRITY_DB/V2_AUTH_DB = відновлені файли data\ (а не БД за замовчуванням); env після неї відновлено'
     $d3c = Join-Path $r3 'data-schema'; $null = New-Item -ItemType Directory $d3c; New-DataSet $d3c
@@ -700,10 +701,10 @@ try {
     Set-Proof $known3; $V2StopProof['integrity-v2-backend'].OwnerScanAlive = 2
     Add-Res 'R05.ownerscan' ((Test-Stop { Invoke-V2DbRestore -DataDir $dR -Known @() -Py $Py -DbTool $dbTool -Items (New-Items) } '*без моделі повноти*') -and (& $noMut $dR $bR)) 'доказ із живими процесами акаунта → BLOCKED'
     # R06 — одна з копій пошкоджена / неповна → STOP до мутації
-    $bad06 = Join-Path $tmp 'auth-incomplete.db'; & $mk $bad06 1                                       # v1, але без таблиць V2
+    $bad06 = Join-Path $tmp 'auth-incomplete.db'; & $mk $bad06 $Va                                     # версія auth релізу, але без таблиць V2
     $x = New-Items; $x[1].Backup = $bad06; $x[1].Sha256 = (Get-FileHash -LiteralPath $bad06 -Algorithm SHA256).Hash.ToLower()
     Set-Proof $known3
-    Add-Res 'R06.auth-incomplete' ((Test-Stop { Invoke-V2DbRestore -DataDir $dR -Known @() -Py $Py -DbTool $dbTool -Items $x } '*auth-schema: FAIL A05*') -and (& $noMut $dR $bR)) 'неповна копія v2_auth.db (user_version 1, без таблиць) → строгий checker STOP до мутації; RESTORE-OK неможливий'
+    Add-Res 'R06.auth-incomplete' ((Test-Stop { Invoke-V2DbRestore -DataDir $dR -Known @() -Py $Py -DbTool $dbTool -Items $x } '*auth-schema: FAIL A05*') -and (& $noMut $dR $bR)) 'неповна копія v2_auth.db (user_version релізу, без таблиць) → строгий checker STOP до мутації; RESTORE-OK неможливий'
     $bad06b = Join-Path $tmp 'integrity-corrupt.db'; Copy-Item -LiteralPath $bkI -Destination $bad06b
     $bytes = [IO.File]::ReadAllBytes($bad06b); for ($q = 0; $q -lt 16; $q++) { $bytes[$q] = 0x41 }; [IO.File]::WriteAllBytes($bad06b, $bytes)
     $x = New-Items; $x[0].Backup = $bad06b; $x[0].Sha256 = (Get-FileHash -LiteralPath $bad06b -Algorithm SHA256).Hash.ToLower()
@@ -802,12 +803,12 @@ try {
       Add-Res 'SC.rollback-clean' (@($r | Where-Object { $_ -like 'PASS  W5 sidecars *: режим rollback; -journal відсутній; -wal відсутній; -shm відсутній' }).Count -eq 2) 'власні перевірки відновлених БД (rollback-режим) не лишають жодного sidecar-а'
       # SC.walmode — БД у WAL-режимі: власні read-only перевірки лишають -wal 0 B і -shm → допустимо (RESTORE-OK); непорожній -wal → FAILED
       $walPy = 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(''pragma journal_mode=wal''); c.close()'
-      $srcIW = Join-Path $tmp 'srcIW.db'; & $mk $srcIW 3; $null = Invoke-V2Native -Exe $Py -ArgList @('-I', '-c', $walPy, $srcIW) -What 'wal I'
+      $srcIW = Join-Path $tmp 'srcIW.db'; & $mk $srcIW $Vi; $null = Invoke-V2Native -Exe $Py -ArgList @('-I', '-c', $walPy, $srcIW) -What 'wal I'
       $srcAW = Join-Path $tmp 'srcAW.db'; & $mkA $srcAW; $null = Invoke-V2Native -Exe $Py -ArgList @('-I', '-c', $walPy, $srcAW) -What 'wal A'
       $bkdW = Join-Path $tmp 'backups3w'; $null = New-Item -ItemType Directory $bkdW
-      $bkIW = Join-Path $bkdW 'integrity_v2.db'; $null = Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'backup', $srcIW, $bkIW, '--expect-version', '3') -What 'backup IW'
-      $bkAW = Join-Path $bkdW 'v2_auth.db'; $null = Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'backup', $srcAW, $bkAW, '--expect-version', '1') -What 'backup AW'
-      function New-WalItems { @(@{ Db = 'integrity_v2.db'; Backup = $bkIW; Sha256 = (Get-FileHash -LiteralPath $bkIW -Algorithm SHA256).Hash.ToLower(); Version = 3 }, @{ Db = 'v2_auth.db'; Backup = $bkAW; Sha256 = (Get-FileHash -LiteralPath $bkAW -Algorithm SHA256).Hash.ToLower(); Version = 1 }) }
+      $bkIW = Join-Path $bkdW 'integrity_v2.db'; $null = Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'backup', $srcIW, $bkIW, '--expect-version', "$Vi") -What 'backup IW'
+      $bkAW = Join-Path $bkdW 'v2_auth.db'; $null = Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'backup', $srcAW, $bkAW, '--expect-version', "$Va") -What 'backup AW'
+      function New-WalItems { @(@{ Db = 'integrity_v2.db'; Backup = $bkIW; Sha256 = (Get-FileHash -LiteralPath $bkIW -Algorithm SHA256).Hash.ToLower(); Version = $Vi }, @{ Db = 'v2_auth.db'; Backup = $bkAW; Sha256 = (Get-FileHash -LiteralPath $bkAW -Algorithm SHA256).Hash.ToLower(); Version = $Va }) }
       $hIW = [IO.File]::ReadAllBytes($bkIW)
       $dW = New-WData 'sc-walmode'; Reset-Fake; Set-Proof $known3; Set-FakeBackendSvc
       try { $r = @(Invoke-V2DbRestore -DataDir $dW -Known @() -Py $Py -DbTool $dbTool -Items (New-WalItems)) } catch { $r = @("STOP-CAUGHT: $($_.Exception.Message)") }
@@ -835,7 +836,7 @@ try {
         Add-Res $c[0] ($m -like "STOP:$($c[3])" -and $relOk -and $modeOk) "$($c[0]): відмова → lease звільнено, proof видалено; start type $(if ($c[0] -eq 'L.mutation') { 'лишається Disabled (була мутація)' } else { 'Manual (мутації не було)' })"
       }
     } finally { Undo-W }
-  } finally { $V2Root = $savedRoot; $V2Services['integrity-v2-backend'].Job = $null; $V2StopProof.Clear() }
+  } finally { $V2Root = $savedRoot; $V2AppRelease = $null; $V2Services['integrity-v2-backend'].Job = $null; $V2StopProof.Clear() }
 
   # ================================================================ CI.* — CLEAN INSTALL (окремий сценарій; фейкові служби, справжні файли SQLite)
   $ciRoot = Join-Path $tmp 'ci'; $null = New-Item -ItemType Directory $ciRoot
@@ -1037,7 +1038,7 @@ try {
   # --- C7 (№4): fault injection на кожному кроці ініціалізації БД (seed, verify, fingerprint, backup, migrations, schema, auth-schema)
   $realPyF = (Get-Item function:Invoke-V2Py).ScriptBlock; $realDbF = (Get-Item function:Invoke-V2DbTool).ScriptBlock
   foreach ($fc in @(@('seed', 'py', 'app.seed'), @('verify', 'db', 'verify'), @('fingerprint', 'fp', ''), @('backup', 'db', 'backup'),
-                    @('migrations', 'py', 'app.migrations'), @('schema', 'schema', ''), @('auth-schema', 'db', 'auth-schema'))) {
+                    @('migrations', 'py', 'app.migrations'), @('schema', 'schema', ''), @('integrity-schema', 'db', 'schema'), @('auth-schema', 'db', 'auth-schema'))) {
     $script:fcStep = $fc
     Set-Item function:script:Invoke-V2Py { param([string]$Py, [string]$Backend, [string[]]$ArgList, [string]$What)
       $j = $ArgList -join ' '
@@ -1045,7 +1046,7 @@ try {
       if ($j -like '*check_schema*') { if ($script:fcStep[1] -eq 'schema') { 'SCHEMA FAIL (тест)' } else { 'SCHEMA OK' } } else { "OK $What" } }
     Set-Item function:script:Invoke-V2DbTool { param([string]$Py, [string]$DbTool, [string[]]$ArgList)
       if ($script:fcStep[1] -eq 'db' -and $ArgList[0] -eq $script:fcStep[2]) { Stop-V2 "v2_db_tool $($ArgList[0]) → код 1 (тест: збій $($script:fcStep[0]))" }
-      switch ($ArgList[0]) { 'fingerprint' { if ($script:fcStep[1] -eq 'fp') { 'fp-other' } else { 'fp-ref' } } 'auth-schema' { 'AUTH SCHEMA OK (тест)' } default { "OK $($ArgList[0])" } } }
+      switch ($ArgList[0]) { 'fingerprint' { if ($script:fcStep[1] -eq 'fp') { 'fp-other' } else { 'fp-ref' } } 'auth-schema' { 'AUTH SCHEMA OK (тест)' } 'schema' { 'INTEGRITY SCHEMA OK (тест)' } default { "OK $($ArgList[0])" } } }
     $dF = Join-Path $ciRoot "fault-$($fc[0])"; $bF = Join-Path $ciRoot "fault-$($fc[0])-bk"; $null = New-Item -ItemType Directory $dF, $bF
     $mF = $null
     try { $null = Initialize-V2CleanDatabases -Py 'py' -Backend 'be' -DbTool 'tool' -DataDir $dF -BackupDir $bF -ReferenceFingerprint 'fp-ref' } catch { $mF = $_.Exception.Message }
@@ -1062,9 +1063,11 @@ try {
   $bkn = Join-Path $ciRoot 'bk-notempty'; $null = New-Item -ItemType Directory $bkn
   Add-Res 'CI.init-notempty' ((Test-Stop { Initialize-V2CleanDatabases -Py $Py -Backend 'C:\none' -DbTool $dbTool -DataDir $dn -BackupDir $bkn } '*лише на порожньому data*') -and (@(Get-ChildItem $dn | ForEach-Object Name) -join ',') -eq 'integrity_v2.db') 'непорожній data\ → STOP до будь-якої дії; наявна БД не використовується, маркер не створено'
   # --- Complete-V2CleanDatabases на справжніх SQLite (після bootstrap): строгий auth-schema робочої БД і фінальної копії
+  $ddlI = Join-Path $tmp 'integrity-ddl.sql'; [IO.File]::WriteAllText($ddlI, ((Invoke-V2Native -Exe $Py -ArgList @('-E', '-s', '-I', $dbTool, 'ddl', '--kind', 'integrity', '--expect-version', "$Vi") -Utf8 -What 'integrity ddl') -join "`n"))
+  $mkI = { param($path) $null = Invoke-V2Native -Exe $Py -ArgList @('-I', '-c', 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.executescript(open(sys.argv[2],encoding=''utf-8'').read()); c.execute(''pragma user_version='' + sys.argv[3]); c.commit(); c.close()', $path, $ddlI, "$Vi") -What 'mkdb integrity (DDL релізу)' }
   function New-CiData([string]$tag, [switch]$NoAdmin) {
     $dd = Join-Path $ciRoot "cmp-$tag"; $bb = Join-Path $ciRoot "cmpbk-$tag"; $null = New-Item -ItemType Directory $dd, $bb
-    & $mk (Join-Path $dd 'integrity_v2.db') 3; & $mkA (Join-Path $dd 'v2_auth.db')
+    & $mkI (Join-Path $dd 'integrity_v2.db'); & $mkA (Join-Path $dd 'v2_auth.db')
     if (-not $NoAdmin) { $null = Invoke-V2Native -Exe $Py -ArgList @('-I', '-c', 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(''insert into v2_users(name,email,password_hash,role,created_at) values(?,?,?,?,?)'', (''A'',''a@example.test'',''h'',''admin'',''2026-11-19'')); c.commit(); c.close()', (Join-Path $dd 'v2_auth.db')) -What 'admin' }
     [IO.File]::WriteAllText((Join-Path $dd 'CREATED-BY-V2-INSTALL.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $dd 'CLEAN-INIT-IN-PROGRESS-20261119-000000.txt'), 'x')
     @{ D = $dd; B = $bb; Fp = (Invoke-V2DbTool -Py $Py -DbTool $dbTool -ArgList @('fingerprint', (Join-Path $dd 'integrity_v2.db'))) }

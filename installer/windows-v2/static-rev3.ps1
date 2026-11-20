@@ -66,7 +66,7 @@ Add-Res 'P15' ($bad.Count -eq 0) "керівні байти у файлах ко
 $fa = [regex]::Match($src, '(?s)function Add-V2TreeIdentities \{.*?\n\}').Value
 $silent16 = [regex]::IsMatch($fa, 'Open-V2ProcessHandle[^\n]*catch\s*\{\s*continue\s*\}')
 $iItems = $fr.IndexOf('Assert-V2RestoreItems'); $iBlock = $fr.IndexOf('Assert-V2NoRestoreBlock')
-Add-Res 'P16' (-not $silent16 -and $fa.Contains('$Unresolved.Add(') -and $iItems -ge 0 -and $iItems -lt $iBlock -and $iItems -lt $iN -and $src.Contains("'integrity_v2.db' = 3; 'v2_auth.db' = 1")) 'B1: немає мовчазного пропуску помилки handle нащадка; B3: Assert-V2RestoreItems (2 БД: v3/v1) — перша дія Invoke-V2DbRestore'
+Add-Res 'P16' (-not $silent16 -and $fa.Contains('$Unresolved.Add(') -and $iItems -ge 0 -and $iItems -lt $iBlock -and $iItems -lt $iN -and $src.Contains("`$V2DbSet = [ordered]@{ 'integrity_v2.db' = `$V2ReleaseSchema.integrity; 'v2_auth.db' = `$V2ReleaseSchema.auth }")) 'B1: немає мовчазного пропуску помилки handle нащадка; B3: Assert-V2RestoreItems (2 БД: версії поточного релізу) — перша дія Invoke-V2DbRestore'
 # P17 (етап 2): експериментальний launcher — атомарно в job (JOB_LIST), CREATE_SUSPENDED, точний HANDLE_LIST, handle job неуспадковуваний,
 # ліміти лише KILL_ON_JOB_CLOSE | DIE_ON_UNHANDLED_EXCEPTION (без BREAKAWAY_OK/SILENT_BREAKAWAY_OK), перевірка членства до ResumeThread, ім'я вже існує → STOP
 $lau = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'v2_job_launcher.py'))
@@ -82,7 +82,7 @@ $bx = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'integrity-v2-backend.xml.
 Add-Res 'P18' ($src -match "(?m)^\s+Job = \`$null \}" -and -not $bx.Contains('v2_job_launcher') -and $tx.Contains('<id>integrity-v2-jobtest</id>') -and -not $tx.Contains('C:\srv') -and -not $planCode.Contains('v2_job_launcher')) 'етап 2: Job Object вимкнено в production ($V2Services.Job = $null); production XML і план без launcher-а; тестовий XML — окремий id, не C:\srv'
 # P19 (етап 1): строга перевірка v2_auth — закріплений release-DDL; у відкаті — для копії ДО мутації і для відновленого файлу ДО RESTORE-OK
 $dbt = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'v2_db_tool.py'))
-$iA1 = $fr.IndexOf("@('auth-schema', `$it.Backup)"); $iA2 = $fr.IndexOf("@('auth-schema', `$dst)"); $iOk = $fr.IndexOf('RESTORE-OK-')
+$iA1 = $fr.IndexOf("@('auth-schema', `$it.Backup, '--expect-version', "); $iA2 = $fr.IndexOf("@('auth-schema', `$dst, '--expect-version', "); $iOk = $fr.IndexOf('RESTORE-OK-')
 # Hardening (I5): SHA джерела схеми не закріплюється в коді — береться з маніфесту релізу (bind-check --release-manifest)
 $okBind = -not $dbt.Contains('RELEASE_AUTH_SOURCE_SHA256') -and $dbt.Contains('def cmd_bind_check(') -and $dbt.Contains('--release-manifest') -and $dbt.Contains('SCHEMA_SPECS = {')
 Add-Res 'P19' ($okBind -and $iA1 -ge 0 -and $iA1 -lt $iN -and $iA2 -gt $iN -and $iA2 -lt $iOk) 'етап 1: auth-schema прив''язаний до release через маніфест (bind-check, без закріпленого SHA у коді); копія — до мутації, відновлений файл — до RESTORE-OK'

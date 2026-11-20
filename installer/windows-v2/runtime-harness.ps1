@@ -10,7 +10,9 @@ param(
   [Parameter(Mandatory)] [string] $ApprovalRef,       # номер/дата погодження №5 саме для цього тестового хоста
   [switch] $IAmOnIsolatedTestHost,
   [string] $BackendPy,                # Python 3.13.14 з залежностями backend (для RH-RB: відкат на синтетичних БД зі справжньою службою)
-  [string] $DeployZip                 # integrity-v2-dde86e6-deploy.zip, SHA256 d7c523a1… (release backend для перевірки схеми)
+  [string] $PackageDir,               # пакет поточного релізу (формат пакета оновлення) — release backend для перевірки схеми
+  [string] $ApprovedSums,             # APPROVED-SHA256.txt пакета (окремий канал)
+  [string] $ReleaseId                 # integrity-v2-<sha7>
 )
 $ErrorActionPreference = 'Stop'
 $K = $PSScriptRoot
@@ -86,18 +88,18 @@ try {
   Step 'J10.disabled-1058' ($s2.State -eq 'Stopped' -and -not $s2.ProcessId -and @($rep2.scan.alive).Count -eq 0) "Disabled → sc start = 1058; служба Stopped; процесів service SID $(@($rep2.scan.alive).Count)"
   Set-V2ServiceStartMode -Name $svcName -Mode Manual
   # RH-RB — відкат на синтетичних БД зі справжньою службою: W1 на справжньому SCM, W2–W5, sidecar-и, повернення Manual, старт після відкату
-  if ($BackendPy -and $DeployZip) {
-    if ((Get-FileHash -LiteralPath $DeployZip -Algorithm SHA256).Hash.ToLower() -ne 'd7c523a167eec578a03ed9b0ede62868aed1d4c59f50fbf2b78f997fbb79a5db') { throw 'deploy ZIP: SHA256 ≠ d7c523a1…' }
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $z = [IO.Compression.ZipFile]::OpenRead($DeployZip); try { [IO.Compression.ZipFileExtensions]::ExtractToFile($z.GetEntry('integrity-v2-dde86e6-backend-src.zip'), "$tr\backend-src.zip") } finally { $z.Dispose() }
-    [IO.Compression.ZipFile]::ExtractToDirectory("$tr\backend-src.zip", "$tr\app")
-    $be = "$tr\app\integrity-v2-dde86e6\backend"; $dd = "$tr\data"; $bk = "$tr\backups"
+  if ($BackendPy -and $PackageDir -and $ApprovedSums -and $ReleaseId) {
+    $pkgRh = Assert-V2CleanPackage -PackageDir $PackageDir -ApprovedSums $ApprovedSums -ReleaseId $ReleaseId
+    $null = New-Item -ItemType Directory -Path "$tr\app", "$tr\pkg" -Force
+    $null = Expand-V2ReleaseBackend -Package $pkgRh -AppDir "$tr\app\$ReleaseId" -PkgManifestPath "$tr\pkg\$ReleaseId-BACKEND-SHA256.txt"
+    $V2AppRelease = $ReleaseId
+    $be = "$tr\app\$ReleaseId\backend"; $dd = "$tr\data"; $bk = "$tr\backups"
     foreach ($d in $dd, $bk) { $null = New-Item -ItemType Directory -Path $d -Force }
     $null = Use-V2Env -Vars @{ APP_ENV = 'release'; INTEGRITY_DB = "$dd\integrity_v2.db"; V2_AUTH_DB = "$dd\v2_auth.db"; V2_SECRET_KEY = (New-V2RandomKey); FRONTEND_ORIGINS = 'https://v2.example.test' } -Body {
-      $null = Invoke-V2Py -Py $BackendPy -Backend $be -ArgList @('-m', 'app.seed') -What 'seed (тест-хост)'
+      $null = Invoke-V2Seed -Py $BackendPy -Backend $be -What 'seed (тест-хост)'
       $null = Invoke-V2Py -Py $BackendPy -Backend $be -ArgList @('-m', 'app.migrations', '--apply', '--confirm-verified-backup') -What 'migrations (тест-хост)'
     }
-    # I4 (hardening): версії — з $V2DbSet (release dde86e6: integrity_v2.db 3, v2_auth.db 1), а не закріплене 2
+    # I4 (hardening): версії — з $V2DbSet (поточний реліз, $V2ReleaseSchema), а не закріплені числа
     $items = foreach ($db in @($V2DbSet.Keys | ForEach-Object { , @($_, $V2DbSet[$_]) })) {
       $dst = "$bk\$($db[0])"; $null = Invoke-V2DbTool -Py $BackendPy -DbTool "$tr\kit\v2_db_tool.py" -ArgList @('backup', "$dd\$($db[0])", $dst, '--expect-version', "$($db[1])")
       @{ Db = $db[0]; Backup = $dst; Sha256 = (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLower(); Version = $db[1] }
@@ -121,7 +123,7 @@ try {
     Set-V2ServiceStartMode -Name $svcName -Mode Manual
     $V2BackendName = 'integrity-v2-backend'
   } else {
-    $log.Add(('{0,-14} {1,-7} {2}' -f 'RH-RB', 'NOT RUN', 'немає -BackendPy/-DeployZip — відкат на синтетичних БД зі справжньою службою не виконано'))
+    $log.Add(('{0,-14} {1,-7} {2}' -f 'RH-RB', 'NOT RUN', 'немає -BackendPy/-PackageDir/-ApprovedSums/-ReleaseId — відкат на синтетичних БД зі справжньою службою не виконано'))
   }
 } catch {
   Step 'RH-ERR' $false "помилка: $($_.Exception.Message)"
