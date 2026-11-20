@@ -160,23 +160,10 @@
 .v2-report__downloads { display: flex; flex-wrap: wrap; gap: .65rem; }
 .v2-report__subheading { margin: .4rem 0 0; font-size: 1.05rem; }
 .v2-report__downloads .v2-button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
-.v2-unit-results { display: grid; gap: 1rem; max-width: 960px; }
-.v2-unit-results .v2-section-heading { margin-bottom: 0; }
-.v2-unit-results__cycle { margin: 0; }
-.v2-unit-results__meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; margin: 0; }
-.v2-unit-results__meta div { padding: .8rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--soft); }
-.v2-unit-results__meta dt { color: var(--muted); font-size: .78rem; }
-.v2-unit-results__meta dd { margin: .25rem 0 0; font-weight: 720; overflow-wrap: anywhere; }
-.v2-unit-results__components { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .7rem; margin: 0; padding: 0; list-style: none; }
-.v2-unit-results__component { display: grid; gap: .3rem; padding: .9rem; border: 1px solid #e0ebe5; border-radius: .7rem; background: #f8fbf9; }
-.v2-unit-results__component[data-status="suppressed"], .v2-unit-results__component[data-status="insufficient_data"] { border-style: dashed; background: #fbfaf6; }
-.v2-unit-results__code { color: var(--muted); font-size: .76rem; font-weight: 700; letter-spacing: .04em; }
-.v2-unit-results__name { overflow-wrap: anywhere; }
-.v2-unit-results__component strong { color: #153b35; font-size: 1.45rem; letter-spacing: -.03em; }
-.v2-unit-results__component small { color: var(--muted); font-size: .75rem; font-weight: 500; }
-.v2-unit-results__hidden { color: #785d2a; font-weight: 650; }
-.v2-unit-results__notice { margin: 0; }
-@media (max-width: 700px) { .v2-unit-results__meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.v2-blocked-banner { margin: 1rem 0; padding: 1rem 1.1rem; border: 1px solid #e6d5b2; border-left: 4px solid #9b742d; border-radius: .6rem; background: #fbf7ee; color: #4d4029; }
+.v2-blocked-banner strong { display: block; color: #614914; }
+.v2-blocked-banner p { margin: .4rem 0 0; line-height: 1.55; }
+.v2-unit-results-blocked { max-width: 860px; }
 @media (max-width: 900px) {
   .v2-shell { grid-template-columns: minmax(0, 1fr); }
   .v2-brand { padding: 0; }

@@ -11,7 +11,6 @@ from .request_limits import BodySizeLimitMiddleware, max_body_bytes, validation_
 from .routes import analytics, assessments, results, v2_admin, v2_auth, v2_user
 from .routes import tracker  # Recommendations Tracker
 from .routes import annex_v  # Зрілість за Додатком В
-from .routes import v2_unit_results  # результати підрозділу для користувача V2
 from .v2_auth import check_auth_schema, migrate_auth_db
 
 # Анонімні подання: анкета персоналу (/submissions) і анкета Додатка В (/annex-v/responses)
@@ -76,7 +75,6 @@ def create_app() -> FastAPI:
     application.include_router(annex_v.router)  # зрілість за Додатком В: анкети, чек-лист, показники
     application.include_router(v2_auth.router)
     application.include_router(v2_user.router)
-    application.include_router(v2_unit_results.router)  # GET /v2/user/unit-results
     application.include_router(v2_admin.router)
     if settings.dev_mail_enabled():           # S3: у release маршрут не існує взагалі
         application.include_router(v2_auth.dev_router)

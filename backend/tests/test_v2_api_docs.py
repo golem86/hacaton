@@ -225,12 +225,7 @@ def test_admin_endpoints_forbidden_for_user_session(method, path):
     assert response.status_code == 403, f"{method} {path} → {response.status_code}"
 
 
-# Результати власного підрозділу доступні будь-якій ролі з 2FA (контракт unit-results; test_v2_unit_results.py)
-ANY_ROLE_USER_OPERATIONS = {("GET", "/v2/user/unit-results")}
-
-
-@pytest.mark.parametrize("method,path", sorted(op for op in schema_operations()
-                                                 if op[1].startswith("/v2/user/") and op not in ANY_ROLE_USER_OPERATIONS))
+@pytest.mark.parametrize("method,path", sorted(op for op in schema_operations() if op[1].startswith("/v2/user/")))
 def test_personal_endpoints_forbidden_for_admin_session(method, path):
     client, csrf = login(make_user("admin"))
     response = client.request(method, concrete(path), headers=csrf)

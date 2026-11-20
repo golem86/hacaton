@@ -71,36 +71,6 @@ python -m app.demo_cycle --seed 7 --name "Демо seed 7" --confirm      # ще
 3. Застосування: `powershell -NoProfile -ExecutionPolicy Bypass -File .\New-V2DemoCycle.ps1 -Apply`
    (параметри `-Responses`, `-Seed`, `-Name` — як у CLI).
 
-## Демо: результати підрозділу
-
-Екран «Результати підрозділу» кабінету V2 (`GET /v2/user/unit-results`, `docs/API_CONTRACT.md`) показує дані,
-лише коли власник сервера прив'язав користувача до підрозділу. Для демо:
-
-1. Зареєструйте синтетичного користувача V2 (вигаданий email) і завершіть вхід з 2FA.
-2. З каталогу `backend` (ті самі `INTEGRITY_DB`, `V2_AUTH_DB`, що й у backend):
-
-   ```
-   python -m app.v2_unit_cli --list-units                                        # id — назва
-   python -m app.v2_unit_cli --email demo.user@example.test --unit-id <id>       # план, нічого не пише
-   python -m app.v2_unit_cli --email demo.user@example.test --unit-id <id> --apply
-   ```
-
-   На сервері — `installer/windows-v2/ops/Set-V2UserUnit.ps1` (без `-Apply` — лише план). Backend зупиняти
-   не потрібно; подій журналу немає.
-3. Оновіть екран «Результати підрозділу». У seed закриті цикли `2025-II` і `2026-I` (`2026-II` відкритий і не
-   показується); у демо-циклі вище всі три підрозділи мають ≥ k анкет (75 / 52 / 23), тож видно `available`
-   і бали C1–C7.
-4. Інші стани: без призначення — «Підрозділ ще не призначено»; зняти —
-   `python -m app.v2_unit_cli --email demo.user@example.test --clear --apply`. Підрозділ з анкетами менше k
-   у циклі (або прихований вторинно) показує «Недостатньо анкет для показу (менше k)» без кількості й балів.
-
-Належність зберігається в `instance_meta` (`unit_member:<id користувача>`), діє на момент запиту й не пов'язує
-користувача з його анкетами. Відновлення INTEGRITY_DB з резервної копії (нижче) прибирає й призначення, зроблені
-після неї. Після відновлення або заміни **V2_AUTH_DB** id нових користувачів можуть збігтися зі старими
-призначеннями: видаліть у INTEGRITY_DB усі рядки `DELETE FROM instance_meta WHERE key LIKE 'unit_member:%';` і
-заново призначте потрібних користувачів через `Set-V2UserUnit.ps1 -Email <email> -UnitId <id> -Apply`
-(деталі — `docs/API_CONTRACT.md`, «Хто призначає підрозділ»).
-
 ## Відкат
 
 Цикл створюється однією транзакцією; при помилці нічого не записується. Щоб прибрати вже створений цикл,
