@@ -1,11 +1,22 @@
 # Integrity Management Dashboard V2 — Caddy V2 (окремий екземпляр; Caddy V1 не змінюється).
-# Кандидат dde86e68f4405c23ec4aad14db80f0b764fb4556. Застосовувати лише після DEPLOYMENT GO №5.
+# ШАБЛОН для New-V2TargetConfig (V2-install-common.ps1): рівно одне ім'я хоста й один рядок bind нижче.
+# З -UseFileTls генератор дає форму TLSFIX5: auto_https off, bind лише 100.111.221.74, файлова TLS-пара.
+# Посилення V2 (V2_HARDENING_CONTRACT.md, розділ 5): журнали без IP/URI, CSP, Permissions-Policy,
+# ліміт тіла запиту для /api/* і /v2/*, keepalive до backend коротший за keep-alive uvicorn (5 с).
 {
 	admin off
 	storage file_system C:/srv/integrity-v2/caddy/data
 	auto_https disable_redirects
 	servers {
 		protocols h1 h2
+	}
+	# Журнали (S10): access log не вмикається; логери з IP клієнта й URI запиту виключено:
+	#   http.log.error — помилки обробки запиту (remote_ip, uri) при 5xx від reverse_proxy;
+	#   http.handlers.reverse_proxy — помилки upstream із полями запиту;
+	#   http.stdlib — помилки net/http (зокрема TLS handshake error from <IP>).
+	log default {
+		output stderr
+		exclude http.log.error http.handlers.reverse_proxy http.stdlib
 	}
 }
 
@@ -19,38 +30,84 @@ desktop-jtgc2sg.taild5c033.ts.net:443 {
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "same-origin"
 		X-Frame-Options "DENY"
+		Permissions-Policy "accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()"
 		-Server
 	}
 
-	# Swagger (PR #19): /docs, /docs/swagger-ui/*, /openapi.json — до backend; доступ лише admin з 2FA (перевіряє backend)
+	# Swagger (PR #19): /docs, /docs/swagger-ui/*, /openapi.json — до backend; доступ лише admin з 2FA (перевіряє backend).
+	# CSP /docs: вбудований скрипт get_swagger_ui_html (FastAPI 0.163.1, параметри api_docs.swagger_ui) дозволено лише за SHA-256;
+	# при зміні FastAPI або параметрів Swagger хеш перераховується (installer\windows-v2\docs\UPGRADE_IN_PLACE.md).
 	handle /docs* {
+		header {
+			Content-Security-Policy "default-src 'none'; script-src 'self' 'sha256-j26QUmdeIv6qLr1lMyU70hyt2TXZ/RrAZkwhSPlhaUA='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+			defer
+		}
 		reverse_proxy 127.0.0.1:8100 {
 			header_up -X-Role
+			transport http {
+				keepalive 4s
+			}
 		}
 	}
 	handle /openapi.json {
+		header {
+			Content-Security-Policy "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+			defer
+		}
 		reverse_proxy 127.0.0.1:8100 {
 			header_up -X-Role
+			transport http {
+				keepalive 4s
+			}
 		}
 	}
 	handle /redoc* {
 		respond 404
 	}
 	handle /api/* {
+		header {
+			Content-Security-Policy "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+			defer
+		}
+		request_body {
+			max_size 256KB
+		}
 		reverse_proxy 127.0.0.1:8100 {
 			header_up -X-Role
+			transport http {
+				keepalive 4s
+			}
 		}
 	}
 	handle /v2/* {
+		header {
+			Content-Security-Policy "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+			defer
+		}
+		request_body {
+			max_size 256KB
+		}
 		reverse_proxy 127.0.0.1:8100 {
 			header_up -X-Role
+			transport http {
+				keepalive 4s
+			}
 		}
 	}
+	# CSP SPA: index.html і dist без вбудованих скриптів/стилів; API — той самий origin; data: — для дрібних ресурсів Vite.
 	handle /assets/* {
+		header {
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+			defer
+		}
 		root * C:/srv/integrity-v2/app/frontend/dist
 		file_server
 	}
 	handle {
+		header {
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+			defer
+		}
 		root * C:/srv/integrity-v2/app/frontend/dist
 		try_files {path} /index.html
 		file_server
