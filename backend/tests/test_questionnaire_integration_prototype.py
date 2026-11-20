@@ -62,8 +62,7 @@ def migrated_db(tmp_path: Path):
     store = IntegrationStore(target)
     store.seed_template(FORM1, VERSION, 1, fixture_questions())
     store.bind_cycle(1, FORM1, VERSION)
-    with sqlite3.connect(target) as con:
-        con.execute("UPDATE cycles SET status='open' WHERE id=1")
+    store.activate_cycle(1)
     return target, store, before, migration, source, source_digest
 
 
@@ -266,8 +265,7 @@ def test_official_sets_are_isolated_by_cycle_and_version(integration):
         con.execute("INSERT INTO access_token_policies(token_id,category,expires_at) "
                     "VALUES (?,?,datetime('now','+1 day'))", (token_id, "staff"))
     store.bind_cycle(2, FORM1, VERSION)
-    with sqlite3.connect(db_path) as con:
-        con.execute("UPDATE cycles SET status='open' WHERE id=2")
+    store.activate_cycle(2)
     wrong_cycle = client.post("/prototype/integration/cycles/2/official-submissions", json=_official_body())
     wrong_version = client.post("/prototype/integration/cycles/2/official-submissions",
                                 json=_official_body(code="synthetic-cycle-2-code", version="1.0.0"))
@@ -299,8 +297,7 @@ def test_full_2_1_catalog_submission_persists_after_reopening_sqlite(
         con.execute("INSERT INTO access_token_policies(token_id,category,expires_at) "
                     "VALUES (?,?,datetime('now','+1 day'))", (token_id, "staff"))
     store.bind_cycle(cycle_id, form, "2.1.0")
-    with sqlite3.connect(db_path) as con:
-        con.execute("UPDATE cycles SET status='open' WHERE id=?", (cycle_id,))
+    store.activate_cycle(cycle_id)
     app, _ = create_integration_test_app(db_path, store)
     client = TestClient(app)
     payload = _official_body(code=code, template=form, version="2.1.0",
@@ -330,8 +327,7 @@ def test_expert_scope_is_limited_to_assigned_cycle_and_assessment(migrated_db, m
         con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,questionnaire_version) "
                     "VALUES (2,'synthetic expert','test','[\"staff\"]','demo-v1')")
     store.bind_cycle(2, FORM1, VERSION)
-    with sqlite3.connect(db_path) as con:
-        con.execute("UPDATE cycles SET status='open' WHERE id=2")
+    store.activate_cycle(2)
     admin, expert_a, expert_b, _admin_token, _pending, token_a, token_b = \
         _auth_admin_and_expert(monkeypatch, tmp_path)
     store.grant_expert(str(expert_a["id"]), str(admin["id"]))
@@ -904,13 +900,70 @@ def test_published_template_binding_and_version_isolation(migrated_db):
     db_path, store, *_ = migrated_db
     with sqlite3.connect(db_path) as con:
         with pytest.raises(sqlite3.IntegrityError):
-            con.execute("UPDATE cycle_questionnaires SET version='9.9.9' WHERE cycle_id=1")
+            con.execute("UPDATE questionnaire_templates SET content_sha256=? WHERE template_id=? AND version=?",
+                        ("0" * 64, FORM1, VERSION))
         with pytest.raises(sqlite3.IntegrityError):
-            question_id, option_id = con.execute(
-                "SELECT question_id,option_id FROM questionnaire_options WHERE template_id=? AND version=? LIMIT 1",
-                (FORM1, VERSION)).fetchone()
+            con.execute("DELETE FROM questionnaire_templates WHERE template_id=? AND version=?", (FORM1, VERSION))
+        question_id, option_id = con.execute(
+            "SELECT question_id,option_id FROM questionnaire_options WHERE template_id=? AND version=? LIMIT 1",
+            (FORM1, VERSION)).fetchone()
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute("UPDATE questionnaire_questions SET prompt='mutated' WHERE template_id=? AND version=? AND question_id=?",
+                        (FORM1, VERSION, question_id))
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute("DELETE FROM questionnaire_questions WHERE template_id=? AND version=? AND question_id=?",
+                        (FORM1, VERSION, question_id))
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute("UPDATE questionnaire_options SET label='mutated' WHERE template_id=? AND version=? AND question_id=? AND option_id=?",
+                        (FORM1, VERSION, question_id, option_id))
+        with pytest.raises(sqlite3.IntegrityError):
             con.execute("DELETE FROM questionnaire_options WHERE template_id=? AND version=? AND question_id=? AND option_id=?",
                         (FORM1, VERSION, question_id, option_id))
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute("UPDATE cycle_questionnaires SET version='9.9.9' WHERE cycle_id=1")
+        with pytest.raises(sqlite3.IntegrityError, match="requires draft"):
+            con.execute("INSERT INTO cycle_questionnaires VALUES (1,?,?)", (FORM1, VERSION))
+    with pytest.raises(IntegrationError) as late_bind:
+        store.bind_cycle(1, FORM1, VERSION)
+    assert late_bind.value.status == 409
     with pytest.raises(IntegrationError) as mismatch:
         store.submit(1, SyntheticSubmission(**_official_body(version="9.9.9")))
     assert mismatch.value.status in {409, 422}
+
+
+def test_cycle_bind_and_activation_are_serialized_and_never_open_unbound(migrated_db):
+    db_path, store, *_ = migrated_db
+    with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO cycles(id,name,start_date,status,min_group_size) "
+                    "VALUES (2,'Synthetic binding race','2026-02-01','draft',5)")
+        con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,questionnaire_version) "
+                    "VALUES (2,'synthetic','test','[\"staff\"]','demo-v1')")
+    barrier = threading.Barrier(2)
+
+    def bind():
+        barrier.wait()
+        try:
+            store.bind_cycle(2, FORM1, VERSION)
+            return "bound"
+        except IntegrationError as error:
+            return error.status
+
+    def activate():
+        barrier.wait()
+        try:
+            store.activate_cycle(2)
+            return "open"
+        except IntegrationError as error:
+            return error.status
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        results = [pool.submit(bind), pool.submit(activate)]
+        outcomes = [future.result(timeout=15) for future in results]
+    with sqlite3.connect(db_path) as con:
+        status = con.execute("SELECT status FROM cycles WHERE id=2").fetchone()[0]
+        bindings = con.execute("SELECT COUNT(*) FROM cycle_questionnaires WHERE cycle_id=2").fetchone()[0]
+    assert outcomes in (["bound", "open"], [409, "bound"]), outcomes
+    assert (status, bindings) in {("open", 1), ("draft", 1)}
+    if status == "open":
+        with sqlite3.connect(db_path) as con, pytest.raises(sqlite3.IntegrityError, match="requires draft"):
+            con.execute("INSERT INTO cycle_questionnaires VALUES (2,?,?)", (FORM1, VERSION))

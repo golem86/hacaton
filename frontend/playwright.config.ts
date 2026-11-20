@@ -76,6 +76,7 @@ export default defineConfig({
       url: `${apiBaseURL}/api/health`,
       timeout: 120_000,
       reuseExistingServer: false,
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
     },
     {
       command: `${shellQuote(python)} -m uvicorn prototypes.official_e2e_server:app --host 127.0.0.1 --port ${questionnairePort}`,
@@ -84,6 +85,7 @@ export default defineConfig({
       url: `${questionnaireAPIURL}/_e2e/health`,
       timeout: 120_000,
       reuseExistingServer: false,
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
     },
     {
       command: `pnpm exec vite --host 127.0.0.1 --port ${frontendPort} --strictPort`,
@@ -96,6 +98,7 @@ export default defineConfig({
       url: frontendBaseURL,
       timeout: 60_000,
       reuseExistingServer: false,
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
     },
   ],
 })

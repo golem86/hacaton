@@ -1,4 +1,6 @@
-# Official Questionnaire Integration Readiness — Prompt 14
+# Official Questionnaire Integration Readiness — Prompt 14/15
+
+> **Prompt 15 addendum (2026-11-20; authoritative for the latest verification):** Current tested source is based on WIP HEAD `b9e1b9002c7355f98fcaf7cf41c74773abf6c882` plus uncommitted Prompt 15 changes. The synthetic Playwright suite now exits **0** with **13/13 passed** and a strict JUnit report; all three configured local ports closed after the run. A new isolated, read-only independent CI workflow has been prepared but has **not yet run on GitHub**. Latest backend suite is 429 cases: **428 passed, 1 skipped** on this Windows host because OS symlink creation is denied; CI gates reject every skip and include a Windows symlink job. Frontend tests are **46/46**, TypeScript/build and source artifact-boundary scan pass. Physical Docker image scan remains pending CI (Docker unavailable locally). Production integration remains **NO-GO**; PR #25 remains Draft / DO NOT MERGE. See [`QUESTIONNAIRE_PROMPT15_RELEASE_GATES.md`](QUESTIONNAIRE_PROMPT15_RELEASE_GATES.md) for the current gate matrix. Historical Prompt 14 results below are retained as history, not current evidence.
 
 **State:** isolated WIP / Draft PR #25 / **DO NOT MERGE**. Assessment Manager PR #24 is not modified. The release CI head used for synchronization is `db70706f14cbcaba0d137151572aa996b106cd18`; the WIP synchronization merge is `971ba4a` (before the Prompt 14 implementation commit). All submitted answers and identities in this report are synthetic.
 

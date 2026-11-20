@@ -1,0 +1,230 @@
+name: Questionnaire WIP CI
+
+on:
+  push:
+    branches: [feature/assessment-questionnaire-v2]
+  pull_request:
+    branches: [feature/assessment-manager-release-v2]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: questionnaire-wip-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_BACKEND_TESTS: "429"
+  EXPECTED_FRONTEND_TESTS: "46"
+
+jobs:
+  backend:
+    name: Backend synthetic suite (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13.14"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Full backend pytest
+        env:
+          PYTHONUTF8: "1"
+        run: python -X utf8 -m pytest -q -p no:cacheprovider --junitxml="$RUNNER_TEMP/backend-junit.xml"
+      - name: Enforce complete, no-skip result count
+        run: |
+          python - "$RUNNER_TEMP/backend-junit.xml" <<'PY'
+          import os, sys, xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root)
+          if root.tag not in ("testsuite", "testsuites") or not suites:
+              raise SystemExit("Missing or invalid JUnit root")
+          keys = ("tests", "failures", "errors", "skipped")
+          if any(s.tag != "testsuite" or any(s.get(k) is None for k in keys) for s in suites):
+              raise SystemExit("Incomplete JUnit suite")
+          totals = {key: sum(int(s.get(key)) for s in suites) for key in keys}
+          cases = [case for suite in suites for case in suite.findall("testcase")]
+          if len(cases) != totals["tests"]:
+              raise SystemExit("JUnit test-case count mismatch")
+          print(totals)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write(f"Backend JUnit: {totals}\n")
+          expected = int(os.environ["EXPECTED_BACKEND_TESTS"])
+          if totals["tests"] != expected or any(totals[k] for k in ("failures", "errors", "skipped")):
+              raise SystemExit(f"Expected {expected} tests with zero failures/errors/skips")
+      - name: Upload backend JUnit evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: questionnaire-backend-junit
+          path: ${{ runner.temp }}/backend-junit.xml
+          if-no-files-found: error
+
+  windows-symlink-security:
+    name: Windows symlink path security
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13.14"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run symlink security regression
+        env:
+          PYTHONUTF8: "1"
+        run: python -X utf8 -m pytest -q -p no:cacheprovider tests/test_questionnaire_integration_prototype.py::test_synthetic_source_symbolic_link_is_rejected --junitxml="$env:RUNNER_TEMP\symlink-junit.xml"
+      - name: Reject skip or incomplete symlink report
+        run: python ../scripts/assert-junit.py "$env:RUNNER_TEMP\symlink-junit.xml" 1
+      - name: Upload Windows symlink JUnit evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: questionnaire-windows-symlink-junit
+          path: ${{ runner.temp }}/symlink-junit.xml
+          if-no-files-found: error
+
+  frontend:
+    name: Frontend tests, build, artifact boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 10.34.9
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.10.0"
+          package-manager-cache: false
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Frontend tests
+        run: |
+          set -euo pipefail
+          pnpm test 2>&1 | tee "$RUNNER_TEMP/frontend-tests.txt"
+          summary() { awk -v key="$1" '$1 == "ℹ" && $2 == key && $3 ~ /^[0-9]+$/ && NF == 3 {print $3}' "$RUNNER_TEMP/frontend-tests.txt"; }
+          tests=$(summary tests); pass=$(summary pass); fail=$(summary fail)
+          skipped=$(summary skipped); cancelled=$(summary cancelled); todo=$(summary todo)
+          echo "Frontend tests=$tests pass=$pass fail=$fail skipped=$skipped cancelled=$cancelled todo=$todo" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$tests" != "$EXPECTED_FRONTEND_TESTS" ] || [ "$pass" != "$EXPECTED_FRONTEND_TESTS" ] || [ "$fail" != "0" ] || [ "$skipped" != "0" ] || [ "$cancelled" != "0" ] || [ "$todo" != "0" ]; then
+            echo "Incomplete or failed frontend test suite" >&2; exit 1
+          fi
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: Production build
+        env:
+          VITE_API_BASE_URL: ""
+        run: pnpm build
+      - name: Check frontend and source packaging boundaries
+        run: node scripts/check-production-artifact.mjs
+
+  browser-e2e:
+    name: Synthetic browser to API to SQLite E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      PYTHONUTF8: "1"
+      V2_E2E_TEMP_DIR: ${{ runner.temp }}/questionnaire-e2e
+      V2_E2E_BACKEND_PORT: "8018"
+      V2_E2E_QUESTIONNAIRE_PORT: "8020"
+      V2_E2E_FRONTEND_PORT: "5175"
+      V2_E2E_TEST_PASSWORD: E2E-Only-Local-Synthetic-2026!
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13.14"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 10.34.9
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.10.0"
+          package-manager-cache: false
+      - name: Install backend dependencies
+        working-directory: backend
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Install frontend dependencies and Chromium
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+      - name: Run full browser suite with JUnit
+        run: |
+          mkdir -p "$V2_E2E_TEMP_DIR"
+          pnpm exec playwright test --config=playwright.config.ts
+      - name: Verify JUnit result and server shutdown
+        if: always()
+        run: |
+          python - test-results/e2e-junit.xml <<'PY'
+          import socket, sys, xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root)
+          if root.tag not in ("testsuite", "testsuites") or not suites:
+              raise SystemExit("Missing or invalid E2E JUnit")
+          totals = {k: sum(int(s.get(k, "-1")) for s in suites) for k in ("tests", "failures", "errors", "skipped")}
+          if totals != {"tests": 13, "failures": 0, "errors": 0, "skipped": 0}:
+              raise SystemExit(f"Expected 13 E2E cases with zero failures/errors/skips: {totals}")
+          for port in (8018, 8020, 5175):
+              with socket.socket() as sock:
+                  sock.settimeout(1)
+                  if sock.connect_ex(("127.0.0.1", port)) == 0:
+                      raise SystemExit(f"E2E server port {port} still listening after test run")
+          print(f"E2E JUnit and shutdown PASS: {totals}; all 3 server ports closed")
+          PY
+      - name: Upload browser JUnit evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: questionnaire-browser-e2e-junit
+          path: frontend/test-results/e2e-junit.xml
+          if-no-files-found: error
+
+  production-images:
+    name: Production image artifact isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build local production images (no push or deploy)
+        run: |
+          docker build -f backend/Dockerfile -t integrity-questionnaire-backend-check backend
+          docker build -f frontend/Dockerfile -t integrity-questionnaire-frontend-check frontend
+          docker create --name integrity-questionnaire-backend-check integrity-questionnaire-backend-check
+          docker create --name integrity-questionnaire-frontend-check integrity-questionnaire-frontend-check
+          docker export integrity-questionnaire-backend-check --output "$RUNNER_TEMP/backend-image.tar"
+          docker export integrity-questionnaire-frontend-check --output "$RUNNER_TEMP/frontend-image.tar"
+          python scripts/check-production-images.py "$RUNNER_TEMP/backend-image.tar" "$RUNNER_TEMP/frontend-image.tar"
+      - name: Remove local check containers/images
+        if: always()
+        run: |
+          docker rm -f integrity-questionnaire-backend-check integrity-questionnaire-frontend-check 2>/dev/null || true
+          docker image rm integrity-questionnaire-backend-check integrity-questionnaire-frontend-check 2>/dev/null || true

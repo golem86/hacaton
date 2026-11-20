@@ -62,8 +62,8 @@ def _prepare(db_path: Path) -> IntegrationStore:
                         (token_id, category, expiry))
     store.bind_cycle(1, templates[0], "2.1.0")
     store.bind_cycle(2, templates[1], "2.1.0")
-    with sqlite3.connect(db_path) as con:
-        con.execute("UPDATE cycles SET status='open' WHERE id IN (1,2)")
+    store.activate_cycle(1)
+    store.activate_cycle(2)
     return store
 
 

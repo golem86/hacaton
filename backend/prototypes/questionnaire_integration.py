@@ -191,6 +191,9 @@ DDL = (
     """CREATE TRIGGER binding_frozen_after_activation BEFORE UPDATE ON cycle_questionnaires
       WHEN (SELECT status FROM cycles WHERE id=OLD.cycle_id)!='draft'
       BEGIN SELECT RAISE(ABORT,'cycle questionnaire binding frozen'); END""",
+    """CREATE TRIGGER binding_insert_requires_draft BEFORE INSERT ON cycle_questionnaires
+      WHEN COALESCE((SELECT status FROM cycles WHERE id=NEW.cycle_id),'')!='draft'
+      BEGIN SELECT RAISE(ABORT,'cycle questionnaire binding requires draft'); END""",
     """CREATE TRIGGER binding_delete_frozen_after_activation BEFORE DELETE ON cycle_questionnaires
       WHEN (SELECT status FROM cycles WHERE id=OLD.cycle_id)!='draft'
       BEGIN SELECT RAISE(ABORT,'cycle questionnaire binding frozen'); END""",
@@ -630,11 +633,35 @@ class IntegrationStore:
     def bind_cycle(self, cycle_id: int, template_id: str, version: str) -> None:
         with _db(self.db_path) as con:
             self._require_guard(con)
-            cycle = con.execute("SELECT status FROM cycles WHERE id=?", (cycle_id,)).fetchone()
-            if not cycle or cycle[0] != "draft":
-                raise IntegrationError(409, "Questionnaire binding requires a draft cycle")
-            con.execute("INSERT INTO cycle_questionnaires VALUES (?,?,?)", (cycle_id, template_id, version))
-            con.commit()
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                cycle = con.execute("SELECT status FROM cycles WHERE id=?", (cycle_id,)).fetchone()
+                if not cycle or cycle[0] != "draft":
+                    raise IntegrationError(409, "Questionnaire binding requires a draft cycle")
+                con.execute("INSERT INTO cycle_questionnaires VALUES (?,?,?)", (cycle_id, template_id, version))
+                con.commit()
+            except Exception:
+                con.rollback()
+                raise
+
+    def activate_cycle(self, cycle_id: int) -> None:
+        """Test-only serialized activation; requires an immutable binding first."""
+        with _db(self.db_path) as con:
+            self._require_guard(con)
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                cycle = con.execute("SELECT status FROM cycles WHERE id=?", (cycle_id,)).fetchone()
+                binding = con.execute("SELECT 1 FROM cycle_questionnaires WHERE cycle_id=?", (cycle_id,)).fetchone()
+                if not cycle or cycle[0] != "draft" or not binding:
+                    raise IntegrationError(409, "Cycle activation requires a draft cycle and questionnaire binding")
+                changed = con.execute("UPDATE cycles SET status='open' WHERE id=? AND status='draft'",
+                                      (cycle_id,)).rowcount
+                if changed != 1:
+                    raise IntegrationError(409, "Cycle is not draft")
+                con.commit()
+            except Exception:
+                con.rollback()
+                raise
 
     def close_cycle(self, cycle_id: int) -> None:
         with _db(self.db_path) as con:
