@@ -8,7 +8,8 @@ const server = await createServer({ server: { middlewareMode: true, hmr: false }
 after(() => server.close())
 const { officialTemplates, getOfficialTemplate } = await server.ssrLoadModule('/src/official/catalog.ts')
 const { validateOfficialAnswers } = await server.ssrLoadModule('/src/official/validation.ts')
-const OfficialAssessment = (await server.ssrLoadModule('/src/official/OfficialAssessment.tsx')).default
+const officialModule = await server.ssrLoadModule('/src/official/OfficialAssessment.tsx')
+const OfficialAssessment = officialModule.default
 
 test('versioned official catalog has unique question and option IDs, source and descriptive choices', () => {
   assert.equal(officialTemplates.length, 8)
@@ -123,4 +124,26 @@ test('self and expert render distinct preview modes without a submit action', ()
   assert.ok(expert.includes('Експертне оцінювання'))
   assert.ok(expert.includes('роль експерта'))
   assert.ok(self.includes('Офіційна анкета'))
+})
+
+test('preview opens full 2.1.0 by default and labels 1.x as partial versions', () => {
+  assert.equal(officialModule.defaultTemplateKey, 'appendix-v-form-1@2.1.0')
+  assert.deepEqual(officialTemplates.map(t => officialModule.isPartialVersion(t.version)),
+    [true, true, true, true, false, false, false, false])
+  const html = renderToStaticMarkup(React.createElement(OfficialAssessment, { mode: 'self' }))
+  assert.match(html, /<option value="appendix-v-form-1@2\.1\.0" selected="">/)
+  assert.ok(html.includes('Ця версія охоплює всі питання відповідної анкети'))
+  assert.ok(!html.includes('official-partial-note'))
+  const full = html.indexOf('label="Повні версії"')
+  const partial = html.indexOf('label="Часткові версії (1.x)"')
+  assert.ok(full >= 0 && partial > full)
+  const fullGroup = html.slice(full, partial)
+  const partialGroup = html.slice(partial, html.indexOf('</select>', partial))
+  assert.ok(fullGroup.indexOf('appendix-v-form-1@2.1.0') < fullGroup.indexOf('appendix-v-form-1@2.0.0'))
+  assert.ok(!/@1\.\d\.\d/.test(fullGroup) && !/@2\.\d\.\d/.test(partialGroup))
+  assert.equal(partialGroup.match(/· часткова версія<\/option>/g)?.length, 4)
+  assert.equal(fullGroup.match(/часткова версія/g), null)
+  const order = group => [...group.matchAll(/value="([^"]+)"/g)].map(match => match[1])
+  assert.deepEqual(order(fullGroup), ['appendix-v-form-1@2.1.0', 'appendix-v-form-2@2.1.0', 'appendix-v-form-1@2.0.0', 'appendix-v-form-2@2.0.0'])
+  assert.deepEqual(order(partialGroup), ['appendix-v-form-1@1.1.0', 'appendix-v-form-2@1.1.0', 'appendix-v-form-1@1.0.0', 'appendix-v-form-2@1.0.0'])
 })

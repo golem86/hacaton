@@ -27,7 +27,7 @@ async function signOut(page: Page) {
 }
 
 // V2 hardening: адміністратор керує циклами, але коди видає лише data_officer.
-test('адміністратор створює цикл, відповідальний видає код, респондент подає анонімну анкету', async ({ page }) => {
+test('адміністратор створює цикл, відповідальний видає код, респондент подає анонімну анкету', async ({ page, playwright }) => {
   await signIn(page, adminEmail, /\/admin/)
   await page.getByRole('button', { name: 'Цикли оцінювання' }).click()
   const uniqueName = `Синтетичний E2E ${Date.now()}`
@@ -55,15 +55,36 @@ test('адміністратор створює цикл, відповідаль
   await page.getByRole('button', { name: 'Так, сховати' }).click()
 
   await page.goto('/survey')
-  await page.getByLabel('Цикл оцінювання').selectOption({ label: uniqueName })
+  await page.getByRole('combobox', { name: 'Відкритий цикл' }).selectOption({ label: uniqueName })
   await page.getByLabel('Категорія респондента').selectOption('cadets')
   await page.getByLabel('Підрозділ').selectOption({ index: 1 })
   await page.getByLabel('Одноразовий код доступу').fill(token)
   const questions = page.locator('.survey-api-question')
   await expect(questions).toHaveCount(14)
   for (const question of await questions.all()) await question.locator('input[type="radio"][value="3"]').check()
+  // Сесія data_officer у браузері ще активна: подання все одно має йти без cookies та Authorization.
+  expect((await page.context().cookies()).length).toBeGreaterThan(0)
+  const submitted = page.waitForRequest(request => request.method() === 'POST' && /\/api\/assessments\/\d+\/submissions$/.test(request.url()))
   await page.getByRole('button', { name: 'Надіслати анкету' }).click()
+  const submission = await submitted
+  const headers = await submission.allHeaders()
+  expect(headers.cookie).toBeUndefined()
+  expect(headers.authorization).toBeUndefined()
+  expect(headers['x-csrf-token']).toBeUndefined()
+  const payload = submission.postDataJSON() as { questionnaire_version?: string, token?: string }
+  expect(payload.questionnaire_version).toBe('demo-v1')
+  expect(payload.token).toBe(token)
+  expect((await submission.response())?.status()).toBe(201)
   await expect(page.getByText('Анкету прийнято. Повторне надсилання заблоковано.')).toBeVisible()
+
+  // Повторне подання тим самим кодом (окремий контекст без cookies) — 403.
+  const anonymous = await playwright.request.newContext()
+  try {
+    const replay = await anonymous.post(submission.url(), { data: payload })
+    expect(replay.status()).toBe(403)
+  } finally {
+    await anonymous.dispose()
+  }
 
   await page.goto('/officer/participation')
   await page.getByRole('combobox', { name: 'Цикл' }).selectOption({ label: `${uniqueName} · Відкритий` })
@@ -76,4 +97,7 @@ test('адміністратор створює цикл, відповідаль
   await page.getByRole('combobox', { name: 'Цикл' }).selectOption({ label: `${uniqueName} · Відкритий` })
   await page.getByRole('button', { name: 'Закрити цикл' }).click()
   await expect(page.getByText('Статус: Закритий')).toBeVisible()
+  // Після закриття мала група (1 анкета < k=5) залишається прихованою.
+  await expect(page.getByText('анкет: приховано')).toBeVisible()
+  await expect(page.getByText('невикористаних: приховано')).toBeVisible()
 })
