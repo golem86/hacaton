@@ -3,6 +3,7 @@ import Chart from 'chart.js/auto'
 import type { Assessment } from '../api/assessments'
 import { getParticipation, type Participation, type ParticipationGroup } from '../api/admin'
 import { SuppressionNote } from '../dashboard/suppression'
+import { ListPagination, usePagination } from '../v2/ListPagination'
 import { categoryLabel } from './categories'
 import './AssessmentManager.css'
 import './participation.css'
@@ -131,21 +132,31 @@ export function ParticipationGroups({ participation, minGroupSize, byUnit, onByU
       ) : groups.length === 0 ? (
         <p className="participation__groups-note">Жодна група не досягла порогу ({minGroupSize}).</p>
       ) : (
-        <table className="participation__table">
-          <caption className="participation__sr-only">Кількість анкет у групах, що досягли порогу</caption>
-          <thead><tr><th scope="col">{byUnit ? 'Категорія · підрозділ' : 'Категорія'}</th><th scope="col">Анкет</th></tr></thead>
-          <tbody>
-            {groups.map(group => (
-              <tr key={`${group.category}|${group.unit ?? ''}`}>
-                <th scope="row">{groupLabel(group)}</th>
-                <td>{formatParticipationCount(group.responses, true)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ParticipationGroupsTable groups={groups} byUnit={byUnit} resetKey={byUnit ? 'unit' : 'category'} />
       )}
       {participation.suppressed && <SuppressionNote k={minGroupSize} className="cycle-manager__privacy-note" />}
     </div>
+  )
+}
+
+/** Таблиця груп із пагінацією вгорі й унизу: розбивка за підрозділами може мати десятки рядків. */
+export function ParticipationGroupsTable({ groups, byUnit, resetKey = '' }: { groups: ParticipationGroup[]; byUnit: boolean; resetKey?: string }) {
+  const { current: page, setPage, setPageSize } = usePagination(groups, { resetKey })
+  return (
+    <ListPagination current={page} onPageChange={setPage} onPageSizeChange={setPageSize} name="груп участі">
+      <table className="participation__table">
+        <caption className="participation__sr-only">Кількість анкет у групах, що досягли порогу</caption>
+        <thead><tr><th scope="col">{byUnit ? 'Категорія · підрозділ' : 'Категорія'}</th><th scope="col">Анкет</th></tr></thead>
+        <tbody>
+          {page.items.map(group => (
+            <tr key={`${group.category}|${group.unit ?? ''}`}>
+              <th scope="row">{groupLabel(group)}</th>
+              <td>{formatParticipationCount(group.responses, true)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </ListPagination>
   )
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ApiError } from '../api/client'
 import { isUserRole, ROLE_LABELS, roleLabel, USER_ROLES, type UserRole } from '../api/auth'
 import {
@@ -6,6 +6,7 @@ import {
   ROLE_CONFLICT_MESSAGE, USER_NOT_FOUND_MESSAGE, type AdminUser, type AdminUserMatch, type RoleChange,
 } from '../api/users'
 import { formatAuditDate } from './AuditTrail'
+import { ListPagination, usePagination } from './ListPagination'
 import './users.css'
 
 type LoadState<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T }
@@ -105,24 +106,38 @@ export function UsersTable({ rows, currentUserId, drafts, busy, caption, onDraft
 export function RoleChangeHistory({ changes, users }: { changes: RoleChange[]; users: AdminUser[] }) {
   const names = new Map(users.map(user => [user.id, user.name]))
   const who = (id: number | null) => id === null ? 'Системна дія' : names.get(id) ?? `Користувач № ${id}`
+  // Історія змін ролей лише зростає: показуємо її сторінками.
+  const { current, setPage, setPageSize } = usePagination(changes)
   if (changes.length === 0) return <p className="v2-muted">Змін ролей ще не було.</p>
   return (
-    <div className="users-panel__scroll">
-      <table className="users-panel__table">
-        <caption className="users-panel__sr-only">Історія змін ролей: дата, хто змінив, кому, стара й нова роль</caption>
-        <thead><tr><th scope="col">Дата і час</th><th scope="col">Хто змінив</th><th scope="col">Кому</th><th scope="col">Зміна</th></tr></thead>
-        <tbody>
-          {changes.map(change => (
-            <tr key={change.id}>
-              <td data-label="Дата і час"><time dateTime={change.changed_at}>{formatAuditDate(change.changed_at)}</time></td>
-              <td data-label="Хто змінив">{who(change.actor_user_id)}</td>
-              <td data-label="Кому">{who(change.target_user_id)}</td>
-              <td data-label="Зміна">{roleLabel(change.old_role)} → {roleLabel(change.new_role)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ListPagination current={current} onPageChange={setPage} onPageSizeChange={setPageSize} name="історії змін ролей">
+      <div className="users-panel__scroll">
+        <table className="users-panel__table">
+          <caption className="users-panel__sr-only">Історія змін ролей: дата, хто змінив, кому, стара й нова роль</caption>
+          <thead><tr><th scope="col">Дата і час</th><th scope="col">Хто змінив</th><th scope="col">Кому</th><th scope="col">Зміна</th></tr></thead>
+          <tbody>
+            {current.items.map(change => (
+              <tr key={change.id}>
+                <td data-label="Дата і час"><time dateTime={change.changed_at}>{formatAuditDate(change.changed_at)}</time></td>
+                <td data-label="Хто змінив">{who(change.actor_user_id)}</td>
+                <td data-label="Кому">{who(change.target_user_id)}</td>
+                <td data-label="Зміна">{roleLabel(change.old_role)} → {roleLabel(change.new_role)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </ListPagination>
+  )
+}
+
+/** Перелік облікових записів сторінками: та сама таблиця `UsersTable`, але лише рядки поточної сторінки. */
+export function PaginatedUsersTable({ rows, ...table }: Parameters<typeof UsersTable>[0]) {
+  const { current, setPage, setPageSize } = usePagination(rows)
+  return (
+    <ListPagination current={current} onPageChange={setPage} onPageSizeChange={setPageSize} name="облікових записів">
+      <UsersTable rows={current.items} {...table} />
+    </ListPagination>
   )
 }
 
@@ -192,7 +207,8 @@ export default function UsersPanel({ currentUserId }: { currentUserId: number })
 
   const request = (action: PendingAction) => { setNotice(null); setPending(action) }
   const onDraft = (userId: number, role: UserRole) => setDrafts(current => ({ ...current, [userId]: role }))
-  const listed = users.status === 'ready' ? users.data : []
+  const listed = useMemo(() => users.status === 'ready' ? users.data : [], [users])
+  const listedRows = useMemo(() => listed.map(fromListed), [listed])
 
   return (
     <section className="users-panel" aria-labelledby="users-panel-title">
@@ -241,7 +257,7 @@ export default function UsersPanel({ currentUserId }: { currentUserId: number })
         {users.status === 'error' && <p className="users-panel__notice users-panel__notice--error" role="alert">{users.message}</p>}
         {users.status === 'ready' && (users.data.length === 0
           ? <p className="v2-muted">Облікових записів немає.</p>
-          : <UsersTable rows={users.data.map(fromListed)} currentUserId={currentUserId} drafts={drafts} busy={busy || pending !== null}
+          : <PaginatedUsersTable rows={listedRows} currentUserId={currentUserId} drafts={drafts} busy={busy || pending !== null}
               caption="Облікові записи: ім’я, замаскований email, роль, дата створення і дії" onDraft={onDraft} onRequest={request} />)}
       </div>
 

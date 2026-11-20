@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getManagedAssessments, type Assessment } from '../api/assessments'
 import { AccessCodeIssuer, type IssuedCodes } from '../components/AccessCodeIssuer'
 import { cycleStatusLabel } from '../components/AssessmentManager'
 import { categoryLabel } from '../components/categories'
 import { ParticipationPanel } from '../components/Participation'
+import { ListPagination, usePagination } from './ListPagination'
 import type { OfficerSection } from './navigation'
 import '../components/AssessmentManager.css'
 import './officer.css'
@@ -19,7 +20,8 @@ export function OpenCyclesList({ cycles, selectedId, locked, onSelect }: {
   locked: boolean
   onSelect: (id: number) => void
 }) {
-  const open = cycles.filter(cycle => cycle.status === 'open')
+  const open = useMemo(() => cycles.filter(cycle => cycle.status === 'open'), [cycles])
+  const { current: page, setPage, setPageSize } = usePagination(open)
   if (open.length === 0) {
     return (
       <div className="v2-empty officer-panel__empty" role="status">
@@ -29,18 +31,20 @@ export function OpenCyclesList({ cycles, selectedId, locked, onSelect }: {
     )
   }
   return (
-    <ul className="officer-panel__cycles" aria-label="Відкриті цикли оцінювання">
-      {open.map(cycle => (
-        <li key={cycle.id}>
-          <button type="button" className={cycle.id === selectedId ? 'officer-panel__cycle is-active' : 'officer-panel__cycle'}
-                  aria-pressed={cycle.id === selectedId} disabled={locked && cycle.id !== selectedId} onClick={() => onSelect(cycle.id)}>
-            <strong>{cycle.name}</strong>
-            <span>{cycle.start_date} — {cycle.end_date ?? 'без кінцевої дати'} · поріг групи {cycle.min_group_size}</span>
-            <small>{(cycle.categories ?? []).map(categoryLabel).join(', ') || 'Усі категорії'}</small>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <ListPagination current={page} onPageChange={setPage} onPageSizeChange={setPageSize} name="відкритих циклів">
+      <ul className="officer-panel__cycles" aria-label="Відкриті цикли оцінювання">
+        {page.items.map(cycle => (
+          <li key={cycle.id}>
+            <button type="button" className={cycle.id === selectedId ? 'officer-panel__cycle is-active' : 'officer-panel__cycle'}
+                    aria-pressed={cycle.id === selectedId} disabled={locked && cycle.id !== selectedId} onClick={() => onSelect(cycle.id)}>
+              <strong>{cycle.name}</strong>
+              <span>{cycle.start_date} — {cycle.end_date ?? 'без кінцевої дати'} · поріг групи {cycle.min_group_size}</span>
+              <small>{(cycle.categories ?? []).map(categoryLabel).join(', ') || 'Усі категорії'}</small>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </ListPagination>
   )
 }
 

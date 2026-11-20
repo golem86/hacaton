@@ -369,3 +369,9 @@
   .test-list__range-inputs { grid-template-columns: minmax(0, 1fr); }
   .test-list__panel { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Спільна пагінація довгих списків (ListPagination): панель угорі й номери сторінок угорі та внизу. */
+.list-pagination { display: grid; gap: .75rem; min-width: 0; }
+.list-pagination__bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; scroll-margin-top: 1rem; }
+.list-pagination__bar .test-list__count { margin: 0; }
+.list-pagination > .test-list__pager { margin: 0; }

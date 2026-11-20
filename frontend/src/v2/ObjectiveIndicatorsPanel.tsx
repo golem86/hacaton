@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { Assessment } from '../api/assessments'
 import {
   CRITERION_LABELS, INDICATOR_CRITERIA, confirmObjectiveIndicator, createObjectiveIndicator, criterionLabel, getObjectiveIndicators,
@@ -7,6 +7,7 @@ import {
 import { roleLabel } from '../api/auth'
 import { INDICATOR_NAME_MAX, PERIOD_MAX, indicatorPayload, validateIndicatorDraft, type IndicatorDraft } from '../official/validation'
 import { ConfirmationBadge, Counters, CycleSelect, ENTRY_ROLES_NOTE, useDataCycles, type DataEntryRole } from './ChecklistPanel'
+import { ListPagination, usePagination } from './ListPagination'
 import './annex-v.css'
 
 type Load<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T }
@@ -56,18 +57,28 @@ export function IndicatorForm({ busy, onSubmit }: { busy: boolean; onSubmit: (dr
   </form>
 }
 
-export function IndicatorList({ items, role, busy, messages = {}, onConfirm }: {
+/** Таблиця показників із пагінацією вгорі й унизу. Після додавання показника відкривається остання сторінка, де він з’явився. */
+export function IndicatorList({ items, role, busy, messages = {}, onConfirm, resetKey = '' }: {
   items: ObjectiveIndicator[]
   role: DataEntryRole
   busy: string | null
   messages?: Record<number, { kind: 'error' | 'ok'; text: string }>
   onConfirm: (id: number) => void
+  /** Зміна ключа (наприклад, id циклу) повертає на першу сторінку. */
+  resetKey?: string
 }) {
+  const { current: page, setPage, setPageSize } = usePagination(items, { resetKey })
+  const previousCount = useRef(items.length)
+  useEffect(() => {
+    const grew = items.length > previousCount.current && previousCount.current > 0
+    previousCount.current = items.length
+    if (grew) setPage(Math.ceil(items.length / page.pageSize))
+  }, [items.length, page.pageSize, setPage])
   if (items.length === 0) return <p className="v2-empty" role="status">Для цього циклу показників ще немає.</p>
-  return <table className="annex-table">
+  return <ListPagination current={page} onPageChange={setPage} onPageSizeChange={setPageSize} name="об’єктивних показників"><table className="annex-table">
     <caption className="annex-sr-only">Об’єктивні показники циклу</caption>
     <thead><tr><th scope="col">Показник</th><th scope="col">Критерій</th><th scope="col">Значення / ціль</th><th scope="col">Період</th><th scope="col">Підтвердження</th></tr></thead>
-    <tbody>{items.map(item => {
+    <tbody>{page.items.map(item => {
       const message = messages[item.id]
       return <tr key={item.id}>
         <th scope="row" data-label="Показник">{item.name}{item.entered_role && <small className="v2-form-hint">Вніс: {roleLabel(item.entered_role)}</small>}</th>
@@ -83,7 +94,7 @@ export function IndicatorList({ items, role, busy, messages = {}, onConfirm }: {
         </td>
       </tr>
     })}</tbody>
-  </table>
+  </table></ListPagination>
 }
 
 export function ObjectiveIndicatorsView(props: {
@@ -115,7 +126,7 @@ export function ObjectiveIndicatorsView(props: {
       {items.status === 'error' && <div className="v2-inline-error" role="alert"><p>{items.message}</p><button type="button" className="v2-button" onClick={props.onRetryItems}>Спробувати ще раз</button></div>}
       {items.status === 'ready' && <>
         <Counters items={[{ label: 'Показників', value: list.length }, { label: 'Підтверджено', value: list.filter(item => item.confirmed).length }]} />
-        <IndicatorList items={list} role={props.role} busy={props.busy} messages={props.messages} onConfirm={props.onConfirm} />
+        <IndicatorList resetKey={String(props.cycleId ?? '')} items={list} role={props.role} busy={props.busy} messages={props.messages} onConfirm={props.onConfirm} />
         <IndicatorForm key={props.cycleId ?? 0} busy={props.busy === 'create'} onSubmit={props.onCreate} />
         {props.formError && <p className="v2-inline-error" role="alert">{props.formError}</p>}
       </>}

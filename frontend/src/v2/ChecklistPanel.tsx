@@ -6,6 +6,7 @@ import {
 } from '../api/annexV'
 import { roleLabel } from '../api/auth'
 import { EVIDENCE_MAX, validateChecklistEntry } from '../official/validation'
+import { ListPagination, usePagination } from './ListPagination'
 import './annex-v.css'
 
 export type DataEntryRole = 'admin' | 'data_officer'
@@ -78,12 +79,18 @@ export interface ChecklistTableProps {
   messages?: Record<string, { kind: 'error' | 'ok'; text: string }>
   onSave: (code: string, status: ChecklistStatus, evidence: string) => void
   onConfirm: (code: string) => void
+  /** Зміна ключа (наприклад, id циклу) повертає таблицю на першу сторінку. */
+  resetKey?: string
 }
 
-/** Таблиця пунктів; на вузьких екранах рядки стають картками (без горизонтальної прокрутки). */
-export function ChecklistTable({ items, role, busy, messages = {}, onSave, onConfirm }: ChecklistTableProps) {
+/**
+ * Таблиця пунктів; на вузьких екранах рядки стають картками (без горизонтальної прокрутки).
+ * Пункти поділено на сторінки (пагінація вгорі й унизу); незбережені чернетки не губляться між сторінками.
+ */
+export function ChecklistTable({ items, role, busy, messages = {}, onSave, onConfirm, resetKey = '' }: ChecklistTableProps) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
   const [errors, setErrors] = useState<Record<string, Record<string, string>>>({})
+  const { current: page, setPage, setPageSize } = usePagination(items, { resetKey })
   if (items.length === 0) return <p className="v2-empty" role="status">Для цього циклу пункти чеклиста ще не сформовано.</p>
   const draft = (item: ChecklistItem) => drafts[item.code] ?? draftOf(item)
   const change = (item: ChecklistItem, patch: Partial<Draft>) => setDrafts(previous => ({ ...previous, [item.code]: { ...draft(item), ...patch } }))
@@ -94,10 +101,10 @@ export function ChecklistTable({ items, role, busy, messages = {}, onSave, onCon
     if (Object.keys(found).length) return
     onSave(item.code, current.status as ChecklistStatus, current.evidence.trim())
   }
-  return <table className="annex-table">
+  return <ListPagination current={page} onPageChange={setPage} onPageSizeChange={setPageSize} name="чеклиста Додатка Б"><table className="annex-table">
     <caption className="annex-sr-only">Пункти чеклиста Додатка Б</caption>
     <thead><tr><th scope="col">Код</th><th scope="col">Критерій</th><th scope="col">Пункт</th><th scope="col">Джерело</th><th scope="col">Статус і доказ</th><th scope="col">Підтвердження</th></tr></thead>
-    <tbody>{items.map(item => {
+    <tbody>{page.items.map(item => {
       const current = draft(item)
       const rowErrors = errors[item.code] ?? {}
       const dirty = current.status !== (item.status ?? '') || current.evidence.trim() !== (item.evidence ?? '')
@@ -138,7 +145,7 @@ export function ChecklistTable({ items, role, busy, messages = {}, onSave, onCon
         </td>
       </tr>
     })}</tbody>
-  </table>
+  </table></ListPagination>
 }
 
 export default function ChecklistPanel({ role }: { role: DataEntryRole }) {
@@ -201,7 +208,7 @@ export function ChecklistView(props: {
       {props.cycleId !== null && items.status === 'loading' && <p role="status">Завантажуємо чеклист…</p>}
       {items.status === 'error' && <div className="v2-inline-error" role="alert"><p>{items.message}</p><button type="button" className="v2-button" onClick={props.onRetryItems}>Спробувати ще раз</button></div>}
       {counters && <Counters items={[{ label: 'Внесено', value: counters.entered }, { label: 'Підтверджено', value: counters.confirmed }, { label: 'Усього пунктів', value: counters.total }]} />}
-      {items.status === 'ready' && <ChecklistTable key={props.cycleId ?? 0} items={items.data} role={props.role} busy={props.busy} messages={props.messages} onSave={props.onSave} onConfirm={props.onConfirm} />}
+      {items.status === 'ready' && <ChecklistTable key={props.cycleId ?? 0} resetKey={String(props.cycleId ?? '')} items={items.data} role={props.role} busy={props.busy} messages={props.messages} onSave={props.onSave} onConfirm={props.onConfirm} />}
     </>}
   </section>
 }

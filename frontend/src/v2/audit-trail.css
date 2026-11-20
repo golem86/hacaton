@@ -191,6 +191,12 @@
     max-width: none;
   }
 
+  /* Мобільні елементи керування не менші за 44 px. */
+  .audit-trail__filter select,
+  .audit-trail__filters .v2-button {
+    min-height: 2.75rem;
+  }
+
   .audit-trail__scroll {
     overflow: visible;
     border: 0;
