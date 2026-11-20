@@ -221,8 +221,15 @@ function PublicSurvey() {
   )
 }
 
+/** Default cycle for the admin views: the latest closed cycle by start date, so the overview can compare it with the previous one. */
+function defaultCycleId(list: Assessment[]): number | null {
+  const byStart = [...list].sort((left, right) => left.start_date.localeCompare(right.start_date) || left.id - right.id)
+  const closed = byStart.filter(item => item.status === 'closed')
+  return (closed.at(-1) ?? byStart.at(-1))?.id ?? null
+}
+
 function AdminPanel({section}:{section:AdminSection}) { const [assessments,setAssessments]=useState<Assessment[]>([]),[id,setId]=useState<number|null>(null),[detail,setDetail]=useState<Assessment|null>(null),[results,setResults]=useState<AssessmentResults|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[events,setEvents]=useState<AuditEvent[]>([])
-  useEffect(()=>{if(section==='expert')return;const c=new AbortController();getAssessments(c.signal).then(list=>{setAssessments(list);setId(current=>current!==null&&list.some(a=>a.id===current)?current:(list[0]?.id??null))}).catch(e=>{if(!c.signal.aborted)setError(e instanceof Error?e.message:'Помилка API')}).finally(()=>setLoading(false));return()=>c.abort()},[section])
+  useEffect(()=>{if(section==='expert')return;const c=new AbortController();getAssessments(c.signal).then(list=>{setAssessments(list);setId(current=>current!==null&&list.some(a=>a.id===current)?current:defaultCycleId(list))}).catch(e=>{if(!c.signal.aborted)setError(e instanceof Error?e.message:'Помилка API')}).finally(()=>setLoading(false));return()=>c.abort()},[section])
   useEffect(()=>{if(id===null)return;const c=new AbortController();setDetail(null);setResults(null);setError('');getAssessment(id,c.signal).then(a=>{if(c.signal.aborted)return;setDetail(a);if(a.status==='closed')getAssessmentResults(id,c.signal).then(setResults).catch(e=>{if(!c.signal.aborted)setError(e instanceof Error?e.message:'Не вдалося завантажити результати')})}).catch(e=>{if(!c.signal.aborted)setError(e instanceof Error?e.message:'Не вдалося завантажити цикл')});return()=>c.abort()},[id])
   useEffect(()=>{if(section!=='audit')return;const c=new AbortController();getAuditEvents(c.signal).then(setEvents).catch(e=>setError(e instanceof Error?e.message:'Не вдалося завантажити журнал'));return()=>c.abort()},[section])
   if(section==='audit')return <AuditTrail events={events} error={error} />
