@@ -145,8 +145,8 @@ ssh <admin>@<сервер> powershell -NoProfile -NonInteractive -ExecutionPolic
 
 ## 9. Таблиця очікувань схем і закріплені SHA
 
-`v2_db_tool.py` починається з `SCHEMA_SPECS`: `integrity` 3 (dde86e6), 4 (main-final), 5 (посилення — ОЧІКУВАННЯ), `auth` 1
-(dde86e6), 2 (ОЧІКУВАННЯ). Твердження контракту (`contract`) перевіряються незалежно від DDL, функціональні — на копії в пам'яті
+`v2_db_tool.py` починається з `SCHEMA_SPECS`: `integrity` 3 (dde86e6), 4 (main-final), 5 (посилення — фактичний DDL, bind-check OK на 0221a70), `auth` 1
+(dde86e6), 2 (фактичний _SCHEMA, bind-check OK). Твердження контракту (`contract`) перевіряються незалежно від DDL, функціональні — на копії в пам'яті
 (ролі `data_officer`, append-only тригери, `instance_meta`). SHA256 файлів-джерел схеми **не закріплено в коді**: `bind-check`
 бере їх із маніфесту релізу (`BACKEND-SHA256.txt`) і звіряє DDL коду (auth — `_SCHEMA` через ast; integrity — `create_all` коду
 релізу через `--release-py`) з таблицею:
@@ -208,7 +208,7 @@ XML повертається побайтово, старий ключ. Післ
 ## 12. Обмеження
 
 - На реальному сервері не запускалося; адаптери SCM/ACL/HTTP перевірені лише симуляцією та попереднім кодом TLSFIX5.
-- `SCHEMA_SPECS` для integrity 5 і auth 2 — очікування за контрактом до злиття потоків даних і auth (див. розділ 9).
+- `SCHEMA_SPECS` для integrity 5 і auth 2 звірено з кодом (bind-check OK); БД, створені кодом релізу 3/1 і мігровані новим кодом у release, проходять строгі перевірки 14/14.
 - Clean Install (`clean-install.ps1`, `Initialize/Complete-V2CleanDatabases`, `$V2DbSet`) досі закріплений на dde86e6 (3/1);
   для чистого встановлення посиленого релізу ці версії й deploy ZIP треба оновити окремо.
 - Відкат БД повертає стан на момент `backup.db`: дані, записані після оновлення, втрачаються (саме тому `-ConfirmRestoreFromBackup`).
