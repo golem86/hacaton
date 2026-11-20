@@ -57,12 +57,18 @@ def get_personal_assessment(assessment_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _aware_utc(moment: datetime) -> datetime:
+    """Наївний час (без поясу) трактується як UTC; інакше порівняння з aware-датами — TypeError/500."""
+    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment
+
+
 def is_open(assessment: dict[str, Any], now: datetime | None = None) -> bool:
+    # V2_CATALOG_NOW — лише для локальних тестів; у release його забороняє settings.validate_release_config
     configured_now = os.environ.get("V2_CATALOG_NOW")
     current = now or (datetime.fromisoformat(configured_now) if configured_now else datetime.now(timezone.utc))
-    start = datetime.fromisoformat(assessment["opens_at"])
-    end = datetime.fromisoformat(assessment["closes_at"])
-    return start <= current <= end
+    start = _aware_utc(datetime.fromisoformat(assessment["opens_at"]))
+    end = _aware_utc(datetime.fromisoformat(assessment["closes_at"]))
+    return start <= _aware_utc(current) <= end
 
 
 def public_assessment(assessment: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
