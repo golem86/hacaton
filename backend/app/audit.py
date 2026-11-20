@@ -39,7 +39,10 @@ ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "ass
                    "objective.create", "objective.confirm",
                    # Чернетка тексту звіту локальною LM: лише роль, id адміністратора, цикл і count —
                    # кількість циклів у запиті (1 або 2). Ні тексту, ні виду, ні промпту в журналі немає
-                   "report.narrative"}
+                   "report.narrative",
+                   # Синтетичний демо-цикл (python -m app.demo_cycle, лише БД з позначкою synthetic):
+                   # actor_role "server", цикл і count — кількість анкет; жодних кодів і відповідей
+                   "demo.cycle_generated"}
 # Роль auditor не вводиться до рішення №5 — журнал бачить лише admin (S12)
 AUDIT_ROLES = ("admin",)
 
