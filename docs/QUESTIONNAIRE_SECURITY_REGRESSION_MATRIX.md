@@ -7,6 +7,7 @@
 | MIG-01 | Migration target isolation | Requires explicit flag, guarded schema-3 synthetic copy, and `.prototype.sqlite` path | PASS | migration refusal tests |
 | MIG-02 | Backup and legacy preservation | Backup verifies; cycles, numeric answers, codes and audit remain unchanged | PASS | migration backup/preservation test |
 | MIG-03 | Failure/restore | DDL failure rolls back; verified backup restores clean schema 3 | PASS | three injected failure points + restore test |
+| PATH-01 | Auth/integrity DB isolation | Require temp path, sentinel synthetic DB, explicit temp auth DB; refuse default/protected paths without file creation | PASS | path isolation tests; symlink case skipped by OS |
 | ANON-01 | No respondent linkage | No identity/token/IP/time fields or token FK in anonymous response tables | PASS | adapter schema inspection test |
 | ANON-02 | Anonymous request | Cookie and Authorization are rejected; response never returns set ID | PASS | adapter/anonymous request test |
 | AUTH-01 | Expert identity source | Existing V2 cookie session and completed 2FA are required; `X-Role` has no effect | PASS | real V2 session/2FA/role spoof test |
@@ -20,7 +21,7 @@
 | ATOM-02 | Close/submit | Close serializes with submission; no submit can commit after close returns | PASS | competing close/submit test |
 | ATOM-03 | Partial failure | Injected answer insert failure rolls back response set and token state | PASS | same-code/failure atomicity test |
 | CODE-01 | Expiry/category/cycle/version | Expired, wrong-category, wrong-version, replayed, and closed-cycle submissions rejected | PASS | adapter rejection tests |
-| RATE-01 | Global/per-cycle throttle | Limits return deny after configured synthetic thresholds; no IP key | PASS | rate limiter unit + HTTP test |
+| RATE-01 | Global/per-cycle throttle | SQLite `BEGIN IMMEDIATE` counters across concurrent limiter instances, bucket TTL, 429 and fail-closed 503; no IP key | PASS (single-host shared SQLite POC) | concurrent limiter, expiry, generic HTTP 429 and storage failure tests |
 | LOG-01 | Secret logging | Access codes, option IDs, auth/cookie/CSRF values absent from prototype app logs | PASS (prototype logger only) | caplog test |
 | LOG-02 | Deployed access logs/IP | Proxy/ASGI/access/error tracker config not provided to this worktree | NOT RUN | deployment validation still required |
 | SUP-01 | Primary/complementary suppression | Test helper hides small cell and a derivable companion cell with unknown values | PASS (test helper only) | suppression test |
@@ -32,6 +33,6 @@
 | COMP-01 | Legacy numeric path | Numeric response and historical schema-3 tables remain unchanged | PASS (synthetic baseline) | migration and adapter tests |
 | COMP-02 | Dashboard/Analytics/Integrity Index | No production routes or scoring code changed; runtime integration not enabled | PASS (change isolation), end-to-end contract NOT RUN | scoped diff and no production mount |
 
-The in-memory rate limiter is process-local, intentionally not presented as distributed or production ready. Suppression and retention remain proposals; the prototype does not publish official aggregates.
+`InMemoryRateLimiter` remains a unit-test helper. `IntegrationStore` uses a SQLite-backed fixed-window proof of concept on the same synthetic local file; it is not multi-host production-ready. Suppression and retention remain proposals; the prototype does not publish official aggregates.
 
-Final verification on 2026-11-20: targeted prototype suite **25 passed**; full backend **409 passed, 1 Starlette/httpx deprecation warning**; frontend **45 passed** (non-failing WebSocket port-24678-in-use warning emitted by test tooling); TypeScript/production build **PASS**; browser E2E **12 passed** against temporary synthetic SQLite. These results do not validate production ingress logging, deployed proxy configuration, or an approved aggregate API.
+Final Prompt #13 verification on 2026-11-20: targeted suite **40 passed, 1 skipped**; full backend **424 passed, 1 skipped, 1 Starlette/httpx deprecation warning**; frontend **45 passed**; TypeScript/production build **PASS**; browser E2E **12 passed** against temporary synthetic SQLite. The skip is solely the OS-denied Windows symlink case. Production ingress logging, deployed proxy configuration, multi-host limiter, and an approved aggregate API remain unverified.

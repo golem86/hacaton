@@ -14,10 +14,13 @@ import shutil
 import sqlite3
 import threading
 import time
+import os
+import tempfile
 from collections import defaultdict, deque
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Iterator
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -38,7 +41,8 @@ MIGRATION_TABLES = {
     "questionnaire_templates", "questionnaire_questions", "questionnaire_options",
     "cycle_questionnaires", "official_response_sets", "official_answers",
     "expert_permissions", "expert_assignments", "expert_assessments",
-    "expert_answers", "expert_audit_events", "questionnaire_prototype_meta",
+    "expert_answers", "expert_audit_events", "questionnaire_rate_limit_buckets",
+    "questionnaire_prototype_meta",
 }
 CORE_TABLES = (
     "components", "questions", "cycles", "units", "response_sets", "answers",
@@ -152,6 +156,12 @@ DDL = (
       FOREIGN KEY(assignment_id) REFERENCES expert_assignments(assignment_id),
       FOREIGN KEY(assessment_id) REFERENCES expert_assessments(assessment_id)
     )""",
+    """CREATE TABLE questionnaire_rate_limit_buckets (
+      bucket_key TEXT NOT NULL, window_start INTEGER NOT NULL,
+      request_count INTEGER NOT NULL CHECK(request_count >= 0), expires_at INTEGER NOT NULL,
+      PRIMARY KEY(bucket_key,window_start)
+    )""",
+    "CREATE INDEX questionnaire_rate_limit_expiry_idx ON questionnaire_rate_limit_buckets(expires_at)",
     """CREATE TABLE questionnaire_prototype_meta (
       version INTEGER PRIMARY KEY CHECK(version=1),
       applied_at INTEGER NOT NULL, migration_name TEXT NOT NULL
@@ -228,6 +238,59 @@ def _db(db_path: Path) -> Iterator[sqlite3.Connection]:
 def _same_path(left: str | None, right: Path) -> bool:
     if not left or left == ":memory:":
         return False
+
+
+def _resolved(path: Path) -> Path:
+    return Path(os.path.abspath(os.path.expanduser(str(path)))).resolve()
+
+
+def _is_under_test_temp(path: Path) -> bool:
+    try:
+        _resolved(path).relative_to(_resolved(Path(tempfile.gettempdir())))
+        return True
+    except ValueError:
+        return False
+
+
+def _protected_database_paths(*, include_configured_auth: bool = True) -> set[Path]:
+    from app.database import DB_PATH
+    from app.v2_auth import auth_db_path
+    backend_dir = Path(__file__).resolve().parents[1]
+    paths = {Path(DB_PATH), Path(os.environ.get("INTEGRITY_DB", DB_PATH)),
+             backend_dir / "integrity.db", backend_dir / "v2_auth.db"}
+    if include_configured_auth and os.environ.get("V2_AUTH_DB"):
+        paths.add(Path(os.environ["V2_AUTH_DB"]))
+    elif not os.environ.get("V2_AUTH_DB"):
+        paths.add(Path(auth_db_path()))
+    return {_resolved(path) for path in paths}
+
+
+def _require_test_temp_path(path: Path, *, must_not_exist: bool = False) -> Path:
+    candidate = Path(path).expanduser()
+    if candidate.is_symlink():
+        raise ValueError("Symbolic-link database paths are forbidden in the prototype")
+    resolved = _resolved(candidate)
+    if not _is_under_test_temp(resolved):
+        raise ValueError("Prototype databases must be inside the operating-system temp directory")
+    if resolved in _protected_database_paths():
+        raise ValueError("Production/shared database paths are forbidden")
+    if must_not_exist and resolved.exists():
+        raise ValueError("Prototype database destination must be a new file")
+    return resolved
+
+
+def _require_isolated_auth_db() -> Path:
+    configured = os.environ.get("V2_AUTH_DB")
+    if not configured:
+        raise ValueError("An explicit isolated V2_AUTH_DB is required for the prototype")
+    path = Path(configured).expanduser()
+    if path.is_symlink():
+        raise ValueError("Symbolic-link auth database paths are forbidden in the prototype")
+    resolved = _resolved(path)
+    if not resolved.is_file() or not _is_under_test_temp(resolved) or \
+            resolved in _protected_database_paths(include_configured_auth=False):
+        raise ValueError("V2_AUTH_DB must be an existing isolated temporary test database")
+    return resolved
     try:
         return Path(left).resolve() == right.resolve()
     except OSError:
@@ -235,6 +298,7 @@ def _same_path(left: str | None, right: Path) -> bool:
 
 
 def _guard(conn: sqlite3.Connection, db_path: Path, *, explicit: bool) -> None:
+    db_path = _require_test_temp_path(db_path)
     if explicit is not True or not db_path.name.endswith(".prototype.sqlite"):
         raise ValueError("Explicit permission and .prototype.sqlite path are required")
     if _same_path(__import__("os").environ.get("INTEGRITY_DB"), db_path) or \
@@ -262,6 +326,7 @@ def create_synthetic_schema3_source(source_path: Path) -> Path:
     """Create an actual schema-3-shaped SQLite DB with deterministic synthetic rows."""
     if not source_path.name.endswith(".schema3-synthetic.sqlite"):
         raise ValueError("Synthetic source filename must end in .schema3-synthetic.sqlite")
+    source_path = _require_test_temp_path(source_path, must_not_exist=True)
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
     from app.database import Base
@@ -300,7 +365,7 @@ def create_synthetic_schema3_source(source_path: Path) -> Path:
                           assessment_id=cycle.id, details='{"synthetic":true}'))
         db.commit()
     engine.dispose()
-    with sqlite3.connect(source_path) as con:
+    with closing(sqlite3.connect(source_path)) as con:
         con.execute("PRAGMA foreign_keys=ON")
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert not con.execute("PRAGMA foreign_key_check").fetchall()
@@ -313,9 +378,23 @@ def create_synthetic_schema3_copy(source_path: Path, copy_path: Path) -> dict:
     if not source_path.name.endswith(".schema3-synthetic.sqlite") or \
             not copy_path.name.endswith(".prototype.sqlite"):
         raise ValueError("Use a synthetic schema3 source and .prototype.sqlite destination")
-    source_path, copy_path = source_path.resolve(), copy_path.resolve()
-    if source_path == copy_path or copy_path.exists():
+    source_path = _require_test_temp_path(source_path)
+    copy_path = _require_test_temp_path(copy_path, must_not_exist=True)
+    if source_path == copy_path:
         raise ValueError("Migration copy must be a new separate file")
+    with closing(sqlite3.connect(f"file:{quote(source_path.as_posix(), safe=':/')}?mode=ro", uri=True)) as check:
+        tables = {row[0] for row in check.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        required = {"cycles", "cycle_configs", "response_sets", "answers", "access_tokens",
+                    "access_token_policies", "audit_events"}
+        if check.execute("PRAGMA user_version").fetchone()[0] != 3 or not required <= tables:
+            raise ValueError("Source is not the expected schema-3 synthetic database")
+        if not check.execute("SELECT 1 FROM cycles WHERE name='Synthetic schema3 cycle'").fetchone() or \
+                not check.execute("SELECT 1 FROM audit_events WHERE action='synthetic.seed'").fetchone() or \
+                not check.execute("SELECT 1 FROM access_tokens WHERE token='synthetic-assessment-code'").fetchone():
+            raise ValueError("Source lacks required synthetic sentinel rows")
+        if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or \
+                check.execute("PRAGMA foreign_key_check").fetchall():
+            raise ValueError("Source failed SQLite integrity verification")
     copy_path.parent.mkdir(parents=True, exist_ok=True)
     src = sqlite3.connect(source_path)
     dst = sqlite3.connect(copy_path)
@@ -358,7 +437,7 @@ def create_verified_backup(db_path: Path, *, allow_test_migration: bool = False)
             dst.commit()
         finally:
             dst.close()
-    with sqlite3.connect(target) as check:
+    with closing(sqlite3.connect(target)) as check:
         if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             target.unlink(missing_ok=True)
             raise RuntimeError("Backup integrity check failed")
@@ -468,10 +547,51 @@ class InMemoryRateLimiter:
             return True
 
 
-class IntegrationStore:
-    def __init__(self, db_path: Path, *, rate_limiter: InMemoryRateLimiter | None = None):
+class SQLiteRateLimiter:
+    """Test-only shared-file limiter; demonstrates multi-worker atomic counters without IP keys."""
+    def __init__(self, db_path: Path, *, global_limit: int, cycle_limit: int,
+                 window_seconds: int = 60, clock=time.time):
+        if min(global_limit, cycle_limit, window_seconds) < 1:
+            raise ValueError("Rate-limit values must be positive")
         self.db_path = Path(db_path)
-        self.rate_limiter = rate_limiter or InMemoryRateLimiter(global_limit=100, cycle_limit=20)
+        self.global_limit, self.cycle_limit = global_limit, cycle_limit
+        self.window_seconds, self.clock = window_seconds, clock
+
+    def allow(self, cycle_key: str) -> bool:
+        now = int(self.clock())
+        start = now - (now % self.window_seconds)
+        expires = start + self.window_seconds
+        keys = ("global", f"cycle:{cycle_key}")
+        with _db(self.db_path) as con:
+            _guard(con, self.db_path, explicit=True)
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                con.execute("DELETE FROM questionnaire_rate_limit_buckets WHERE expires_at<=?", (now,))
+                counts = {}
+                for key in keys:
+                    row = con.execute("SELECT request_count FROM questionnaire_rate_limit_buckets "
+                                      "WHERE bucket_key=? AND window_start=?", (key, start)).fetchone()
+                    counts[key] = row[0] if row else 0
+                if counts[keys[0]] >= self.global_limit or counts[keys[1]] >= self.cycle_limit:
+                    con.commit()
+                    return False
+                for key in keys:
+                    con.execute("""INSERT INTO questionnaire_rate_limit_buckets
+                      (bucket_key,window_start,request_count,expires_at) VALUES (?,?,1,?)
+                      ON CONFLICT(bucket_key,window_start) DO UPDATE SET
+                      request_count=request_count+1,expires_at=excluded.expires_at""",
+                                (key, start, expires))
+                con.commit()
+                return True
+            except Exception:
+                con.rollback()
+                raise
+
+
+class IntegrationStore:
+    def __init__(self, db_path: Path, *, rate_limiter: InMemoryRateLimiter | SQLiteRateLimiter | None = None):
+        self.db_path = Path(db_path)
+        self.rate_limiter = rate_limiter or SQLiteRateLimiter(db_path, global_limit=100, cycle_limit=20)
         self.logger = logging.getLogger("questionnaire.prototype")
 
     def _require_guard(self, con: sqlite3.Connection) -> None:
@@ -531,7 +651,11 @@ class IntegrationStore:
                 raise
 
     def submit(self, cycle_id: int, body: SyntheticSubmission) -> None:
-        if not self.rate_limiter.allow(str(cycle_id)):
+        try:
+            allowed = self.rate_limiter.allow(str(cycle_id))
+        except sqlite3.Error as error:
+            raise IntegrationError(503, "Submission temporarily unavailable") from error
+        if not allowed:
             self.logger.warning("official_submission_throttled")
             raise IntegrationError(429, "Забагато спроб. Спробуйте пізніше")
         try:
@@ -575,8 +699,9 @@ class IntegrationStore:
                 raise
 
     def grant_expert(self, principal_id: str, actor_id: str) -> None:
-        auth_path = auth_db_path()
-        with sqlite3.connect(auth_path) as auth_db:
+        auth_path = _require_isolated_auth_db()
+        auth_uri = f"file:{quote(auth_path.as_posix(), safe=':/')}?mode=ro"
+        with closing(sqlite3.connect(auth_uri, uri=True)) as auth_db:
             existing_user = auth_db.execute("SELECT 1 FROM v2_users WHERE id=?", (int(principal_id),)).fetchone()
         if not existing_user:
             raise IntegrationError(404, "V2 principal unavailable")
@@ -781,6 +906,10 @@ def suppress_cells(cells: list[tuple[str, int]], k: int) -> dict:
 class V2ExpertSessionAdapter:
     """Resolve the real V2 cookie/session and completed 2FA, never X-Role."""
     def __call__(self, request: Request) -> dict:
+        try:
+            _require_isolated_auth_db()
+        except ValueError as error:
+            raise HTTPException(503, "Isolated test authentication unavailable") from error
         user = session_user(request)
         if user is None:
             raise HTTPException(401, "V2 session required")
