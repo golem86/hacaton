@@ -36,7 +36,8 @@
 
 ### Нове або змінене в auth
 - `POST /v2/auth/logout-all` — сесія + CSRF; видаляє всі сесії поточного користувача. Відповідь 200 `{"status":"logged_out_all"}`.
-- `GET /v2/admin/users?email=` — admin. Без параметра: `[{id, name, role, email_masked, created_at}]` (до 500). З точним `email`: один запис із повним email або 404.
+- `GET /v2/admin/users` — admin, без параметрів: `[{id, name, role, email_masked, created_at}]` (до 500).
+- `POST /v2/admin/users/lookup` — admin + CSRF; тіло `{"email": "..."}` (extra=forbid) → 200 `{id, name, email, role, created_at}` або 404. Email навмисно передається в тілі, а не в URL, щоб не потрапляти в журнали й історію.
 - `POST /v2/admin/users/{id}/role` — admin + CSRF; тіло `{"expected_role","new_role"}`, ролі `user|admin|data_officer`, `extra=forbid`.
   - 200: роль змінено.
   - 403 `self_change`: спроба змінити власну роль.

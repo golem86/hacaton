@@ -3,6 +3,8 @@
 .v2-sidebar { display: flex; min-width: 0; flex-direction: column; gap: 2rem; padding: 1.7rem 1.15rem; background: #123b36; color: #eaf5f0; }
 .v2-brand { display: flex; align-items: center; gap: .75rem; padding: 0 .55rem; }
 .v2-brand-mark { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; border-radius: .72rem; background: #b9dfc9; color: #123b36; font-weight: 850; letter-spacing: -.05em; }
+.v2-brand-logo { background: none; border-radius: 0; object-fit: contain; }
+.v2-team-credit { margin: auto 0 0; color: #9cc2b5; font-size: .7rem; line-height: 1.45; letter-spacing: .02em; }
 .v2-brand strong { font-size: .95rem; line-height: 1.15; }
 .v2-brand small { display: block; margin-top: .18rem; color: #a8c9bd; font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; }
 .v2-nav { display: grid; min-width: 0; gap: .25rem; }
@@ -219,3 +221,4 @@
   .v2-form-grid { grid-template-columns: 1fr; align-items: stretch; }
   .v2-form-grid .v2-button { width: 100%; }
 }
+@media (max-width: 900px) { .v2-team-credit { display: none; } }

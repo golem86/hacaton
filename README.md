@@ -1,12 +1,17 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/branding/sysmints-logo-dark.svg">
+  <img src="docs/branding/sysmints-logo.svg" alt="Sys&Mints" width="420">
+</picture>
+
 # Integrity Management Dashboard
 
-**Командний проєкт для Building Integrity Hackathon 2026 · Завдання 3. Integrity Management Dashboard.**
+**Команда «Sys&Mints» · Building Integrity Hackathon 2026 · Завдання 3. Integrity Management Dashboard.**
 
 Цифрова система оцінювання стану й зрілості системи доброчесності та підтримки управлінських рішень: анонімне опитування, аналіз результатів в агрегованому вигляді, Integrity Index, рекомендації та звіти. Оцінювання призначене для розвитку системи, а не для оцінки окремих посадових осіб. Проєкт розробляється з акцентом на конфіденційність відповідей, розмежування прав доступу та прозорість методології.
 
 ## Команда
 
-Назва команди та GitHub-логіни учасників будуть додані перед фінальним поданням.
+Команда «Sys&Mints». Логотип і правила його використання — у [docs/branding](docs/branding/README.md).
 
 ## Проблема
 
