@@ -1,0 +1,82 @@
+/* Explainability additions to the analytics panels. Tokens come from style.css / dashboard.css. */
+.ax-rules,
+.ax-formula {
+  margin: .9rem 0 1rem;
+  padding: .8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f9fbfa;
+  color: var(--ink);
+  font-size: .88rem;
+  line-height: 1.5;
+}
+.ax-rules p, .ax-formula p { margin: 0; }
+.ax-formula p + p { margin-top: .35rem; }
+.ax-rules ul { margin: .4rem 0 .5rem; padding-left: 1.2rem; }
+.ax-rules li + li { margin-top: .15rem; }
+.ax-rules code, .ax-formula code, .ax-card code, .ax-meta code {
+  padding: .05rem .3rem;
+  border-radius: 4px;
+  background: #eaf1ee;
+  color: #1d4a40;
+  font-size: .8rem;
+  overflow-wrap: anywhere;
+}
+.ax-rule { margin: .7rem 0; color: var(--ink); font-size: .88rem; line-height: 1.5; }
+.ax-summary { margin: .7rem 0 .5rem; color: var(--ink); font-size: .92rem; font-weight: 650; }
+.ax-meta { margin: .75rem 0 0; color: var(--muted); font-size: .82rem; line-height: 1.45; overflow-wrap: anywhere; }
+.ax-muted { color: var(--muted); }
+.ax-num { font-variant-numeric: tabular-nums; }
+.ax-list { margin: .5rem 0; padding-left: 1.3rem; line-height: 1.6; }
+.ax-period { margin-top: 1rem; }
+
+/* Recommendations grouped by component */
+.ax-group { margin-top: 1.1rem; }
+.ax-group-title { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 .5rem; color: var(--ink); font-size: 1rem; }
+.ax-group-title small { color: var(--muted); font-size: .82rem; font-weight: 600; }
+.ax-cards { display: grid; gap: .65rem; margin: 0; padding: 0; list-style: none; }
+.ax-card { min-width: 0; padding: .85rem 1rem; border: 1px solid var(--line); border-left: 3px solid var(--teal); border-radius: 8px; background: var(--paper); }
+.ax-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; }
+.ax-rank { padding: .15rem .45rem; border-radius: 4px; background: var(--soft); color: var(--green); font-size: .76rem; font-weight: 750; white-space: nowrap; }
+.ax-rule-name { min-width: 0; color: var(--muted); font-size: .82rem; font-weight: 650; overflow-wrap: anywhere; }
+.ax-badge-human { padding: .15rem .45rem; border: 1px solid #e3cfa9; border-radius: 4px; background: #fff7e9; color: #674813; font-size: .76rem; font-weight: 700; }
+.ax-card-text { margin: .55rem 0 .5rem; color: var(--ink); font-weight: 600; line-height: 1.45; }
+.ax-why { padding: .6rem .75rem; border-radius: 6px; background: #f4f8f6; color: var(--ink); font-size: .88rem; line-height: 1.5; }
+.ax-why p { margin: 0; }
+.ax-why strong { color: var(--green); }
+.ax-why details { margin-top: .4rem; }
+.ax-why summary { width: fit-content; color: var(--muted); font-size: .82rem; cursor: pointer; }
+.ax-why summary:focus-visible { outline: 3px solid rgba(40, 119, 122, .3); outline-offset: 2px; }
+.ax-facts { display: grid; gap: .2rem; margin: .45rem 0 0; }
+.ax-facts > div { display: flex; flex-wrap: wrap; gap: .1rem .6rem; min-width: 0; }
+.ax-facts dt { color: var(--muted); font-family: ui-monospace, Consolas, monospace; font-size: .8rem; }
+.ax-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.ax-card-meta { margin: .5rem 0 0; color: var(--muted); font-size: .8rem; line-height: 1.45; }
+
+/* Tables */
+.ax-table-wrap { max-width: 100%; overflow-x: auto; }
+.ax-table { width: 100%; border-collapse: collapse; color: var(--ink); font-size: .9rem; text-align: left; }
+.ax-table caption { margin-bottom: .45rem; color: var(--muted); font-size: .82rem; text-align: left; }
+.ax-table th, .ax-table td { padding: .6rem .55rem; border-bottom: 1px solid #e5ece9; vertical-align: top; }
+.ax-table thead th { border-bottom: 2px solid #a8beb6; font-size: .82rem; font-weight: 700; }
+.ax-table tbody th { font-weight: 600; }
+.ax-table tfoot th, .ax-table tfoot td { border-top: 2px solid #a8beb6; border-bottom: 0; font-weight: 700; }
+.ax-table td small { display: block; font-size: .78rem; }
+.ax-change-table { max-width: 26rem; }
+.ax-row-flagged { background: #fffaf0; }
+.ax-flag { display: inline-block; padding: .15rem .45rem; border-radius: 4px; background: #fbe6c8; color: #6b3d0b; font-size: .76rem; font-weight: 750; }
+.ax-reasons { display: block; margin-top: .25rem; color: var(--muted); font-size: .8rem; line-height: 1.4; }
+
+/* Phones: stack the wide tables into one card per row (no horizontal scroll at 375 px). */
+@media (max-width: 640px) {
+  .ax-table-stack, .ax-table-stack caption, .ax-table-stack tbody, .ax-table-stack tfoot,
+  .ax-table-stack tr, .ax-table-stack th, .ax-table-stack td { display: block; width: 100%; }
+  .ax-table-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+  .ax-table-stack tr { margin-bottom: .6rem; padding: .3rem .7rem; border: 1px solid var(--line); border-radius: 8px; }
+  .ax-table-stack th, .ax-table-stack td { padding: .35rem 0; border-bottom: 1px solid #edf2ef; }
+  .ax-table-stack tr > :last-child { border-bottom: 0; }
+  .ax-table-stack tfoot th, .ax-table-stack tfoot td { border-top: 0; }
+  .ax-table-stack td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: .74rem; font-weight: 700; }
+  .ax-card { padding: .75rem .8rem; }
+  .ax-rules, .ax-formula { padding: .7rem .8rem; }
+}

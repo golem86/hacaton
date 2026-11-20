@@ -287,8 +287,10 @@ test('open, stale, loading and failed cycle details never expose analytics', () 
     id: 1, assessments: [closed, { ...assessment(2), status: 'open' }],
   }))
   assert.match(html, /Integrity Index/)
-  assert.match(html, /Recommendations/)
-  assert.match(html, /Comparative Analytics/)
+  assert.match(html, /<h2[^>]*>Рекомендації<\/h2>/)
+  assert.match(html, /<h2[^>]*>Самооцінка vs об’єктивні показники<\/h2>/)
+  assert.match(html, /<h2[^>]*>Порівняльна аналітика<\/h2>/)
+  assert.doesNotMatch(html, /Recommendations|Comparative Analytics/)
   assert.doesNotMatch(html, /Cycle 2/)
   const notice = renderToStaticMarkup(createElement(DemoNotice, {
     approvalStatus: 'proposed', syntheticOnly: true, official: false,
