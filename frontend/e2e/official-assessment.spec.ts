@@ -22,7 +22,7 @@ async function signIn(page: Page, email: string) {
 test('self preview validates selections and keeps expert view restricted', async ({ page }) => {
   await signIn(page, 'e2e-user@example.test')
   await page.goto('/app/official')
-  await expect(page.getByRole('heading', { name: /Офіційна анкета · WIP Preview/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Офіційна анкета \(Додаток В\) — демонстраційний перегляд/ })).toBeVisible()
   await page.getByRole('button', { name: 'Перевірити відповіді' }).click()
   await expect(page.getByRole('alert')).toContainText('Оберіть один варіант')
   await page.locator('.official-option input').first().check()
@@ -37,12 +37,12 @@ test('self preview validates selections and keeps expert view restricted', async
 test('verified admin sees expert preview with no submission control', async ({ page }) => {
   await signIn(page, 'e2e-admin@example.test')
   await page.goto('/admin/expert')
-  await expect(page.getByRole('heading', { name: /Експертне оцінювання · WIP Preview/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Експертне оцінювання — демонстраційний перегляд/ })).toBeVisible()
   await page.getByLabel('Шаблон і версія').selectOption('appendix-v-form-2@2.0.0')
   await expect(page.locator('.official-question-buttons button')).toHaveCount(10)
   await expect(page.locator('.official-section')).toHaveCount(4)
   await expect(page.getByText(/Категорію має визначити №5/)).toBeVisible()
-  await expect(page.getByText(/Збереження і подання недоступні/)).toBeVisible()
+  await expect(page.getByText(/відповіді не зберігаються на сервері/)).toBeVisible()
   await expect(page.locator('.official-assessment button[type="submit"]')).toHaveCount(0)
 })
 
