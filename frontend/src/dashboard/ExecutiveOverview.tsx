@@ -199,7 +199,8 @@ export function ExecutiveOverviewView({
           <p className="dashboard-kicker">Профіль C1–C7</p>
           <h3 id="exec-radar-heading">Компоненти за зонами</h3>
           {components.length === 0 ? <p className="exec-muted">Результатів компонентів для цього циклу немає.</p> : (
-            <OverviewRadar components={components} previousName={previousRows && previous ? previous.name : null} previousRows={previousRows} />
+            <OverviewRadar components={components} currentName={results.assessment.name}
+              previousName={previousRows && previous ? previous.name : null} previousRows={previousRows} />
           )}
         </section>
       </div>
@@ -339,8 +340,9 @@ function IndexDelta({ current, previous, remote }: { current: number | null; pre
   )
 }
 
-function OverviewRadar({ components, previousName, previousRows }: {
+function OverviewRadar({ components, currentName, previousName, previousRows }: {
   components: ResultComponent[]
+  currentName: string
   previousName: string | null
   previousRows: IndexComponent[] | null
 }) {
@@ -354,7 +356,7 @@ function OverviewRadar({ components, previousName, previousRows }: {
     const canvas = canvasRef.current
     if (!canvas) return
     const datasets: ChartDataset<'radar', (number | null)[]>[] = [{
-      label: 'Цей цикл',
+      label: currentName,
       data: components.map(item => isScore(item.score) ? item.score : null),
       borderColor: '#276456',
       backgroundColor: 'rgba(77, 149, 135, .16)',
@@ -396,7 +398,8 @@ function OverviewRadar({ components, previousName, previousRows }: {
           },
         },
         plugins: {
-          legend: { display: datasets.length > 1, position: 'bottom', labels: { color: '#17302f', usePointStyle: true, pointStyle: 'circle', padding: 12 } },
+          // Line markers: the first point's zone colour must not read as the colour of the whole cycle.
+          legend: { display: datasets.length > 1, position: 'bottom', labels: { color: '#17302f', usePointStyle: true, pointStyle: 'line', padding: 12 } },
           tooltip: {
             filter: item => item.raw !== null,
             callbacks: {
@@ -411,7 +414,7 @@ function OverviewRadar({ components, previousName, previousRows }: {
       },
     })
     return () => chart.destroy()
-  }, [components, previousName, previousScores])
+  }, [components, currentName, previousName, previousScores])
 
   return (
     <div className="chart-frame exec-radar-frame">
