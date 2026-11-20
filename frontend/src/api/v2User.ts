@@ -1,7 +1,7 @@
 import { getV2AdminJson, mutateV2Json } from './auth'
 
 export interface PersonalQuestion { id: string; component: string; prompt: string; hint: string }
-export interface PersonalAssessment { id: string; name: string; duration: string; opens_at: string; closes_at: string; status: 'open' | 'unavailable'; questions: PersonalQuestion[] }
+export interface PersonalAssessment { id: string; name: string; duration: string; /** Дата створення в каталозі, ISO 8601 з поясом. */ created_at: string; opens_at: string; closes_at: string; status: 'open' | 'unavailable'; questions: PersonalQuestion[] }
 export interface PersonalAttempt { id: string; assessment_id: string; assessment_name: string; status: 'draft' | 'completed'; answers: Record<string, number>; started_at: string; completed_at: string | null; updated_at: string }
 export interface PersonalStats { completed_tests: number; responses_total: number; average_response: number | null; official_index: number | null }
 export const getPersonalAssessments = (signal?: AbortSignal) => getV2AdminJson<PersonalAssessment[]>('/v2/user/assessments', signal)

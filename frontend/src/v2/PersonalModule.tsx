@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   completePersonalAttempt,
   createPersonalAttempt,
@@ -10,6 +10,23 @@ import {
   type PersonalAttempt,
   type PersonalStats,
 } from '../api/v2User'
+import { TestListFilterPanel, TestListPageSize, TestListPagination } from './TestListControls'
+import {
+  DEFAULT_FILTERS,
+  DEFAULT_PAGE_SIZE,
+  DEFAULT_SORT,
+  activeFilterCount,
+  availabilityOf,
+  filterTests,
+  paginate,
+  parseStoredState,
+  shownLabel,
+  sortTests,
+  type Availability,
+  type SortKey,
+  type StoredListState,
+  type TestListFilters,
+} from './testList'
 
 export type PersonalView = 'profile' | 'available' | 'attempt' | 'history' | 'stats' | 'unit-results'
 
@@ -63,6 +80,150 @@ function Progress({ answered, total }: { answered: number; total: number }) {
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return <div className="v2-empty" role="alert"><strong>Не вдалося завантажити дані</strong><p className="v2-muted">{message}</p><button className="v2-button" type="button" onClick={onRetry}>Спробувати ще раз</button></div>
+}
+
+const TEST_LIST_STORAGE_KEY = 'v2-personal-test-list'
+
+function readTestListState(): StoredListState | null {
+  try {
+    return parseStoredState(globalThis.sessionStorage?.getItem(TEST_LIST_STORAGE_KEY))
+  } catch {
+    return null // приватний режим або заблоковане сховище: працюємо з типовими значеннями
+  }
+}
+
+function writeTestListState(state: StoredListState) {
+  try {
+    globalThis.sessionStorage?.setItem(TEST_LIST_STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    // Збереження фільтрів — лише зручність; без сховища список працює так само.
+  }
+}
+
+const AVAILABILITY_PILL: Readonly<Record<Availability, { label: string; className: string }>> = {
+  open: { label: 'Доступне зараз', className: 'v2-pill' },
+  upcoming: { label: 'Заплановано', className: 'v2-pill v2-pill-warm' },
+  closed: { label: 'Завершено', className: 'v2-pill test-list__pill-closed' },
+}
+
+function formatListDate(value: string, timeZone?: string) {
+  const time = Date.parse(value)
+  return Number.isNaN(time) ? '—' : new Intl.DateTimeFormat('uk-UA', { dateStyle: 'medium', timeZone }).format(time)
+}
+
+function formatListDateTime(value: string, timeZone?: string) {
+  const time = Date.parse(value)
+  return Number.isNaN(time) ? '—' : new Intl.DateTimeFormat('uk-UA', { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(time)
+}
+
+export interface AvailableTestsProps {
+  assessments: PersonalAssessment[]
+  attempts: PersonalAttempt[]
+  onStart: (assessmentId: string) => void
+  /** Для тестів: фіксований «зараз» (мс) і часовий пояс дат; у застосунку — поточний час і пояс браузера. */
+  now?: number
+  timeZone?: string
+  /** Для тестів: початковий стан замість sessionStorage. */
+  initialState?: Partial<StoredListState>
+}
+
+/** «Мої тестування»: пошук, фільтри, сортування й пагінація поверх каталогу з /v2/user/assessments. */
+export function AvailableTests({ assessments, attempts, onStart, now, timeZone, initialState }: AvailableTestsProps) {
+  const [stored] = useState(() => initialState ?? readTestListState())
+  const [filters, setFilters] = useState<TestListFilters>(() => ({ ...DEFAULT_FILTERS, ...stored?.filters }))
+  const [sort, setSort] = useState<SortKey>(stored?.sort ?? DEFAULT_SORT)
+  const [pageSize, setPageSize] = useState(stored?.pageSize ?? DEFAULT_PAGE_SIZE)
+  const [page, setPage] = useState(stored?.page ?? 1)
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
+  const headingId = useId()
+  const listTopRef = useRef<HTMLDivElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const pageChangedByUser = useRef(false)
+
+  const currentNow = now ?? Date.now()
+  const activeCount = activeFilterCount(filters)
+  const current = paginate(sortTests(filterTests(assessments, filters, { timeZone }), sort, { now: currentNow }), page, pageSize)
+
+  useEffect(() => {
+    writeTestListState({ filters, sort, pageSize, page: current.page })
+  }, [filters, sort, pageSize, current.page])
+
+  useEffect(() => {
+    if (!pageChangedByUser.current) return
+    pageChangedByUser.current = false
+    const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    listTopRef.current?.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' })
+    headingRef.current?.focus({ preventScroll: true })
+  }, [current.page])
+
+  function updateFilters(patch: Partial<TestListFilters>) {
+    setFilters((value) => ({ ...value, ...patch }))
+    setPage(1)
+  }
+  function resetFilters() {
+    setFilters({ ...DEFAULT_FILTERS })
+    setPage(1)
+  }
+  function goToPage(next: number) {
+    pageChangedByUser.current = next !== current.page
+    setPage(next)
+  }
+
+  return (
+    <section className="v2-card test-list" aria-labelledby={`${headingId}-title`}>
+      <div className="v2-section-heading"><div><p className="v2-overline">Особисті тестування</p><h2 id={`${headingId}-title`}>Доступні тестування</h2></div><span className="v2-pill">Особистий простір</span></div>
+      <TestListFilterPanel
+        filters={filters}
+        sort={sort}
+        activeCount={activeCount}
+        expanded={filtersExpanded}
+        onToggle={() => setFiltersExpanded((value) => !value)}
+        onChange={updateFilters}
+        onSortChange={(next) => { setSort(next); setPage(1) }}
+        onReset={resetFilters}
+      />
+      <div className="test-list__summary" ref={listTopRef}>
+        <h3 className="test-list__heading" id={`${headingId}-list`} ref={headingRef} tabIndex={-1}>
+          Список тестувань{current.pageCount > 1 && <span> · сторінка {current.page} з {current.pageCount}</span>}
+        </h3>
+        <p className="test-list__count" role="status">{current.total ? shownLabel(current) : 'Нічого не знайдено'}{activeCount > 0 && ` · усього ${assessments.length}`}</p>
+        <TestListPageSize pageSize={current.pageSize} onChange={(size) => { setPageSize(size); setPage(1) }} />
+      </div>
+      {current.total ? (
+        <ol className="v2-test-list test-list__items" aria-labelledby={`${headingId}-list`} start={current.start}>
+          {current.items.map((assessment, index) => {
+            const draft = attempts.find((attempt) => attempt.assessment_id === assessment.id && attempt.status === 'draft')
+            const pill = AVAILABILITY_PILL[availabilityOf(assessment, currentNow)]
+            const titleId = `${headingId}-${assessment.id}`
+            return (
+              <li key={assessment.id}>
+                <article className="v2-test-item test-list__item" aria-labelledby={titleId}>
+                  <div className="test-list__item-main">
+                    <div className="test-list__item-top"><span className="v2-test-number">{formatTestNumber(current.start - 1 + index)}</span><span className={pill.className}>{pill.label}</span></div>
+                    <h4 id={titleId}>{assessment.name}</h4>
+                    <p className="v2-muted">{assessment.duration}</p>
+                    <dl className="test-list__meta">
+                      <div><dt>Створено</dt><dd><time dateTime={assessment.created_at}>{formatListDate(assessment.created_at, timeZone)}</time></dd></div>
+                      <div><dt>Відкриття</dt><dd><time dateTime={assessment.opens_at}>{formatListDateTime(assessment.opens_at, timeZone)}</time></dd></div>
+                      <div><dt>Дедлайн</dt><dd><time dateTime={assessment.closes_at}>{formatListDateTime(assessment.closes_at, timeZone)}</time></dd></div>
+                    </dl>
+                  </div>
+                  <button className="v2-button" disabled={assessment.status !== 'open'} type="button" aria-describedby={titleId} onClick={() => onStart(assessment.id)}>{draft ? 'Продовжити' : assessment.status === 'open' ? 'Розпочати' : 'Недоступне'}</button>
+                </article>
+              </li>
+            )
+          })}
+        </ol>
+      ) : (
+        <div className="v2-empty test-list__empty">
+          <strong>Нічого не знайдено за цими умовами</strong>
+          <p className="v2-muted">{assessments.length ? 'Змініть пошуковий запит чи діапазон дат або скиньте фільтри.' : 'Тестувань поки немає.'}</p>
+          {activeCount > 0 && <button className="v2-button" type="button" onClick={resetFilters}>Скинути фільтри</button>}
+        </div>
+      )}
+      <TestListPagination page={current.page} pageCount={current.pageCount} onPageChange={goToPage} />
+    </section>
+  )
 }
 
 export function PersonalModule({ view, userName, onStart, onFinish }: Props) {
@@ -167,7 +328,7 @@ export function PersonalModule({ view, userName, onStart, onFinish }: Props) {
   }
 
   if (view === 'available') {
-    return <section className="v2-card"><div className="v2-section-heading"><div><p className="v2-overline">Особисті тестування</p><h2>Доступні тестування</h2></div><span className="v2-pill">Особистий простір</span></div><div className="v2-test-list">{assessments.map((assessment, index) => { const draft = attempts.find((attempt) => attempt.assessment_id === assessment.id && attempt.status === 'draft'); return <article className="v2-test-item" key={assessment.id}><div><span className="v2-test-number">{formatTestNumber(index)}</span><h3>{assessment.name}</h3><p className="v2-muted">{assessment.duration}</p><p className="v2-deadline">{assessment.status === 'open' ? `Доступне до ${formatDeadline(assessment.closes_at)}` : `Недоступне · період ${formatDeadline(assessment.opens_at)} — ${formatDeadline(assessment.closes_at)}`}</p></div><button className="v2-button" disabled={assessment.status !== 'open'} type="button" onClick={() => void startAttempt(assessment.id)}>{draft ? 'Продовжити' : assessment.status === 'open' ? 'Розпочати' : 'Недоступне'}</button></article> })}</div></section>
+    return <AvailableTests assessments={assessments} attempts={attempts} onStart={(assessmentId) => void startAttempt(assessmentId)} />
   }
 
   if (view === 'attempt') {
