@@ -61,7 +61,7 @@ CREATE TABLE questionnaire_options (
 );
 
 CREATE TABLE cycle_questionnaires (
-  cycle_id INTEGER NOT NULL REFERENCES assessments(id),
+  cycle_id INTEGER NOT NULL REFERENCES cycles(id),
   mode TEXT NOT NULL CHECK (mode = 'official_self'),
   template_id TEXT NOT NULL,
   version TEXT NOT NULL,
@@ -72,7 +72,7 @@ CREATE TABLE cycle_questionnaires (
 
 CREATE TABLE official_response_sets (
   response_set_id TEXT PRIMARY KEY CHECK (length(response_set_id) = 32),
-  cycle_id INTEGER NOT NULL REFERENCES assessments(id),
+  cycle_id INTEGER NOT NULL REFERENCES cycles(id),
   mode TEXT NOT NULL DEFAULT 'official_self' CHECK (mode = 'official_self'),
   template_id TEXT NOT NULL,
   version TEXT NOT NULL,
@@ -99,7 +99,7 @@ CREATE TABLE official_answers (
 );
 ```
 
-**DDL blockers:** Existing `assessments` table name and key must be verified against the approved schema-3 commit before writing runnable migration SQL. Category/unit references need a decision: strict FK to approved lookup tables or a frozen allowlist at validation. Published templates and their child rows must be immutable by application rule and/or triggers. A correction creates a new version and content hash.
+**Schema 3 facts (verified at release commit `db70706f14cbcaba0d137151572aa996b106cd18`):** the cycle table is `cycles`, with `id INTEGER PRIMARY KEY`; there is no `assessments` table. `cycle_configs` has `cycle_id` as both PK and FK to `cycles.id`; its `questionnaire_version` currently defaults to `demo-v1`. Numeric `response_sets` and `answers` have integer PKs, `response_sets.cycle_id → cycles.id`, and `answers.response_set_id → response_sets.id` with UNIQUE `(response_set_id, question_id)`. Access-code tables are `access_tokens` and `access_token_policies`; `audit_events.assessment_id → cycles.id`. The isolated prototype uses `cycles(id)` and never writes or changes `cycle_configs.questionnaire_version`; its separate binding is authoritative only inside the prototype. Before production, #5 must decide how this binding and the existing `demo-v1` field are reconciled. Category/unit references need a decision: strict FK to approved lookup tables or a frozen allowlist at validation. Published templates and their child rows must be immutable by application rule and/or triggers. A correction creates a new version and content hash.
 
 The anonymous response tables deliberately have **no** `respondent_id`, `user_id`, `token_id`, email, IP, precise timestamp, browser identifier or foreign key to an access-code row. If duplicate submission protection needs an idempotency value, decide separately whether a one-way request key can be stored without linking it to the issued token; the current recommendation is single-use code state plus atomic insert and generic refusal on replay.
 
