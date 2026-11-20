@@ -6,7 +6,9 @@
 
   - Якщо адміністратор уже існує, команда відмовляє (перевірка й створення — одна транзакція).
     Додатковий адміністратор створюється лише явним рішенням: --allow-additional-admin.
-    Звичайний шлях призначення ролей — POST /v2/admin/users/{id}/role з журналом v2_role_changes.
+    Роль admin наявному користувачу призначає (і знімає) лише власник сервера:
+    python -m app.v2_role_cli set-role --email … --role admin --confirm (журнал v2_role_changes).
+    Через веб (POST /v2/admin/users/{id}/role) змінюються лише ролі user ↔ data_officer.
   - У release існуюча V2_AUTH_DB не мігрує: лише перевірка схеми (міграція — явною командою
     python -m app.migrations --apply --confirm-verified-backup).
   - Факт створення пишеться в журнал (user.create_admin) лише з роллю та id, без email (S12).
@@ -28,8 +30,9 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     init_auth_db()                       # development: міграція; release: лише перевірка схеми
     if not args.allow_additional_admin and admin_exists():
-        raise SystemExit("Адміністратор уже існує. Призначайте ролі через /v2/admin/users/{id}/role "
-                         "або явно вкажіть --allow-additional-admin")
+        raise SystemExit("Адміністратор уже існує. Роль admin наявному користувачу призначає власник сервера: "
+                         "python -m app.v2_role_cli set-role --email … --role admin --confirm; "
+                         "новий акаунт адміністратора — лише з --allow-additional-admin")
     password = getpass.getpass("Новий пароль адміністратора (мінімум 10 символів): ")
     confirmation = getpass.getpass("Повторіть пароль: ")
     if len(password) < 10 or password != confirmation:

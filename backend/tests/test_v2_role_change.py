@@ -2,7 +2,8 @@
 Ролі й керування сесіями V2 (docs/V2_HARDENING_CONTRACT.md, розділи 1 і 3; аудит F3, F7–F10).
 
   - POST /v2/admin/users/{id}/role: одна транзакція (роль, ВСІ сесії цілі включно з pending, відкриті коди,
-    v2_role_changes), повторна перевірка актора; 403 self_change, 404, 409, 422;
+    v2_role_changes), повторна перевірка актора; 403 self_change, 404, 409, 422; лише user ↔ data_officer —
+    роль admin призначає й знімає власник сервера (test_v2_admin_server_only.py);
   - POST /v2/admin/users/{id}/revoke-sessions і POST /v2/auth/logout-all;
   - GET /v2/admin/users (email замасковано; повний — лише за точним email) і GET /v2/admin/role-changes;
   - події основного журналу без email; SQLite зайнята → 503; data_officer працює з require_role.
@@ -23,7 +24,7 @@ from app.models import AuditEvent
 from app.roles import require_role
 from app.routes.v2_auth import require_v2_role
 from app.v2_auth import (RoleChangeError, auth_db_path, authenticate, change_user_role, find_user_id,
-                         user_for_session)
+                         server_change_role, user_for_session)
 
 from v2_helpers import PASSWORD, latest_code, login, make_user, new_email, preauth_client, start_login
 
@@ -89,7 +90,7 @@ def test_pending_verify_after_role_change_gets_no_session():
     pending, pending_csrf = start_login(target_email)
     code = latest_code(target_email)
     assert admin.post(role_url(find_user_id(target_email)), headers=csrf,
-                      json={"expected_role": "user", "new_role": "admin"}).status_code == 200
+                      json={"expected_role": "user", "new_role": "data_officer"}).status_code == 200
     response = pending.post("/v2/auth/2fa/verify", json={"code": code}, headers={"X-CSRF-Token": pending_csrf})
     assert response.status_code == 401
     assert query("SELECT COUNT(*) FROM v2_sessions WHERE user_id = ?", find_user_id(target_email)) == [(0,)]
@@ -118,7 +119,7 @@ def test_role_change_rejections():
     assert admin.post(role_url(target_id), headers=csrf,
                       json={"expected_role": "user", "new_role": "user"}).status_code == 409             # та сама
     assert admin.post(role_url(target_id), headers=csrf,
-                      json={"expected_role": "admin", "new_role": "user"}).status_code == 409            # expected
+                      json={"expected_role": "data_officer", "new_role": "user"}).status_code == 409     # expected
     assert admin.post(role_url(MAX_ID), headers=csrf, json=body).status_code == 404
     for bad in (0, -1, MAX_ID + 1, "99999999999999999999"):                                               # F9
         assert admin.post(role_url(bad), headers=csrf, json=body).status_code == 422, bad
@@ -138,7 +139,7 @@ def test_failed_role_journal_insert_rolls_back_role_and_sessions():
         db.commit()
     try:
         with pytest.raises(sqlite3.IntegrityError, match="test journal failure"):
-            admin.post(role_url(target_id), headers=csrf, json={"expected_role": "user", "new_role": "admin"})
+            admin.post(role_url(target_id), headers=csrf, json={"expected_role": "user", "new_role": "data_officer"})
         assert authenticate(target_email, PASSWORD)["role"] == "user"
         assert target.get("/v2/user/profile").status_code == 200
     finally:
@@ -156,7 +157,7 @@ def test_identical_concurrent_role_changes_have_one_winner():
     def run(_):
         barrier.wait(timeout=10)
         try:
-            return change_user_role(actor_id, session, target_id, "user", "admin")
+            return change_user_role(actor_id, session, target_id, "user", "data_officer")
         except RoleChangeError as error:
             return error.code
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -165,40 +166,42 @@ def test_identical_concurrent_role_changes_have_one_winner():
     assert query("SELECT COUNT(*) FROM v2_role_changes WHERE target_user_id = ?", target_id) == [(1,)]
 
 
-def test_two_admins_demoting_each_other_leave_exactly_one_admin():
-    for _ in range(3):
-        a_email, b_email = make_user("admin"), make_user("admin")
-        a, _ = login(a_email)
-        b, _ = login(b_email)
-        a_id, b_id = find_user_id(a_email), find_user_id(b_email)
-        barrier = threading.Barrier(2)
+def test_two_admins_cannot_demote_each_other_through_the_web():
+    """Раніше — гонка двох admin, що понижують один одного; тепер веб-пониження admin відхиляється для обох."""
+    a_email, b_email = make_user("admin"), make_user("admin")
+    a, _ = login(a_email)
+    b, _ = login(b_email)
+    a_id, b_id = find_user_id(a_email), find_user_id(b_email)
+    barrier = threading.Barrier(2)
 
-        def run(args):
-            actor, session, target = args
-            barrier.wait(timeout=10)
-            try:
-                return change_user_role(actor, session, target, "admin", "user")
-            except RoleChangeError as error:
-                return error.code
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(run, [(a_id, a.cookies.get("v2_session"), b_id),
-                                          (b_id, b.cookies.get("v2_session"), a_id)]))
-        assert sum(isinstance(r, dict) for r in results) == 1 and "actor_unauthorized" in results
-        roles = sorted(r[0] for r in query("SELECT role FROM v2_users WHERE id IN (?, ?)", a_id, b_id))
-        assert roles == ["admin", "user"]
-        assert query("SELECT COUNT(*) FROM v2_role_changes WHERE target_user_id IN (?, ?)", a_id, b_id) == [(1,)]
+    def run(args):
+        actor, session, target = args
+        barrier.wait(timeout=10)
+        try:
+            return change_user_role(actor, session, target, "admin", "user")
+        except RoleChangeError as error:
+            return error.code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(run, [(a_id, a.cookies.get("v2_session"), b_id),
+                                      (b_id, b.cookies.get("v2_session"), a_id)]))
+    assert results == ["admin_role_server_only", "admin_role_server_only"]
+    assert query("SELECT role FROM v2_users WHERE id IN (?, ?)", a_id, b_id) == [("admin",), ("admin",)]
+    assert query("SELECT COUNT(*) FROM v2_role_changes WHERE target_user_id IN (?, ?)", a_id, b_id) == [(0,)]
 
 
 def test_demoted_admin_session_cannot_finish_a_role_change():
     admin, csrf, actor_id = admin_session()
     other, other_csrf, other_id = admin_session()
     target_id = find_user_id(make_user())
-    assert other.post(role_url(actor_id), headers=other_csrf,
-                      json={"expected_role": "admin", "new_role": "user"}).status_code == 200
+    assert other.post(role_url(actor_id), headers=other_csrf,                 # веб не знімає роль admin
+                      json={"expected_role": "admin", "new_role": "user"}).status_code == 403
+    actor_email = query("SELECT email FROM v2_users WHERE id = ?", actor_id)[0][0]
+    server_change_role(actor_email, "user")                           # знімає лише власник сервера
     assert admin.post(role_url(target_id), headers=csrf,
-                      json={"expected_role": "user", "new_role": "admin"}).status_code == 401
+                      json={"expected_role": "user", "new_role": "data_officer"}).status_code == 401
     with pytest.raises(RoleChangeError, match="actor_unauthorized"):    # навіть з токеном, вкраденим до зміни
-        change_user_role(actor_id, admin.cookies.get("v2_session"), target_id, "user", "admin")
+        change_user_role(actor_id, admin.cookies.get("v2_session"), target_id, "user", "data_officer")
+    assert other_id != actor_id
 
 
 def test_busy_auth_db_gives_503_not_500(monkeypatch):
@@ -209,7 +212,7 @@ def test_busy_auth_db_gives_503_not_500(monkeypatch):
     try:
         blocker.execute("BEGIN IMMEDIATE")                               # інша транзакція тримає запис
         response = admin.post(role_url(target_id), headers=csrf,
-                              json={"expected_role": "user", "new_role": "admin"})
+                              json={"expected_role": "user", "new_role": "data_officer"})
         assert response.status_code == 503 and response.headers["retry-after"] == "1"
         revoke = admin.post(f"/v2/admin/users/{target_id}/revoke-sessions", headers=csrf)
         assert revoke.status_code == 503

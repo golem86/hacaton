@@ -8,13 +8,18 @@ include_router у main.py не потрібно. Усі маршрути — req
   GET  /v2/admin/users                         — до 500 записів: id, name, role, email_masked, created_at
   POST /v2/admin/users/lookup                  — {"email"} → один запис із повним email або 404
                                                  (email у тілі, а не в URL: query потрапляє в журнали й історію)
-  POST /v2/admin/users/{user_id}/role          — {"expected_role", "new_role"}; 403 self_change, 404, 409
-  POST /v2/admin/users/{user_id}/revoke-sessions → {"revoked": n}
+  POST /v2/admin/users/{user_id}/role          — {"expected_role", "new_role"}; 403 self_change, 404, 409;
+                                                 лише user ↔ data_officer: роль admin (призначення чи зняття)
+                                                 → 403 admin_role_server_only без жодних змін
+  POST /v2/admin/users/{user_id}/revoke-sessions → {"revoked": n}; для іншого admin → 403 admin_role_server_only
   GET  /v2/admin/role-changes                  — до 500 останніх записів append-only журналу v2_role_changes
 
 Зміни ролі й відкликання сесій виконуються однією транзакцією BEGIN IMMEDIATE у V2_AUTH_DB з повторною
 перевіркою актора; подія основного журналу (user.role_change, user.sessions_revoke) пишеться після коміту
 лише з роллю й id актора. Зайнята БД → 503 (AuthRoute); id поза 1..2^63-1 → 422.
+
+Роль адміністратора призначає й знімає лише власник сервера командою на сервері
+(python -m app.v2_role_cli set-role …; installer/windows-v2/ops/Set-V2UserRole.ps1).
 """
 from typing import Any, Literal
 
@@ -40,6 +45,7 @@ _ERRORS = {
     "not_found": (404, "user_not_found"),
     "conflict": (409, "role_conflict"),
     "invalid_role": (422, "invalid_role"),
+    "admin_role_server_only": (403, "admin_role_server_only"),
 }
 
 
@@ -81,6 +87,8 @@ def change_role(user_id: BoundedId, body: RoleChangeBody, request: Request,
                 actor: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
     if user_id == actor["id"]:
         raise HTTPException(status_code=403, detail="self_change")
+    if "admin" in (body.expected_role, body.new_role):       # роль цілі admin — ще й у транзакції change_user_role
+        raise HTTPException(status_code=403, detail="admin_role_server_only")
     try:
         result = change_user_role(actor["id"], request.cookies.get(session_cookie_name()), user_id,
                                   body.expected_role, body.new_role)
