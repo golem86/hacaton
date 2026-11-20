@@ -57,4 +57,4 @@ Prototype expert audit тепер містить `created_at`; його запи
 
 **Нові proposals/reports:** `docs/OFFICIAL_QUESTIONNAIRE_DDL_API_PROPOSAL.md`, `docs/OFFICIAL_RESPONSE_RETENTION_SUPPRESSION_PROPOSAL.md`, `docs/QUESTIONNAIRE_SCHEMA3_COMPATIBILITY_REPORT.md`, `docs/QUESTIONNAIRE_SECURITY_TEST_REPORT.md`.
 
-За попереднім станом це доповнення було незакомічене. Sync status буде оновлено після окремого коміту та перевірки remote refs за PROMPT №11. Release PR #24 не є ціллю цієї гілки; PR #25 має залишитися Draft / DO NOT MERGE.
+Поточне доповнення опубліковано в WIP-гілці commit `c7d5ea8ff0cf18558bf61ac4bc86f6f4dcaf742e`. GitHub підтвердив PR #25 як **Draft** з title `WIP: Official Questionnaires & Expert UI — DO NOT MERGE`, base `feature/assessment-manager-release-v2`, head `feature/assessment-questionnaire-v2`. Release PR #24 лишився на head `db70706f14cbcaba0d137151572aa996b106cd18`; його гілку не змінювали.
