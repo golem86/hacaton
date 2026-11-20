@@ -23,7 +23,7 @@ opt = lambda n, d=None: args[args.index(n) + 1] if n in args else d
 KIT = os.path.dirname(os.path.abspath(__file__))
 PY = opt("--py", sys.executable)
 REL, RELPY = opt("--release-backend"), opt("--release-py")
-DEPLOY = opt("--deploy-zip")
+PKGDIR, RELID = opt("--package-dir"), opt("--release-id")      # пакет релізу (формат пакета оновлення) для test-clean-bootstrap
 ONLY = opt("--only")
 LOG = opt("--log")
 JOBS = max(1, int(opt("--jobs", "1")))
@@ -136,7 +136,13 @@ MUT = [
     ("MR01", C, sub("  $xml = $xml.Replace('name=\"FRONTEND_ORIGINS\" value=\"https://' + $prodHost + '\"', 'name=\"FRONTEND_ORIGINS\" value=\"https://' + $HostName + '\"')", "  # origin залишається production"), ["ps"], ["CI.target-staging"], "R-01: test-host origin не змінено"),
     ("MR02", C, sub('  catch { Stop-V2 "TCP enumeration неможлива: $($_.Exception.Message)" }', '  catch { @() }'), ["ps"], ["CI.ports-tcp-error"], "R-02: TCP API error сприйнято за вільний порт"),
     ("MR03", "test_v2_job.py", sub('    if "--local-only" not in sys.argv:\n        add("J10"', '    if True:\n        add("J10"'), ["r03"], ["R03.local-split"], "R-03: local-only включає host-only J10"),
-    ("MR04", "clean-install.ps1", sub("'-m', 'app.v2_clean_bootstrap_admin'", "'-m', 'app.v2_bootstrap_admin'"), ["bootstrap"], ["CB.static"], "R-04: повернення bootstrap з init_auth_db/migrate_auth_db"),
+    ("MR04", "clean-install.ps1", sub("\"$K\\v2_clean_bootstrap_admin.py\", '--backend', $Backend", "'-m', 'app.v2_bootstrap_admin'"), ["bootstrap", "cistatic"], ["CB.static", "CI-S12"], "R-04: повернення bootstrap з init_auth_db/migrate_auth_db"),
+    ("MCS6", "clean-install.ps1", sub("  else { foreach ($n in 'integrity-v2-backend', 'integrity-v2-caddy') { Set-V2ServiceDelayedAuto -Name $n } }\n", ""), ["cistatic"], ["CI-S10"], "служби лишаються Manual після Clean Install"),
+    ("MCS7", C, sub("if ($rel -match $V2BootstrapRx) { continue }", ""), ["cistatic"], ["CI-S11"], "модулі bootstrap розгортаються в app\\"),
+    ("MCS8", C, sub("$V2ReleaseSchema = [ordered]@{ integrity = 6; auth = 2 }", "$V2ReleaseSchema = [ordered]@{ integrity = 3; auth = 1 }"), ["cistatic"], ["CI-S13"], "Clean Install знову закріплено на 3/1"),
+    ("MCS9", C, sub("    $ms = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('mark-synthetic',", "    $ms = Invoke-V2DbTool -Py $Py -DbTool $DbTool -ArgList @('users',"), ["cistatic"], ["CI-S13"], "без mark-synthetic"),
+    ("MCS10", "clean-install.ps1", sub("-Prompted @('V2_SMTP_PASSWORD') -Values $Smtp.Values", "-Values $Smtp.Values"), ["cistatic"], ["CI-S14"], "SMTP: усі значення запитуються, Gmail-план ігнорується"),
+    ("MCS11", C, sub("  if ($hasLm) { foreach ($l in @(Assert-V2LmAcl)) { $out.Add($l) } }\n", ""), ["cistatic"], ["CI-S15"], "матриця ACL без lm\\"),
     ("MR01D", C, sub("if (@(Compare-Object -ReferenceObject @($approved | Sort-Object -Unique) -DifferenceObject @($resolved | Sort-Object -Unique)).Count)", "if ($false)"), ["r01"], ["R01.extra-dns"], "R-01: зайву DNS-адресу прийнято"),
     ("MR01R", C, sub("  $null = Assert-V2TargetIdentity -HostName $HostName -Addresses $Addresses -TestHost:$TestHost", "  # DNS recheck пропущено"), ["r01"], ["R01.rebinding"], "R-01: DNS recheck перед HTTPS пропущено"),
     ("MR01P", C, sub("'--noproxy','*','--resolve',\"${HostName}:${Port}:$address\",'--request'", "'--noproxy','*','--request'"), ["r01"], ["R01.pinned-endpoint"], "R-01: HTTPS endpoint не прив'язано"),
@@ -162,8 +168,8 @@ def run_suite(kit, suite, tmp=None):
     elif suite == "root":
         cmd = [PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", os.path.join(kit, "test-clean-root-race.ps1")]
     elif suite == "bootstrap":
-        if not DEPLOY: raise RuntimeError('bootstrap mutation requires --deploy-zip')
-        cmd = [PY, "-I", os.path.join(kit, "test-clean-bootstrap.py"), "--deploy-zip", DEPLOY]
+        if not PKGDIR or not RELID: raise RuntimeError('bootstrap mutation requires --package-dir and --release-id')
+        cmd = [PY, "-I", os.path.join(kit, "test-clean-bootstrap.py"), "--package-dir", PKGDIR, "--release-id", RELID]
     elif suite == "r03":
         cmd = [PY, "-I", os.path.join(kit, "test-r03-gate.py"), "--ps", PS]
     elif suite == "r01":
