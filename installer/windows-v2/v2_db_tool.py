@@ -5,6 +5,7 @@ v2_db_tool.py — перевірки БД V2 для встановлення й 
 
   fingerprint <db>                            — відбиток синтетичних даних (детерміновані таблиці app.seed; без access_tokens)
   verify <db> --expect-version N              — integrity_check = ok, PRAGMA user_version = N (лише читання)
+  user-version <db>                           — вид БД і PRAGMA user_version (лише читання; для щоденної копії після оновлень)
   backup <src> <dst> --expect-version N [--kind auth|integrity] [--strict]
                                               — копія через SQLite backup API → перевірка копії → тест відновлення
                                                 (копія копії у тимчасовий підкаталог поруч із <dst>, відкриття, integrity_check,
@@ -997,6 +998,10 @@ def main(argv):
         with ro(argv[1]) as con:
             check(con, v, argv[1])
             print(f"VERIFY OK user_version={v} rows={sum(counts(con).values())}")
+    elif cmd == "user-version":
+        with ro(argv[1]) as con:
+            print(f"USER-VERSION kind={detect_kind(con) or 'unknown'} user_version={con.execute('PRAGMA user_version').fetchone()[0]}"
+                  f" spec={'yes' if (detect_kind(con), con.execute('PRAGMA user_version').fetchone()[0]) in SCHEMA_SPECS else 'no'}")
     elif cmd == "backup":
         cmd_backup(argv)
     elif cmd == "restore":
