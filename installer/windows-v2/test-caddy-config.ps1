@@ -109,9 +109,10 @@ try {
     $vf = Join-Path $tmp 'validate.Caddyfile'; [IO.File]::WriteAllText($vf, $gt.Replace('C:/srv/integrity-v2/', ($root -replace '\\', '/') + '/'), $utf8)
     $before = @(Get-ChildItem -LiteralPath $root -Recurse -Force | ForEach-Object FullName)
     $saved = @{}; foreach ($n in 'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'APPDATA') { $saved[$n] = [Environment]::GetEnvironmentVariable($n, 'Process'); [Environment]::SetEnvironmentVariable($n, (Join-Path $tmp 'xdg'), 'Process') }
-    try { $v = Invoke-Native $Caddy @('validate', '--config', $vf, '--adapter', 'caddyfile') } finally { foreach ($n in $saved.Keys) { [Environment]::SetEnvironmentVariable($n, $saved[$n], 'Process') } }
+    $vt = Join-Path $tmp 'validate-template.Caddyfile'; [IO.File]::WriteAllText($vt, $tt.Replace('C:/srv/integrity-v2/', ($root -replace '\\', '/') + '/'), $utf8)
+    try { $v = Invoke-Native $Caddy @('validate', '--config', $vf, '--adapter', 'caddyfile'); $v0 = Invoke-Native $Caddy @('validate', '--config', $vt, '--adapter', 'caddyfile') } finally { foreach ($n in $saved.Keys) { [Environment]::SetEnvironmentVariable($n, $saved[$n], 'Process') } }
     $after = @(Get-ChildItem -LiteralPath $root -Recurse -Force | ForEach-Object FullName)
-    Add-Res 'C6.validate' ($mk.Code -eq 0 -and $v.Code -eq 0 -and ($v.Out + $v.Err) -match 'Valid configuration' -and -not @(Compare-Object $before $after).Count -and -not (Test-Path (Join-Path $tmp 'xdg'))) "caddy validate цільової форми з тимчасовою TLS-парою: exit $($v.Code); файлів не створено"
+    Add-Res 'C6.validate' ($mk.Code -eq 0 -and $v.Code -eq 0 -and (($v.Out + $v.Err) -match 'Valid configuration') -and $v0.Code -eq 0 -and (($v0.Out + $v0.Err) -match 'Valid configuration') -and -not @(Compare-Object $before $after).Count -and -not (Test-Path (Join-Path $tmp 'xdg'))) "caddy validate: цільова форма TLSFIX5 з тимчасовою TLS-парою exit $($v.Code), шаблон exit $($v0.Code); файлів не створено"
   }
 
   # C7: sha256 у CSP /docs = хеш вбудованого скрипта сторінки /docs, згенерованої FastAPI з параметрами api_docs.swagger_ui

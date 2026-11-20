@@ -15,3 +15,5 @@ Backend Python 3.13.14 full pytest: 364 PASS, 1 deprecation warning. Frontend: 3
 Installer: 15 local suites passed, including 21 rehearsal cases. Mutation cases were not rerun for this candidate. Required Windows runtime tests remain NOT RUN.
 
 Role-change feature is a separate candidate pending independent acceptance; it is not in this deploy ZIP.
+
+Next candidate (hardening, not part of this TLSFIX5 ZIP): see RELEASE_NOTES_V2_HARDENING.md and docs/UPGRADE_IN_PLACE.md.
