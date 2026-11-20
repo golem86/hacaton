@@ -427,9 +427,30 @@ k-анонімність (як `/results`):
 | `POST /v2/auth/logout-all` | сесія з 2FA + CSRF | `{"status":"logged_out_all"}`, видаляє всі сесії користувача |
 | `GET /v2/admin/users` | admin | `[{id, name, role, email_masked, created_at}]`, до 500; параметри ігноруються |
 | `POST /v2/admin/users/lookup` | admin + CSRF | тіло `{"email"}` → `{id, name, email, role, created_at}` або 404. Email не передається в URL |
-| `POST /v2/admin/users/{user_id}/role` | admin + CSRF | тіло `{"expected_role","new_role"}` (`user|admin|data_officer`) → `{user_id, old_role, new_role, sessions_revoked, changed_at}`; 403 `self_change`, 404 `user_not_found`, 409 `role_conflict`. Одна транзакція: роль, видалення всіх сесій цілі, гасіння відкритих кодів 2FA, журнал змін (append-only) |
-| `POST /v2/admin/users/{user_id}/revoke-sessions` | admin + CSRF | `{"revoked": n}`; гасить і відкриті коди 2FA |
-| `GET /v2/admin/role-changes` | admin | `{id, actor_user_id, target_user_id, old_role, new_role, changed_at}`, до 500 |
+| `POST /v2/admin/users/{user_id}/role` | admin + CSRF | тіло `{"expected_role","new_role"}` → `{user_id, old_role, new_role, sessions_revoked, changed_at}`. Лише `user` ↔ `data_officer`. `new_role` або `expected_role` = `admin`, а також поточна роль цілі `admin` (перевіряється й усередині транзакції BEGIN IMMEDIATE) → **403 `{"detail":"admin_role_server_only"}`** без жодних змін. Інші коди: 403 `self_change`, 404 `user_not_found`, 409 `role_conflict`, 422. Одна транзакція: роль, видалення всіх сесій цілі, гасіння відкритих кодів 2FA, журнал змін (append-only) |
+| `POST /v2/admin/users/{user_id}/revoke-sessions` | admin + CSRF | `{"revoked": n}`; гасить і відкриті коди 2FA. Ціль з роллю `admin` (крім себе) → 403 `admin_role_server_only`; власні сесії — як і раніше (а також `POST /v2/auth/logout-all`) |
+| `GET /v2/admin/role-changes` | admin | `{id, actor_user_id, target_user_id, old_role, new_role, changed_at}`, до 500; `actor_user_id = 0` — серверна команда власника сервера |
+
+#### Роль admin — лише власник сервера
+
+Роль адміністратора у вебі не призначає й не знімає ніхто, зокрема інший адміністратор. Її призначає й знімає лише власник сервера командою на сервері (з каталогу backend):
+
+```
+python -m app.v2_role_cli set-role --email <email> --role admin|user|data_officer            # план, без змін
+python -m app.v2_role_cli set-role --email <email> --role admin|user|data_officer --confirm  # виконати
+```
+
+На сервері Windows — `installer/windows-v2/ops/Set-V2UserRole.ps1`, запуск з каталогу, куди скопійовано скрипт (неінтерактивно, придатно для SSH від адміністратора; шляхи БД і робочий каталог — з XML служби `integrity-v2-backend`, секрети не читаються й не виводяться):
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Set-V2UserRole.ps1 -Email <email> -Role admin           # план
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Set-V2UserRole.ps1 -Email <email> -Role admin -Apply    # виконати
+```
+
+- Та сама транзакція, що й веб-зміна: роль, видалення всіх сесій цілі, гасіння відкритих кодів 2FA, запис у `v2_role_changes` з `actor_user_id = 0` («сервер»: колонка NOT NULL без FK/CHECK, id користувачів починаються з 1). Після коміту — подія основного журналу `user.role_change` з `actor_role = "server"`, `actor_user_id = null`, без email.
+- Останнього адміністратора не знімає (лишається щонайменше один `admin`).
+- Не мігрує БД (лише перевірка схем), не потребує `V2_SECRET_KEY`; зі змінних середовища читає `INTEGRITY_DB`, `V2_AUTH_DB` (у release обов'язкові) і `APP_ENV`. Backend зупиняти не потрібно.
+- Email у виводі лише замаскований. Коди виходу: `0` — виконано або план, `2` — відмова (немає користувача, та сама роль, останній адміністратор, неправильні аргументи), `1` — помилка.
 
 ### Чернетки текстів звіту локальною ШІ (llama-server)
 Опис, налаштування й ручна перевірка — `docs/LOCAL_LM.md`. Усі маршрути — сесія `admin` з 2FA; POST — з CSRF. Факти для моделі беруться лише з `/results` (без прихованих груп), підсумків участі й лічильників трекера; тексти ніде не зберігаються і не потрапляють у трекер.
