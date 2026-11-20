@@ -127,6 +127,3 @@ test('self and expert render distinct submission modes with honest adapted-wordi
   assert.ok(self.includes('Одноразовий код доступу'))
   assert.ok(self.includes('с. 60'), 'self defaults to form 2 for personnel')
 })
-
-
-
