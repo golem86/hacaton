@@ -99,6 +99,8 @@ desktop-jtgc2sg.taild5c033.ts.net:443 {
 	handle /assets/* {
 		header {
 			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+			# імена файлів містять хеш збірки — безпечно кешувати довго
+			Cache-Control "public, max-age=31536000, immutable"
 			defer
 		}
 		root * C:/srv/integrity-v2/app/frontend/dist
@@ -107,6 +109,8 @@ desktop-jtgc2sg.taild5c033.ts.net:443 {
 	handle {
 		header {
 			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+			# index.html і маршрути SPA: браузер щоразу перевіряє нову версію після оновлень
+			Cache-Control "no-cache"
 			defer
 		}
 		root * C:/srv/integrity-v2/app/frontend/dist
