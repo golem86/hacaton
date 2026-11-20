@@ -21,7 +21,7 @@ from prototypes.questionnaire_integration import (
     IntegrationError, IntegrationStore, SyntheticSubmission,
     apply_questionnaire_migration, core_snapshot, create_integration_test_app,
     create_synthetic_schema3_copy, create_synthetic_schema3_source,
-    restore_synthetic_backup, suppress_cells,
+    restore_synthetic_backup, suppress_cells, SQLiteRateLimiter,
 )
 
 
@@ -156,6 +156,47 @@ def test_migration_refuses_without_explicit_synthetic_guard(tmp_path: Path):
         apply_questionnaire_migration(tmp_path / "ordinary.prototype.sqlite", allow_test_migration=True)
 
 
+def test_synthetic_database_helpers_fail_closed_on_protected_or_non_temp_paths(tmp_path, monkeypatch):
+    protected = tmp_path / "would-be-integrity.schema3-synthetic.sqlite"
+    monkeypatch.setenv("INTEGRITY_DB", str(protected))
+    with pytest.raises(ValueError, match="Production/shared"):
+        create_synthetic_schema3_source(protected)
+    assert not protected.exists()
+
+    monkeypatch.delenv("INTEGRITY_DB")
+    protected_auth = tmp_path / "would-be-auth.schema3-synthetic.sqlite"
+    monkeypatch.setenv("V2_AUTH_DB", str(protected_auth))
+    with pytest.raises(ValueError, match="Production/shared"):
+        create_synthetic_schema3_source(protected_auth)
+    assert not protected_auth.exists()
+    monkeypatch.delenv("V2_AUTH_DB")
+    outside_temp = Path(__file__).resolve().parents[2] / "must-not-create.schema3-synthetic.sqlite"
+    with pytest.raises(ValueError, match="temp directory"):
+        create_synthetic_schema3_source(outside_temp)
+    assert not outside_temp.exists()
+
+    bogus_source = tmp_path / "unverified.schema3-synthetic.sqlite"
+    with sqlite3.connect(bogus_source) as con:
+        con.execute("PRAGMA user_version=3")
+        con.execute("CREATE TABLE made_up(value TEXT)")
+    copy_path = tmp_path / "unverified.prototype.sqlite"
+    with pytest.raises(ValueError, match="expected schema-3 synthetic"):
+        create_synthetic_schema3_copy(bogus_source, copy_path)
+    assert not copy_path.exists()
+
+
+def test_synthetic_source_symbolic_link_is_rejected(tmp_path):
+    source = create_synthetic_schema3_source(tmp_path / "safe.schema3-synthetic.sqlite")
+    alias = tmp_path / "alias.schema3-synthetic.sqlite"
+    try:
+        alias.symlink_to(source)
+    except OSError as error:
+        pytest.skip(f"Windows symlink creation unavailable in this environment: {error}")
+    with pytest.raises(ValueError, match="Symbolic-link"):
+        create_synthetic_schema3_copy(alias, tmp_path / "alias-copy.prototype.sqlite")
+    assert not (tmp_path / "alias-copy.prototype.sqlite").exists()
+
+
 @pytest.mark.parametrize("fail_at", ["ddl_1", "after_templates", "before_meta"])
 def test_migration_failure_injection_rolls_back_and_backup_restores(fail_at, tmp_path: Path):
     source = create_synthetic_schema3_source(tmp_path / f"{fail_at}.schema3-synthetic.sqlite")
@@ -201,12 +242,74 @@ def test_official_adapter_atomically_uses_existing_access_token_without_linking_
         token_columns = {r[1] for r in con.execute("PRAGMA table_info(access_tokens)")}
         assert not ({"respondent_id", "user_id", "token", "ip", "created_at", "timestamp"} & set_columns)
         assert "response_set_id" not in token_columns
+        # Schema 3 stores the one-time value as plaintext; the prototype does not change that contract.
+        assert "token" in token_columns and "token_digest" not in token_columns
+        assert con.execute("SELECT token FROM access_tokens WHERE token=?", (SYNTHETIC_CODE,)).fetchone()[0] == SYNTHETIC_CODE
         assert con.execute("SELECT COUNT(*) FROM official_answers a JOIN answers n ON 1=1").fetchone()[0] == 12
     assert core_snapshot(db_path)["answers"] == before["answers"]
     assert __import__("hashlib").sha256(source.read_bytes()).hexdigest() == source_digest
     assert client.post("/prototype/integration/cycles/1/official-submissions", json=_official_body()).status_code == 403
     assert not any(getattr(route, "path", "").startswith("/api/assessments")
                    for route in client.app.routes)
+
+
+def test_official_sets_are_isolated_by_cycle_and_version(integration):
+    client, store, db_path, *_ = integration
+    with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO cycles(id,name,start_date,status,min_group_size) "
+                    "VALUES (2,'Synthetic second cycle','2026-02-01','draft',5)")
+        con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,questionnaire_version) "
+                    "VALUES (2,'synthetic second','test','[\"staff\"]','demo-v1')")
+        token_id = con.execute("INSERT INTO access_tokens(cycle_id,token,used) "
+                               "VALUES (2,'synthetic-cycle-2-code',0)").lastrowid
+        con.execute("INSERT INTO access_token_policies(token_id,category,expires_at) "
+                    "VALUES (?,?,datetime('now','+1 day'))", (token_id, "staff"))
+    store.bind_cycle(2, FORM1, VERSION)
+    with sqlite3.connect(db_path) as con:
+        con.execute("UPDATE cycles SET status='open' WHERE id=2")
+    wrong_cycle = client.post("/prototype/integration/cycles/2/official-submissions", json=_official_body())
+    wrong_version = client.post("/prototype/integration/cycles/2/official-submissions",
+                                json=_official_body(code="synthetic-cycle-2-code", version="1.0.0"))
+    assert wrong_cycle.status_code == 403  # cycle-1 code is never valid for cycle 2
+    assert wrong_version.status_code == 422
+    assert client.post("/prototype/integration/cycles/2/official-submissions",
+                       json=_official_body(code="synthetic-cycle-2-code")).status_code == 201
+    with sqlite3.connect(db_path) as con:
+        sets = con.execute("SELECT cycle_id,template_id,version FROM official_response_sets ORDER BY cycle_id").fetchall()
+        assert sets == [(2, FORM1, VERSION)]
+        assert con.execute("SELECT used FROM access_tokens WHERE token='synthetic-cycle-2-code'").fetchone()[0] == 1
+
+
+def test_expert_scope_is_limited_to_assigned_cycle_and_assessment(migrated_db, monkeypatch, tmp_path):
+    db_path, store, *_ = migrated_db
+    with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO cycles(id,name,start_date,status,min_group_size) "
+                    "VALUES (2,'Synthetic expert cycle','2026-02-01','draft',5)")
+        con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,questionnaire_version) "
+                    "VALUES (2,'synthetic expert','test','[\"staff\"]','demo-v1')")
+    store.bind_cycle(2, FORM1, VERSION)
+    with sqlite3.connect(db_path) as con:
+        con.execute("UPDATE cycles SET status='open' WHERE id=2")
+    admin, expert_a, expert_b, _admin_token, _pending, token_a, token_b = \
+        _auth_admin_and_expert(monkeypatch, tmp_path)
+    store.grant_expert(str(expert_a["id"]), str(admin["id"]))
+    store.grant_expert(str(expert_b["id"]), str(admin["id"]))
+    store.assign_expert(str(expert_a["id"]), 1, FORM1, VERSION, str(admin["id"]))
+    store.assign_expert(str(expert_b["id"]), 2, FORM1, VERSION, str(admin["id"]))
+    with sqlite3.connect(db_path) as con:
+        ids = {row[0]: row[1] for row in con.execute(
+            "SELECT ea.principal_id,a.assessment_id FROM expert_assignments ea "
+            "JOIN expert_assessments a USING(assignment_id)")}
+    app, _ = create_integration_test_app(db_path, store)
+    client = TestClient(app)
+    route = "/prototype/integration/expert/assessments/"
+    client.cookies.set(session_cookie_name(), token_a)
+    assert client.get(route + ids[str(expert_a["id"])]).status_code == 200
+    assert client.get(route + ids[str(expert_b["id"])], headers={"X-Role": "admin"}).status_code == 404
+    client.cookies.clear()
+    client.cookies.set(session_cookie_name(), token_b)
+    assert client.get(route + ids[str(expert_b["id"])]).status_code == 200
+    assert client.get(route + ids[str(expert_a["id"])]).status_code == 404
 
 
 @pytest.mark.parametrize("body,expected", [
@@ -336,6 +439,86 @@ def test_global_and_per_cycle_rate_limits_without_ip_keys():
     assert all("ip" not in str(key).lower() for key in limiter.cycle_events)
 
 
+def test_sqlite_rate_limit_poc_is_atomic_across_worker_instances_and_expires(migrated_db):
+    db_path, _store, *_ = migrated_db
+    limiters = [SQLiteRateLimiter(db_path, global_limit=6, cycle_limit=4, window_seconds=60)
+                for _ in range(12)]
+    barrier = threading.Barrier(len(limiters))
+
+    def request(limiter):
+        barrier.wait()
+        return limiter.allow("cycle-1")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(limiters)) as pool:
+        accepted = list(pool.map(request, limiters))
+    assert sum(accepted) == 4
+    with sqlite3.connect(db_path) as con:
+        assert con.execute("SELECT request_count FROM questionnaire_rate_limit_buckets "
+                           "WHERE bucket_key='cycle:cycle-1'").fetchone()[0] == 4
+        assert con.execute("SELECT request_count FROM questionnaire_rate_limit_buckets "
+                           "WHERE bucket_key='global'").fetchone()[0] == 4
+        names = {r[1] for r in con.execute("PRAGMA table_info(questionnaire_rate_limit_buckets)")}
+        assert not ({"ip", "user_id", "token", "device_id"} & names)
+
+    global_clock = [2_000_000_000.0]
+    global_limiters = [SQLiteRateLimiter(db_path, global_limit=3, cycle_limit=10,
+                                         window_seconds=10, clock=lambda: global_clock[0])
+                       for _ in range(8)]
+    global_barrier = threading.Barrier(len(global_limiters))
+
+    def global_request(args):
+        index, limiter = args
+        global_barrier.wait()
+        return limiter.allow(f"cycle-{index}")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(global_limiters)) as pool:
+        global_results = list(pool.map(global_request, enumerate(global_limiters)))
+    assert sum(global_results) == 3
+    with sqlite3.connect(db_path) as con:
+        assert con.execute("SELECT request_count FROM questionnaire_rate_limit_buckets "
+                           "WHERE bucket_key='global' AND window_start=2000000000").fetchone()[0] == 3
+
+    clock = [100.0]
+    expiring = SQLiteRateLimiter(db_path, global_limit=2, cycle_limit=2,
+                                 window_seconds=10, clock=lambda: clock[0])
+    assert expiring.allow("ttl-cycle")
+    clock[0] = 111.0
+    assert expiring.allow("ttl-cycle")
+    with sqlite3.connect(db_path) as con:
+        assert con.execute("SELECT COUNT(*) FROM questionnaire_rate_limit_buckets "
+                           "WHERE bucket_key='cycle:ttl-cycle'").fetchone()[0] == 1
+
+
+def test_sqlite_rate_limit_storage_failure_fails_closed(integration):
+    client, _store, db_path, *_ = integration
+    with sqlite3.connect(db_path) as con:
+        con.execute("CREATE TRIGGER reject_limit_bucket BEFORE INSERT ON questionnaire_rate_limit_buckets "
+                    "BEGIN SELECT RAISE(ABORT,'synthetic limiter unavailable'); END")
+    response = client.post("/prototype/integration/cycles/1/official-submissions", json=_official_body())
+    assert response.status_code == 503
+    assert SYNTHETIC_CODE not in response.text
+    with sqlite3.connect(db_path) as con:
+        assert con.execute("SELECT used FROM access_tokens WHERE token=?", (SYNTHETIC_CODE,)).fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM official_response_sets").fetchone()[0] == 0
+        con.execute("DROP TRIGGER reject_limit_bucket")
+
+
+def test_sqlite_rate_limit_http_response_is_generic_429(integration):
+    client, store, db_path, *_ = integration
+    store.rate_limiter = SQLiteRateLimiter(db_path, global_limit=10, cycle_limit=2)
+    for code in ("synthetic-rate-guess-one", "synthetic-rate-guess-two"):
+        response = client.post("/prototype/integration/cycles/1/official-submissions",
+                               json=_official_body(code=code))
+        assert response.status_code == 403
+    limited = client.post("/prototype/integration/cycles/1/official-submissions",
+                          json=_official_body(code="synthetic-assessment-code"))
+    assert limited.status_code == 429
+    assert "synthetic-assessment-code" not in limited.text
+    with sqlite3.connect(db_path) as con:
+        assert con.execute("SELECT used FROM access_tokens WHERE token=?", (SYNTHETIC_CODE,)).fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM official_response_sets").fetchone()[0] == 0
+
+
 def test_throttled_http_attempts_do_not_write_answers_or_log_request_secrets(integration, caplog):
     client, store, db_path, _before, _migration, _source, _digest = integration
     store.rate_limiter = InMemoryRateLimiter(global_limit=20, cycle_limit=2)
@@ -388,6 +571,22 @@ def test_suppression_primary_complementary_intersections_and_no_raw_api(integrat
     assert all("official" not in p or "submissions" in p for p in route_paths if p.startswith("/prototype"))
 
 
+@pytest.mark.parametrize("attack", [
+    "category-differencing", "cross-cycle-differencing", "overlapping-filter",
+    "repeated-query", "intersection-unit-category", "recover-hidden-count-from-total",
+])
+def test_aggregate_differencing_attack_surface_is_absent(attack, integration):
+    client, _store, *_ = integration
+    path = f"/prototype/integration/official-aggregates/{attack}"
+    response = client.get(path, params={"cycle": "1", "category": "small-synthetic-group",
+                                        "unit": "synthetic-unit", "repeat": "2"})
+    assert response.status_code == 404
+    assert "small-synthetic-group" not in response.text
+    assert "count" not in response.text.lower()
+    route_paths = {getattr(route, "path", "") for route in client.app.routes}
+    assert not any("aggregate" in route or "participation" in route for route in route_paths)
+
+
 def test_purge_is_transactional_cascades_official_rows_and_is_test_only(integration):
     client, store, db_path, *_ = integration
     assert client.post("/prototype/integration/cycles/1/official-submissions", json=_official_body()).status_code == 201
@@ -438,6 +637,14 @@ def test_real_v2_sessions_admin_csrf_explicit_expert_grant_and_assignment(migrat
     assert bad_origin.status_code == 403
     assert client.post(f"/prototype/integration/expert/grants/{expert['id']}",
                        headers={"X-Role": "admin"}).status_code == 403
+    client.cookies.clear()
+    client.cookies.set(session_cookie_name(), outsider_token)
+    assert client.post(f"/prototype/integration/expert/grants/{expert['id']}",
+                       headers={**_auth_headers(outsider_token), "X-Role": "admin"}).status_code == 403
+    assert client.delete(f"/prototype/integration/expert/grants/{expert['id']}",
+                         headers={**_auth_headers(outsider_token), "X-Role": "admin"}).status_code == 403
+    client.cookies.clear()
+    client.cookies.set(session_cookie_name(), admin_token)
     granted = client.post(f"/prototype/integration/expert/grants/{expert['id']}",
                           headers=_auth_headers(admin_token))
     assert granted.status_code == 200
@@ -491,6 +698,17 @@ def test_expert_revision_finalize_audit_and_revocation_block_next_request(migrat
     assert stale_origin.status_code == 403
     headers = _auth_headers(expert_token)
     partial = {"expected_revision": 0, "answers": answer_payload()[:1]}
+    with sqlite3.connect(db_path) as con:
+        con.execute("CREATE TRIGGER reject_expert_audit BEFORE INSERT ON expert_audit_events "
+                    "WHEN NEW.action='answers_updated' BEGIN SELECT RAISE(ABORT,'synthetic audit failure'); END")
+    with pytest.raises(sqlite3.IntegrityError):
+        expert_client.put(route + "/answers", json=partial, headers=headers)
+    with sqlite3.connect(db_path) as con:
+        assert con.execute("SELECT revision FROM expert_assessments WHERE assessment_id=?",
+                           (assessment_id,)).fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM expert_answers WHERE assessment_id=?",
+                           (assessment_id,)).fetchone()[0] == 0
+        con.execute("DROP TRIGGER reject_expert_audit")
     assert expert_client.put(route + "/answers", json=partial, headers=headers).json() == {"revision": 1}
     assert expert_client.put(route + "/answers", json=partial, headers=headers).status_code == 409
     assert expert_client.post(route + "/finalize", headers=headers).status_code == 422
@@ -534,6 +752,84 @@ def test_admin_needs_explicit_grant_and_revoked_v2_session_is_rejected(migrated_
     delete_session(expert_token)
     assert client.get("/prototype/integration/expert/assessments/nope").status_code == 401
     assert expert["id"]
+
+
+def test_concurrent_expert_grant_and_revoke_have_serial_audit_order(migrated_db, monkeypatch, tmp_path):
+    db_path, store, *_ = migrated_db
+    admin, expert, *_ = _auth_admin_and_expert(monkeypatch, tmp_path)
+    store.grant_expert(str(expert["id"]), str(admin["id"]))
+    barrier = threading.Barrier(2)
+
+    def grant():
+        barrier.wait()
+        store.grant_expert(str(expert["id"]), str(admin["id"]))
+        return "grant"
+
+    def revoke():
+        barrier.wait()
+        store.revoke_expert(str(expert["id"]), str(admin["id"]))
+        return "revoke"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(grant), pool.submit(revoke)]
+        [future.result(timeout=15) for future in futures]
+    with sqlite3.connect(db_path) as con:
+        final_action = con.execute("SELECT action FROM expert_audit_events "
+                                   "WHERE target_principal_id=? ORDER BY id DESC LIMIT 1",
+                                   (str(expert["id"]),)).fetchone()[0]
+        enabled = con.execute("SELECT enabled FROM expert_permissions WHERE principal_id=?",
+                              (str(expert["id"]),)).fetchone()[0]
+        assert enabled == (1 if final_action == "grant" else 0)
+        assert [r[0] for r in con.execute("SELECT action FROM expert_audit_events "
+                                         "WHERE target_principal_id=? ORDER BY id",
+                                         (str(expert["id"],)))] == ["grant", "grant", "revoke"] or \
+               [r[0] for r in con.execute("SELECT action FROM expert_audit_events "
+                                         "WHERE target_principal_id=? ORDER BY id",
+                                         (str(expert["id"],)))] == ["grant", "revoke", "grant"]
+
+
+def test_user_promoted_to_admin_keeps_old_verified_session_in_current_auth_contract(
+        migrated_db, monkeypatch, tmp_path):
+    """Document current V2 behavior in temp auth DB; promotion policy needs #5/auth-owner decision."""
+    db_path, _store, *_ = migrated_db
+    app, store = create_integration_test_app(db_path)
+    admin, user, *_ = _auth_admin_and_expert(monkeypatch, tmp_path)
+    client = TestClient(app)
+    user_token = create_session(user["id"], two_factor_verified=True)[0]
+    client.cookies.set(session_cookie_name(), user_token)
+    assert client.post(f"/prototype/integration/expert/grants/{admin['id']}",
+                       headers=_auth_headers(user_token)).status_code == 403
+    with sqlite3.connect(tmp_path / "v2-auth-test.sqlite") as auth:
+        auth.execute("UPDATE v2_users SET role='admin' WHERE id=?", (user["id"],))
+    # Existing V2 lookup reads current role, while its verified-2FA session stays active.
+    promoted = client.post(f"/prototype/integration/expert/grants/{admin['id']}",
+                           headers=_auth_headers(user_token))
+    assert promoted.status_code == 200
+
+
+def test_auth_adapter_and_grant_refuse_default_or_missing_auth_db_without_opening_it(
+        migrated_db, monkeypatch, tmp_path):
+    from app.v2_auth import auth_db_path
+    db_path, store, *_ = migrated_db
+    app, _store = create_integration_test_app(db_path, store)
+    monkeypatch.delenv("V2_AUTH_DB", raising=False)
+    default_path = auth_db_path()
+    before = (default_path.exists(), default_path.stat().st_size if default_path.exists() else None,
+              default_path.stat().st_mtime_ns if default_path.exists() else None)
+    client = TestClient(app)
+    result = client.get("/prototype/integration/expert/assessments/nope")
+    assert result.status_code == 503
+    with pytest.raises(ValueError, match="explicit isolated V2_AUTH_DB"):
+        store.grant_expert("1", "synthetic-actor")
+    after = (default_path.exists(), default_path.stat().st_size if default_path.exists() else None,
+             default_path.stat().st_mtime_ns if default_path.exists() else None)
+    assert after == before
+
+    outside = Path(__file__).resolve().parents[2] / "must-not-create-auth.sqlite"
+    monkeypatch.setenv("V2_AUTH_DB", str(outside))
+    with pytest.raises(ValueError, match="temporary test database"):
+        store.grant_expert("1", "synthetic-actor")
+    assert not outside.exists()
 
 
 def test_published_template_binding_and_version_isolation(migrated_db):

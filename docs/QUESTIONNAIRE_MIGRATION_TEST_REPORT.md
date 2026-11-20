@@ -21,7 +21,7 @@ The test fixture creates a SQLite database from the checked-in SQLAlchemy `Base.
 
 The prototype adds its own `questionnaire_prototype_meta(version=1)` and deliberately leaves `PRAGMA user_version=3`. Actual schema-3 references use `cycles(id)`; there is no `assessments` table. Numeric tables and the existing `cycle_configs.questionnaire_version` are not modified. The synthetic DB is generated from current model metadata, so this verifies the checked-in model/schema shape, not the Windows installer’s deployed database artifact.
 
-The final full backend run after guard/rate-limiter hardening was **409 passed, 1 warning** in 88.89 seconds. The targeted migration/integration suite was **25 passed, 1 warning** in 8.48 seconds. The sole warning is Starlette's deprecation notice for using httpx with `TestClient`; no test was skipped.
+Final Prompt #13 run: full backend **424 passed, 1 skipped, 1 warning** in 83.92 seconds; targeted suite **40 passed, 1 skipped, 1 warning** in 15.37 seconds. The skip is Windows symlink creation denied with WinError 1314; the sole warning is Starlette's httpx/TestClient deprecation. All migration/restore/failure-injection checks passed; no tests were skipped other than the explicit OS-limited symlink case.
 
 ## Limits
 
