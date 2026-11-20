@@ -19,6 +19,7 @@ import TrackerPanel from './v2/TrackerPanel'
 import UsersPanel from './v2/UsersPanel'
 import DataOfficerPanel from './v2/DataOfficerPanel'
 import { AccountMenu } from './v2/AccountMenu'
+import { NavButton, navGridStyle, SURVEY_NAV_KEY } from './v2/icons'
 import { homePathFor, navigationFor, PANEL_TEXT, routeFromPath, sectionTitle, type AdminSection } from './v2/navigation'
 import { pathForPublicPage, publicPageFromPath, type PublicPage } from './v2/publicRoutes'
 import Survey from './pages/Survey'
@@ -101,12 +102,15 @@ function App() {
   if (route.role !== session.role) return <RoleDenied user={session} onLogout={signOut} />
   const text = PANEL_TEXT[route.role]
   const title = sectionTitle(route)
+  const navItems = navigationFor(route.role)
   // Одна бічна панель для всіх ролей (admin, data_officer, user): емблема Sys&Mints і меню за роллю.
   return <div className="v2-app"><div className={`v2-shell v2-shell-${route.role}`}>
-    <aside className="v2-sidebar"><div className="v2-brand"><img className="v2-brand-mark v2-brand-logo" src="/sysmints-emblem.svg" alt="" width={38} height={38} /><div><strong>Integrity<br/>Management</strong><small>{text.brand}</small></div></div>
-      <nav className="v2-nav" aria-label={text.navAria}><span className="v2-nav-label">{text.navLabel}</span>
-        {navigationFor(route.role).map(item => <button key={item.key} className={route.section === item.key ? 'is-active' : ''} onClick={() => go(item.path)} type="button">{item.title}</button>)}
-        {route.role !== 'user' && <button type="button" onClick={() => go('/survey')}>Анонімне опитування ↗</button>}
+    <aside className="v2-sidebar"><div className="v2-brand"><img className="v2-brand-mark v2-brand-logo" src="/sysmints-emblem.svg" alt="" width={38} height={38} /><div className="v2-brand-text"><strong>Integrity<br/> Management</strong><small>{text.brand}</small></div>
+        <AccountMenu compact user={session} onLogout={() => void signOut()} onLogoutAll={signOutEverywhere} />
+      </div>
+      <nav className="v2-nav" aria-label={text.navAria} style={navGridStyle(navItems.length + (route.role !== 'user' ? 1 : 0))}><span className="v2-nav-label">{text.navLabel}</span>
+        {navItems.map(item => <NavButton key={item.key} navKey={item.key} title={item.title} active={route.section === item.key} onClick={() => go(item.path)} />)}
+        {route.role !== 'user' && <NavButton navKey={SURVEY_NAV_KEY} title="Анонімне опитування" onClick={() => go('/survey')} />}
       </nav>
       <p className="v2-team-credit">Команда Sys&amp;Mints · Building Integrity Hackathon 2026</p>
     </aside>
