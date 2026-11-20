@@ -377,7 +377,7 @@ try {
     Remove-Item -LiteralPath $ic -Recurse -Force
   }
   Step 'db.migrate' {
-    $before = @(Get-ChildItem -LiteralPath "$V2Root\data" -File -Force | ForEach-Object Name)
+    $U.DataBefore = @(Get-ChildItem -LiteralPath "$V2Root\data" -File -Force | ForEach-Object Name)
     $U.MigrationStarted = $true
     # Секрет служби міграції не потрібен (app.migrations не викликає settings.secret_key); V2_SECRET_KEY навмисно відсутній,
     # щоб будь-яка майбутня залежність міграції від секрету впала голосно, а не мовчки використала інший ключ.
@@ -386,16 +386,7 @@ try {
       Invoke-V2Native -Exe (Get-V2UpVenvPython) -ArgList @('-B', '-E', '-s', '-X', 'utf8', '-m', 'app.migrations', '--apply', '--confirm-verified-backup') -WorkingDirectory $U.NewWorkdir -Utf8 -What 'app.migrations --apply'
     })
     $out | ForEach-Object { "      $_" }
-    $new = @(Get-ChildItem -LiteralPath "$V2Root\data" -File -Force | Where-Object { $before -notcontains $_.Name })
-    $aside = "$($U.Bk)\migration-backups"
-    foreach ($f in $new) {                                   # власні копії міграції — з data\ (Modify для служби) у каталог копії
-      if ($f.Name -notmatch '\.db$') { Stop-V2 "міграція створила неочікуваний файл: $($f.Name)" }
-      $null = New-Item -ItemType Directory -Path $aside -Force
-      [IO.File]::Copy($f.FullName, (Join-Path $aside $f.Name), $false)
-      if ((Get-V2UpSha (Join-Path $aside $f.Name)) -ne (Get-V2UpSha $f.FullName)) { Stop-V2 "копія $($f.Name) не підтверджена" }
-      Remove-Item -LiteralPath $f.FullName -Force
-      "PASS  копію міграції $($f.Name) перенесено в $aside"
-    }
+    Move-V2UpNewDataFiles -Before $U.DataBefore -Dest "$($U.Bk)\mig"     # власні копії міграції — з data\ (Modify для служби)
   }
   Step 'db.verify' {
     $ver = @{ integrity = $ToIntegrityVersion; auth = $ToAuthVersion }
@@ -479,7 +470,7 @@ try {
       }
       if ($U.MigrationStarted) {
         if (-not $stopB) { $okDb = $false; Write-V2UpLog 'ВІДКАТ БД пропущено: зупинку backend не підтверджено' }
-        else { $okDb = RStep 'rollback.db-restore' { Restore-V2UpDatabases -Dir $U.Bk -Items $U.DbBackups -Stamp $Stamp -AsideDir "$($U.Bk)\failed-db" } }
+        else { $okDb = RStep 'rollback.db-restore' { Restore-V2UpDatabases -Dir $U.Bk -Items $U.DbBackups -Stamp $Stamp -AsideDir "$($U.Bk)\db-old"; Move-V2UpNewDataFiles -Before $U.DataBefore -Dest "$($U.Bk)\mig" } }
       }
       if ($U.VenvTouched) { $okVenv = $stopB -and (RStep 'rollback.venv' { Restore-V2UpVenv "$($U.Bk)\venv.zip" "$($U.Bk)\venv-SHA256.txt" $Stamp }) }
       if ($U.XmlTouched) { $okXml = RStep 'rollback.xml' { Restore-V2UpBytes $U.Xml "$($U.Bk)\integrity-v2-backend.xml.orig" $U.XmlSha; Test-V2WinswXml -XmlPath $U.Xml -Name $V2UpBackend -WinswVersion $WinswRefVersion } }

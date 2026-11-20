@@ -95,7 +95,7 @@ try {
     if (-not $R.State.VenvCopy) { return 'INFO  venv не змінювався' }
     Restore-V2UpVenv "$($R.Bk)\$($R.State.VenvCopy)" "$($R.Bk)\$($R.State.VenvManifest)" $Stamp
   }
-  Step 'rb.db-restore' { Restore-V2UpDatabases -Dir $R.Bk -Items $R.Items -Stamp $Stamp -AsideDir "$($R.Bk)\rolled-back-db-$Stamp" }
+  Step 'rb.db-restore' { Restore-V2UpDatabases -Dir $R.Bk -Items $R.Items -Stamp $Stamp -AsideDir "$($R.Bk)\db-rb-$Stamp" }
   Step 'rb.start-backend' {
     Start-V2UpService $V2UpBackend
     Invoke-V2UpLocalSmoke @{ integrity = [int]$R.State.VersionsFrom.integrity; auth = [int]$R.State.VersionsFrom.auth }

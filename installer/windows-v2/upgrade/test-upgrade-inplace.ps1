@@ -103,7 +103,7 @@ try {
   Add-Res 'U1.state' ($s1.VenvHasNew -eq 'True' -and $s1.Dist -match 'new.js' -and $s1.Caddyfile -ne $s0.Caddyfile -and [IO.File]::ReadAllText("$r1\caddy\Caddyfile").Contains('Content-Security-Policy') -and
                       $s1.Services -eq 'Running/Auto|Running/Auto' -and -not (Test-Path "$r1\app\integrity-v2-sim0002\backend\app\v2_bootstrap_admin.py") -and $s1.DataBlock -eq '') "venv із новою залежністю; dist і Caddyfile нові; служби Running/delayed-auto; bootstrap не розгорнуто; копії міграції не в data\ ($($s1.Services))"
   $bkDir = @(Get-ChildItem -LiteralPath "$r1\backups" -Directory -Filter 'pre-upgrade-*')[0].FullName
-  Add-Res 'U1.backup' ((Test-Path "$bkDir\integrity_v2.db") -and (Test-Path "$bkDir\v2_auth.db") -and (Test-Path "$bkDir\venv-SHA256.txt") -and (Test-Path "$bkDir\venv.zip") -and (Test-Path "$bkDir\migration-backups") -and
+  Add-Res 'U1.backup' ((Test-Path "$bkDir\integrity_v2.db") -and (Test-Path "$bkDir\v2_auth.db") -and (Test-Path "$bkDir\venv-SHA256.txt") -and (Test-Path "$bkDir\venv.zip") -and (Test-Path "$bkDir\mig") -and
                        (Get-Content "$bkDir\UPGRADE-STATE.json" -Raw | ConvertFrom-Json).Completed -eq $true -and -not (Test-Path "$bkDir\tmp")) 'копії БД, venv, XML, Caddyfile; власна копія міграції перенесена з data\; стан для відкату'
   Add-Res 'U1.secrets' (Test-NoSecret $r1 $u.Out) 'значення секретів XML відсутні у виводі, доказі й стані'
 

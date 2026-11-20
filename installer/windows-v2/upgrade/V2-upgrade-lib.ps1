@@ -346,7 +346,7 @@ function Restore-V2UpDatabases {
   # Замінені файли (post-migration) — у адміністративний каталог копії; у data\ не лишаються копії з правом Modify для служби
   $null = New-Item -ItemType Directory -Path $AsideDir -Force
   foreach ($f in @(Get-ChildItem -LiteralPath $data -File -Filter "*.replaced-$Stamp")) {
-    $t = Join-Path $AsideDir $f.Name; [IO.File]::Copy($f.FullName, $t, $false)
+    $t = Join-Path $AsideDir ($f.Name -replace "\.replaced-$Stamp$", ''); [IO.File]::Copy($f.FullName, $t, $false)   # коротке ім'я (MAX_PATH)
     if ((Get-V2UpSha $t) -ne (Get-V2UpSha $f.FullName)) { Stop-V2 "копія $($f.Name) не підтверджена" }
     Remove-Item -LiteralPath $f.FullName -Force
   }
@@ -376,7 +376,20 @@ function Get-V2UpZipManifest([string]$Zip) {
   } finally { $z.Dispose() }
   $m
 }
-function Restore-V2UpVenv([string]$BackupZip, [string]$ManifestPath, [string]$Stamp) {
+# Нові файли в data\ (власні копії міграції *.backup-*.db): копія в каталог копії (ACL адмінів) → перевірка SHA256 → видалення
+# з data\ (там служба має Modify). Маркери RESTORE-*/CLEAN-INIT-* і робочі БД не чіпаються.
+function Move-V2UpNewDataFiles([string[]]$Before, [string]$Dest) {
+  $new = @(Get-ChildItem -LiteralPath "$V2Root\data" -File -Force | Where-Object { $Before -notcontains $_.Name -and $_.Name -notmatch '^(RESTORE-|CLEAN-INIT-)' -and $_.Name -notin 'integrity_v2.db', 'v2_auth.db' })
+  foreach ($f in $new) {
+    if ($f.Name -notmatch '\.db$') { Stop-V2 "у data\ з'явився неочікуваний файл: $($f.Name)" }
+    $null = New-Item -ItemType Directory -Path $Dest -Force
+    $t = Join-Path $Dest $f.Name
+    [IO.File]::Copy($f.FullName, $t, $false)
+    if ((Get-V2UpSha $t) -ne (Get-V2UpSha $f.FullName)) { Stop-V2 "копія $($f.Name) не підтверджена" }
+    Remove-Item -LiteralPath $f.FullName -Force
+    "PASS  $($f.Name): data\ → $Dest"
+  }
+}function Restore-V2UpVenv([string]$BackupZip, [string]$ManifestPath, [string]$Stamp) {
   $want = Read-V2UpSums $ManifestPath
   $diff = @(Compare-V2UpManifest $want (Get-V2UpZipManifest $BackupZip))
   if ($diff.Count) { Stop-V2 "копія venv не відповідає маніфесту: $($diff | Select-Object -First 5)" }
