@@ -203,9 +203,12 @@ test('list renders search, filters, sorting, page size and the «Показан�
   assert.ok(html.includes(escape(dateTime('2026-11-24T23:59:59+00:00'))))
   assert.doesNotMatch(html, />2026-11-24T23:59:59\+00:00</)
   // Пагінація.
-  assert.match(html, /<nav class="test-list__pager" aria-label="Сторінки списку тестувань">/)
+  // Навігація сторінками угорі й унизу списку з різними підписами.
+  assert.match(html, /<nav class="test-list__pager" aria-label="Сторінки списку тестувань \(угорі\)">/)
+  assert.match(html, /<nav class="test-list__pager" aria-label="Сторінки списку тестувань \(унизу\)">/)
+  assert.ok(html.indexOf('(угорі)') < html.indexOf('<ol class="v2-test-list') && html.indexOf('<ol class="v2-test-list') < html.indexOf('(унизу)'))
   assert.match(html, /aria-label="Сторінка 1 з 3" aria-current="page"/)
-  assert.equal(count(html, /aria-current="page"/g), 1)
+  assert.equal(count(html, /aria-current="page"/g), 2)
   assert.match(html, /<button class="v2-button test-list__pager-step" type="button" disabled="">.*?Попередня<\/button>/)
   assert.match(html, /<button class="v2-button test-list__pager-step" type="button">Наступна/)
   assert.match(html, /<h3 class="test-list__heading" id="[^"]+" tabindex="-1">/)
