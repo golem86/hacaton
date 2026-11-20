@@ -42,4 +42,4 @@
 
 `frontend/src/official/catalog.ts`, `frontend/src/official/OfficialAssessment.tsx`, `frontend/src/v2/v2.css`, `frontend/tests/official.test.mjs`, `frontend/e2e/official-assessment.spec.ts`, `QUESTIONNAIRE_EXPERT_IMPLEMENTATION_REPORT.md`. Backend, release-гілка, scoring, Dashboard, Analytics, Docker і schema 3 не змінені.
 
-Commit реалізації: `0504b71107684eec1c04a8dbe7d35241e612bc81`. Після push перевірити diff [Draft PR #25](https://github.com/golem86/hacaton/pull/25). Статус: **PARTIAL / DO NOT MERGE**.
+Commit реалізації: `0504b71107684eec1c04a8dbe7d35241e612bc81`. Після push перевірено [Draft PR #25](https://github.com/golem86/hacaton/pull/25): 8 WIP-файлів, без backend, CI, SQLite та Assessment Manager. Head [Release PR #24](https://github.com/golem86/hacaton/pull/24) залишився `db70706f14cbcaba0d137151572aa996b106cd18`. Статус: **PARTIAL / DO NOT MERGE**.
