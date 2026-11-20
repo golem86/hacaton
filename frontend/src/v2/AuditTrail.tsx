@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { AuditEvent } from '../api/admin'
+import { ListPagination, usePagination } from './ListPagination'
 import './audit-trail.css'
 
 /**
@@ -119,6 +120,17 @@ export function auditCycleLabel(assessmentId: number | null) {
   return assessmentId == null ? '—' : `№ ${assessmentId}`
 }
 
+/** Фільтр журналу: тип дії й цикл (`all` — без обмеження, `none` — події без циклу). */
+export function filterAuditEvents(events: readonly AuditEvent[], action: string, cycle: string) {
+  return events.filter(event => (action === ALL || event.action === action)
+    && (cycle === ALL || (cycle === NO_CYCLE ? event.assessment_id == null : String(event.assessment_id) === cycle)))
+}
+
+/** Ключ скидання пагінації: будь-яка зміна фільтрів повертає журнал на першу сторінку. */
+export function auditFilterKey(action: string, cycle: string) {
+  return JSON.stringify([action, cycle])
+}
+
 function recordsLabel(count: number) {
   return `${count.toLocaleString('uk-UA')} ${plural(count, 'запис', 'записи', 'записів')}`
 }
@@ -132,8 +144,9 @@ export default function AuditTrail({ events, error }: { events: AuditEvent[]; er
   const cycleOptions = useMemo(() => [...new Set(events.flatMap(event => event.assessment_id == null ? [] : [event.assessment_id]))]
     .sort((left, right) => right - left), [events])
   const hasEventsWithoutCycle = events.some(event => event.assessment_id == null)
-  const filtered = events.filter(event => (action === ALL || event.action === action)
-    && (cycle === ALL || (cycle === NO_CYCLE ? event.assessment_id == null : String(event.assessment_id) === cycle)))
+  const filtered = useMemo(() => filterAuditEvents(events, action, cycle), [events, action, cycle])
+  // Пагінація після фільтрів; зміна фільтра повертає на першу сторінку.
+  const { current, setPage, setPageSize } = usePagination(filtered, { resetKey: auditFilterKey(action, cycle) })
   const filtersActive = action !== ALL || cycle !== ALL
   const resetFilters = () => { setAction(ALL); setCycle(ALL) }
 
@@ -182,7 +195,7 @@ export default function AuditTrail({ events, error }: { events: AuditEvent[]; er
             </div>
             {filtersActive && <button className="v2-button v2-button-quiet" type="button" onClick={resetFilters}>Скинути фільтри</button>}
           </div>
-          <p className="audit-trail__count" aria-live="polite">Показано {filtered.length.toLocaleString('uk-UA')} з {recordsLabel(events.length)}</p>
+          {filtersActive && <p className="audit-trail__count" aria-live="polite">За фільтрами: {filtered.length.toLocaleString('uk-UA')} з {recordsLabel(events.length)}</p>}
 
           {filtered.length === 0 ? (
             <div className="v2-empty audit-trail__empty" role="status">
@@ -190,28 +203,30 @@ export default function AuditTrail({ events, error }: { events: AuditEvent[]; er
               <p>Змініть тип дії або цикл, щоб побачити інші записи.</p>
             </div>
           ) : (
-            <div className="audit-trail__scroll">
-              <table className="audit-trail__table">
-                <caption className="audit-trail__sr-only">Журнал дій: дата і час, дія, роль виконавця, цикл і службові лічильники</caption>
-                <thead>
-                  <tr><th scope="col">Дата і час</th><th scope="col">Дія</th><th scope="col">Роль</th><th scope="col">Цикл</th><th scope="col">Деталі</th></tr>
-                </thead>
-                <tbody>
-                  {filtered.map(event => {
-                    const details = formatAuditDetails(event.action, event.details)
-                    return (
-                      <tr key={event.id}>
-                        <td data-label="Дата і час"><time className="audit-trail__time" dateTime={event.created_at}>{formatAuditDate(event.created_at)}</time></td>
-                        <td data-label="Дія"><span className="audit-trail__action" data-kind={lookup(ACTION_KINDS, event.action) ?? 'other'} title={event.action}>{auditActionLabel(event.action)}</span></td>
-                        <td data-label="Роль">{actorRoleLabel(event.actor_role)}</td>
-                        <td data-label="Цикл" className="audit-trail__cycle">{auditCycleLabel(event.assessment_id)}</td>
-                        <td data-label="Деталі" className="audit-trail__details">{details.length ? details.join(' · ') : '—'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <ListPagination current={current} onPageChange={setPage} onPageSizeChange={setPageSize} name="журналу дій">
+              <div className="audit-trail__scroll">
+                <table className="audit-trail__table">
+                  <caption className="audit-trail__sr-only">Журнал дій: дата і час, дія, роль виконавця, цикл і службові лічильники</caption>
+                  <thead>
+                    <tr><th scope="col">Дата і час</th><th scope="col">Дія</th><th scope="col">Роль</th><th scope="col">Цикл</th><th scope="col">Деталі</th></tr>
+                  </thead>
+                  <tbody>
+                    {current.items.map(event => {
+                      const details = formatAuditDetails(event.action, event.details)
+                      return (
+                        <tr key={event.id}>
+                          <td data-label="Дата і час"><time className="audit-trail__time" dateTime={event.created_at}>{formatAuditDate(event.created_at)}</time></td>
+                          <td data-label="Дія"><span className="audit-trail__action" data-kind={lookup(ACTION_KINDS, event.action) ?? 'other'} title={event.action}>{auditActionLabel(event.action)}</span></td>
+                          <td data-label="Роль">{actorRoleLabel(event.actor_role)}</td>
+                          <td data-label="Цикл" className="audit-trail__cycle">{auditCycleLabel(event.assessment_id)}</td>
+                          <td data-label="Деталі" className="audit-trail__details">{details.length ? details.join(' · ') : '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </ListPagination>
           )}
         </>
       )}

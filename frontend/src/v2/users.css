@@ -160,4 +160,16 @@
   .users-panel__table th > *,
   .users-panel__table td > * { justify-self: start; }
   .users-panel__email { white-space: normal; overflow-wrap: anywhere; }
+  /* Картки — це мобільний вигляд: елементи керування не менші за 44 px. */
+  .users-panel__actions .v2-button,
+  .users-panel__role-select select { min-height: 2.75rem; }
 }
+
+@media (max-width: 640px) {
+  .users-panel .v2-button,
+  .users-panel__search-field input { min-height: 2.75rem; }
+}
+
+/* Пагінація (ListPagination): відступ задає обгортка, а не таблиця всередині неї. */
+.users-panel .list-pagination { margin-top: .6rem; }
+.users-panel .list-pagination .users-panel__scroll { margin-top: 0; }
