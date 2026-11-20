@@ -298,6 +298,111 @@ Tracker порівнює ID циклів після приведення чис�
 
 Прострочення не є окремим статусом: захід прострочений, якщо строк минув, а статус не «виконано» чи «перевірено».
 
+## Зрілість за Додатком В (`annex-v-maturity-0.1`)
+
+Синтетична демонстрація; Integrity Index (`team-results-demo-0.1`) не змінюється. Схема БД версії 6 додає лише нові таблиці: `annex_v_responses`, `annex_v_answers`, `annex_v_expert_assessments`, `checklist_entries`, `maturity_indicators`. Код: `backend/app/annex_v.py` (каталог), `services/maturity.py` (рушій), `routes/annex_v.py` (маршрути).
+
+| Метод | Маршрут | Доступ | Призначення |
+|---|---|---|---|
+| POST | `/api/assessments/{id}/annex-v/responses` | публічний, лише одноразовий код | Анонімна анкета Додатка В |
+| POST | `/api/assessments/{id}/annex-v/expert` | admin, сесія + CSRF | Експертна оцінка за формою 1 |
+| GET | `/api/assessments/{id}/checklist` | admin, data_officer, ролі аналітики | 20 пунктів чек-листа (Додаток Б, адаптовано) зі станом |
+| PUT | `/api/assessments/{id}/checklist/{code}` | data_officer або admin, сесія + CSRF | Внести стан пункту; скидає підтвердження |
+| POST | `/api/assessments/{id}/checklist/{code}/confirm` | admin, сесія + CSRF | Підтвердити пункт (інший користувач) |
+| GET | `/api/assessments/{id}/objective-indicators` | admin, data_officer, ролі аналітики | Об'єктивні показники критеріїв |
+| POST | `/api/assessments/{id}/objective-indicators` | data_officer або admin, сесія + CSRF | Внести показник |
+| POST | `/api/objective-indicators/{indicator_id}/confirm` | admin, сесія + CSRF | Підтвердити показник (інший користувач) |
+| GET | `/api/assessments/{id}/maturity` | ролі аналітики, `INTEGRITY_ANALYTICS_DEMO=1` | Рівні, розриви, індекси й рекомендації закритого циклу |
+
+### Каталог і правило рівня
+
+Ідентифікатори дзеркалять `frontend/src/official/catalog-v2.ts`, шаблони версії `2.0.0`: питання `av-f{форма}-{culture|system|accountability|maturity}-{n}`, варіант `{id питання}-{a..e}` (у питаннях про викривачів є ще `f`). Форма 1 — 12 питань, форма 2 — 10 (без `leadership`). Критерій — ключ набору варіантів: `leadership`, `ethics`, `education`, `openness`, `officer`, `strategy`, `risks`, `checks`, `whistleblowers`, `audit`, `maturity`.
+
+Рівень варіанта: a=1, b=2, c=3, d=4, e=5. Для питань про викривачів (`whistleblowers`, 6 варіантів) — за Додатком Г, с. 73: a=1, b=2, c=3, d=4, e=4, f=5. Таблиця — `annex_v.LEVEL_MAPS`; у відповіді `/maturity` — рядок `level_rule`.
+
+Рівень критерію в одній анкеті — середнє її відповідей на питання критерію. У формі 1 `openness` має два питання (№4 і №5 — те саме питання джерела): вони усереднюються в межах анкети, тож анкета враховується один раз. Критерій `maturity` (заявлений загальний рівень) показується окремо (`overall_self_declared`) і в індекс не входить.
+
+Відповідність компонентам (лише для показу): leadership, ethics → C1; strategy, officer → C2; risks, checks → C3; education → C5; whistleblowers → C6; openness, audit → C7. C4 не має критерію в Додатку В.
+
+### `POST /api/assessments/{id}/annex-v/responses`
+
+Тіло: `{access_token, category: mgmt|npp|cadets|staff, form: 1|2, version: "2.0.0", answers: {questionId: optionId}}`; потрібна відповідь на кожне питання форми, зайві поля заборонені. Код — той самий одноразовий код циклу, що й для `/submissions` (видає data_officer). Категорія коду має збігатися з `category`; після подання код використаний для обох анкет.
+
+Відповіді: 201 `{"status": "accepted"}` без id і відповідей; 404 — циклу немає або він чернетка; 409 — цикл не відкритий, строк не настав чи минув, або код недійсний, використаний чи іншої категорії (одне повідомлення для всіх випадків); 422 — некоректні дані, інша версія або категорія не з цього циклу.
+
+Анонімність така сама, як для `/submissions`. Маршрут не читає сесію. Анкета зберігає лише категорію, форму й версію: без облікового запису, коду, підрозділу й часу подання. Подання не журналюється й не потрапляє в журнал доступу uvicorn.
+
+### `POST /api/assessments/{id}/annex-v/expert`
+
+Тіло: `{expert_label, form: 1, version: "2.0.0", answers}`. `expert_label` — посада або роль, 3–120 символів; ознаки ПІБ, email чи телефону → 422. Відповіді: 201 `{id}`; 404 — циклу немає; 409 — цикл чернетка; 422 — некоректні дані. Журнал: `annex_v.expert_create`.
+
+### Чек-лист
+
+Пункти `B-01`…`B-20` — стислі адаптації завдань і індикаторів Додатка Б з номером пункту джерела (`source_item`). Кожен пункт прив'язаний до одного з 10 критеріїв. Прив'язку обрала команда; вона потребує методичного погодження.
+
+Пункт: `{code, criterion, text, source: "Додаток Б (адаптовано)", source_item, status: yes|partial|no|null, evidence, entered_role, entered_at, confirmed, confirmed_role, confirmed_at}`. Ідентифікаторів користувачів відповідь не містить.
+
+`PUT` приймає `{status: yes|partial|no, evidence?: string ≤ 1000}`, повертає пункт і скидає підтвердження. `confirm` повертає пункт.
+
+Помилки: 404 — невідомий код; 409 — пункт не заповнено, уже підтверджено або підтверджує той самий користувач, що вніс (порівнюються id сесій V2; у демо-режимі X-Role — роль).
+
+Журнал: `checklist.update` і `checklist.confirm`, лише з роллю й циклом.
+
+### Об'єктивні показники
+
+Тіло `POST`: `{criterion (один із 10, не maturity), name: 3–200, value: 0–100, target: 0–100, period: 1–50}`. Відповідь — 201 і показник `{id, criterion, name, unit: "%", value, target, period, entered_role, entered_at, confirmed, confirmed_role, confirmed_at}`.
+
+`confirm`: 404 — показника немає; 409 — уже підтверджено або той самий користувач. Журнал: `objective.create`, `objective.confirm`.
+
+### `GET /api/assessments/{id}/maturity`
+
+Порядок перевірок: 401/403 — роль, 503 — демо-режим вимкнено, 404 — циклу немає, 409 — цикл не закрито.
+
+```text
+{ assessment:{id,name,status}, methodology_version:"annex-v-maturity-0.1",
+  level_rule:"a=1…e=5; викривачі: a=1, b=2, c=3, d=4, e=4, f=5 (Додаток Г, с. 73)",
+  min_group_size:k, synthetic_only:true, official:false,
+  visible_categories:[...], suppressed:bool,
+  criteria:[{ key, name_uk, component_code|null,
+              self:{level|null, responses|null, status:"ok"|"suppressed"|"missing"},
+              self_by_category:[{category, level|null, hidden:bool}],      // лише видимі категорії
+              expert:{level|null, experts, status:"ok"|"missing"},
+              checklist:{level|null, items_total, items_confirmed, status:"ok"|"missing"},
+              objective:[{name, value, target, confirmed}],
+              gaps:[{rule_id, left:"self", right:"expert"|"checklist", diff|null, flag}] }],   // 10 критеріїв
+  overall_self_declared:{level|null, responses|null, status, expert_level|null},
+  indices:{self|null, expert|null, checklist|null},
+  recommendations:[{id, rule_id, criterion, component_code, basis:{...}, text, requires_human_decision:true}] }
+```
+
+Формули (точна арифметика, `Fraction`):
+
+- `self` — середнє рівнів критерію по анкетах.
+- `expert` — середнє по експертних оцінках.
+- `checklist` = 1 + 4 × (yes + 0,5 · partial) / підтверджені пункти; враховуються лише підтверджені пункти.
+
+Рівні показуються з 1 знаком після коми (округлення половини вгору).
+
+Індекс джерела = (середній рівень 10 критеріїв − 1) / 4 × 100, з рівними вагами. Його рахують із точних рівнів, не з округлених до 0,1, і лише потім округлюють до 2 знаків. Якщо для джерела бракує або приховано хоч один критерій, індекс дорівнює `null`; ваги не перерозподіляються, а `null` ніколи не стає 0.
+
+Правила (їх порівнюють із показаними рівнями з 1 знаком, тому прапорці збігаються з числами на екрані):
+
+- `MAT_LOW_LEVEL_LT_3` — рівень експерта, а без нього самооцінка, < 3.
+- `MAT_SELF_EXPERT_GAP_GE_1` — self − expert ≥ 1,0.
+- `MAT_SELF_CHECKLIST_GAP_GE_1` — self − checklist ≥ 1,0.
+- `MAT_OBJECTIVE_BELOW_TARGET` — підтверджений показник має value < target, а self ≥ 3,5.
+- `MAT_OBJECTIVE_UNCONFIRMED` — self ≥ 4, а підтверджених показників критерію немає.
+
+Рекомендація — пропозиція з `requires_human_decision: true`; `id` детермінований.
+
+k-анонімність (як `/results`):
+
+- Категорії з < k анкетами приховуються. Діє вторинне приховування (`anonymity.hidden_flags`).
+- Приховані категорії не перелічуються ніде (D4).
+- Для кожного критерію категорії додатково проходять те саме приховування за кількістю анкет із цим критерієм.
+- Загальний рівень критерію показується, лише якщо таких анкет ≥ k і приховану частину не можна приписати одній категорії.
+- Окремі анкети й варіанти відповідей API ніколи не повертає.
+
 ## V2 Hardening — зміни за аудитом backend (20.11.2026)
 
 Повний робочий контракт і обґрунтування: `docs/V2_HARDENING_CONTRACT.md`. Схеми: V2_AUTH_DB `user_version = 2`, INTEGRITY_DB `user_version = 5` (4 — Recommendations Tracker).
