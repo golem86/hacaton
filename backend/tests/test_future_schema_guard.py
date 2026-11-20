@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 from sqlalchemy import create_engine
-from app.migrations import MigrationError, migrate
+from app.migrations import SCHEMA_VERSION, MigrationError, migrate
 
 
 @pytest.mark.parametrize("shape", ["empty", "unknown_table", "legacy_table"])
@@ -16,7 +16,7 @@ def test_future_version_refused_without_any_migration_write(tmp_path, shape):
             con.execute("INSERT INTO future_marker VALUES (1, 'synthetic')")
         elif shape == "legacy_table":
             con.execute("CREATE TABLE response_sets (id INTEGER PRIMARY KEY)")
-        con.execute("PRAGMA user_version = 4")
+        con.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")   # завжди «майбутня» версія
         con.commit()
     before = target.read_bytes()
     engine = create_engine(f"sqlite:///{target}")
