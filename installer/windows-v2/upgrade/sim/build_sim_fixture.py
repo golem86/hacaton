@@ -129,7 +129,14 @@ w(os.path.join(ROOT, "data", "CLEAN-INIT-OK-20261120-134912.txt"), "clean init o
 w(os.path.join(ROOT, "data", "CREATED-BY-V2-INSTALL.txt"), "created by SIM\n")
 
 # venv (справжній, базовий Python) і TLS-пара
-subprocess.run([BASEPY, "-I", "-m", "venv", os.path.join(ROOT, "venv")], check=True, timeout=600)
+# venv без розпакованого pip: pip — з колеса ensurepip через .pth (zipimport). Глибокі шляхи pip\_internal\… у venv
+# перевищували б MAX_PATH у довгих %TEMP%; поведінка «python -m pip» для Update-V2InPlace та сама.
+subprocess.run([BASEPY, "-I", "-m", "venv", "--without-pip", os.path.join(ROOT, "venv")], check=True, timeout=600)
+import glob  # noqa: E402
+pipwhl = sorted(glob.glob(os.path.join(os.path.dirname(BASEPY), "Lib", "ensurepip", "_bundled", "pip-*.whl")))[-1]
+site = os.path.join(ROOT, "venv", "Lib", "site-packages")
+shutil.copyfile(pipwhl, os.path.join(site, os.path.basename(pipwhl)))
+w(os.path.join(site, "pip-zip.pth"), os.path.basename(pipwhl) + "\n")
 import trustme  # noqa: E402
 ca = trustme.CA()
 cert = ca.issue_cert("desktop-jtgc2sg.taild5c033.ts.net")
