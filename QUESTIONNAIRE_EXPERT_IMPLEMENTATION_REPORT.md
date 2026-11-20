@@ -1,45 +1,42 @@
-# Офіційні анкети та експертний інтерфейс — WIP звіт №1
+# Офіційні анкети й експертний UI — звіт учасника №1
 
-## Статус і джерело
+## Стан
 
-Гілка `feature/assessment-questionnaire-v2`, Draft PR #25. Release PR #24 і його SQLite schema 3, CI, API та `demo-v1` не змінювалися. Джерело: [Рекомендації НУОУ, Додаток В, друковані с. 53–66](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf). Звірка PDF виявила **12 питань у Анкеті 1** (розділи: Культура 5, Система 2, Підзвітність 4, Рівень зрілості 1) та **10 питань у Анкеті 2** (відповідно 3, 2, 4, 1). Опубліковані питання — описовий вибір одного варіанта. Порядок опцій не є scoring.
+Гілка `feature/assessment-questionnaire-v2`, [Draft PR #25](https://github.com/golem86/hacaton/pull/25): **повний адаптований каталог і робочий frontend Preview; серверне збереження — BLOCKED; DO NOT MERGE**. [Release PR #24](https://github.com/golem86/hacaton/pull/24), SQLite schema 3, backend API, scoring, Analytics, Dashboard, Docker і `demo-v1` не змінено.
 
-У каталозі перенесено **2 з 12** питань Анкети 1 і **2 з 10** Анкети 2. Це частковий preview, не повні анкети.
+## Каталог і джерело
 
-| Шаблон | Питання і сторінки | Розділи | Статус тексту |
-| --- | --- | --- | --- |
-| `appendix-v-form-1@1.0.0` | №1, [с. 53](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf#page=53) | Культура | Первісний перевірений текст і 5 опцій, незмінний |
-| `appendix-v-form-2@1.0.0` | №1, [с. 60](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf#page=60) | Культура | Первісний перевірений текст і 5 опцій, незмінний |
-| `appendix-v-form-1@1.1.0` | №1, с. 53; №2, [с. 56](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf#page=56) | Культура, Система | №1 успадковано без змін; №2 і 5 опцій стисло адаптовано за PDF |
-| `appendix-v-form-2@1.1.0` | №1, с. 60; №2, [с. 62](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf#page=62) | Культура, Система | №1 успадковано без змін; №2 і 5 опцій стисло адаптовано за PDF |
+Незалежна звірка [Додатка В, друковані с. 53–66](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf) підтвердила **12 питань Анкети 1** і **10 питань Анкети 2**. В обох є чотири розділи: 1. Культура; 2. Система; 3. Підзвітність; 4. Рівень зрілості доброчесності. Розподіл за розділами — 5/2/4/1 для Анкети 1 і 3/2/4/1 для Анкети 2. Кожне питання має один описовий вибір; питання 3 розділу «Підзвітність» містить **шість** варіантів в обох формах, усі інші — по п’ять.
 
-Адаптований текст `1.1.0` **не є автентичним дослівним переносом** і позначений у UI. Перед офіційним застосуванням потрібні повний перенос і редакційне затвердження №5. Сталі `question_id` і `option_id` збережені між версіями для незмінених питань. Нові ID мають посилання на додаток, сторінку, розділ і номер. Джерело PDF відкрите з інтерфейсу.
+Версії `1.0.0` (1+1 питання) та `1.1.0` (2+2) збережено без зміни змісту. Нова `2.0.0` містить **12/12 і 10/10** питань із метаданими `appendix`, `form`, друкована сторінка, розділ, номер, `wording: adapted`, стабільними question/option ID. Усі нові формулювання й варіанти — власні стислі українські перефразування, звірені зі змістом джерела; не є дослівним офіційним текстом. Порядок варіантів відповідає джерелу лише для ідентифікації та не є балами. Повна таблиця 22 питань і кількості опцій: [`OFFICIAL_QUESTIONNAIRE_COVERAGE.md`](OFFICIAL_QUESTIONNAIRE_COVERAGE.md).
 
-Аудиторія Анкети 1 у заголовку с. 53 — члени робочої групи. Заголовок Анкети 2 на с. 60 також називає робочу групу, але [Додаток Г, с. 67](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf#page=67) відносить її до особового складу. Категорію Анкети 2 автоматично не призначено.
+У джерелі Анкета 1 містить два послідовні питання (№4 і №5 розділу «Культура») про відкритість із однаковими за змістом варіантами. Обидва збережено з окремими ID. Аудиторію Анкети 2 не призначено: заголовок [с. 60](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf#page=60) називає робочу групу, а [Додаток Г, с. 67](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf#page=67) — особовий склад.
 
-## Реалізовано
+## Інтерфейс
 
-- `/app/official`: вибір шаблону та версії, групування питань за розділами, навігація вперед/назад і прямий перехід, прогрес, збереження вибору в пам'яті під час навігації, перевірка відсутніх і чужих опцій, перегляд заповненої форми. Перемикання шаблону очищує локальні відповіді та повертає до першого питання.
-- `/admin/expert`: окремий WIP preview для адміністративної сесії із вибором шаблону, локальними відповідями, перевіркою й переглядом. Доступ адміністратора до preview **не надає** серверної ролі експерта. Звичайний користувач не може відкрити `/admin/expert` після серверної перевірки сесії.
-- Інтерфейс містить видимі позначки WIP, джерело, версію, labels, радіогрупи, стан помилки з `role=alert`, оголошення прогресу/стану, клавіатурну навігацію та мобільне компонування. Кнопки подання немає. Відповіді не записуються в localStorage або журнали браузера.
+`/app/official` та `/admin/expert` дозволяють обрати всі версії й пройти повні `2.0.0` анкети: чотири розділи, прямий перехід і кнопки вперед/назад, прогрес, позначення пропусків, перевірка чужих option ID, збереження вибору в пам’яті під час навігації, перегляд заповнених відповідей, доступ із клавіатури та мобільний екран. Перемикання шаблону очищує локальний стан. Новий текст позначено як адаптований. Подання й серверного збереження немає; локальний перегляд не повідомляє про успішне подання.
 
-## Незавершені функції й рішення №5
-
-Реальне подання та збереження відповідей **BLOCKED**. Спільні DDL і backend API для описових відповідей, окрема backend роль і сховище експертів, методика Integrity Index, остаточна аудиторія Анкети 2 не затверджені. Відповіді не змішуються з анонімним numeric API. Для наступної реалізації потрібні рішення №5 щодо точного контракту циклу/версії/`question_id`, серверної авторизації експертів і CSRF, збереження та читання окремих записів, анонімності й suppression, повного автентичного тексту, аудиторії Анкети 2 та методики scoring. Технічні варіанти наведено у `OFFICIAL_QUESTIONNAIRE_CONTRACT_PROPOSAL.md` поза репозиторієм.
+Адміністративна сесія відкриває лише expert preview після серверної перевірки; вона не надає окремої експертної ролі. Звичайний користувач не відкриває `/admin/expert`. Експертні відповіді не пишуться в localStorage чи браузерні журнали й не потрапляють до анонімного numeric API.
 
 ## Перевірки цієї ітерації
 
 | Перевірка | Результат |
 | --- | --- |
-| Frontend `npm test` | PASS: 42 тести |
-| TypeScript і production build `npm run build` | PASS |
 | Backend `pytest -q` | PASS: 361 тести, 1 зовнішнє deprecation warning |
-| Browser E2E `npm run test:e2e` | PASS: 11 сценаріїв на headless Chromium із тимчасовими синтетичними БД |
+| Frontend `npm test` | PASS: 44 тести |
+| TypeScript і production build `npm run build` | PASS |
+| Browser E2E `npm run test:e2e` | PASS: 12 сценаріїв, headless Chromium, синтетичні тимчасові БД |
 | `git diff --check` | PASS |
-| Серверне збереження official/expert | BLOCKED: контракт відсутній |
+| Реальне official/expert submission | BLOCKED: спільний контракт не затверджено |
+
+Unit-тести перевіряють 22 питання, порядок, чотири розділи, сторінки, 5/6 опцій, унікальні ID, immutable версії, повноту та чужі варіанти. Browser E2E перевіряє повні форми, збереження в пам’яті, локальний review, мобільну ширину, keyboard selection, доступ до expert preview і відсутність submission.
 
 ## Змінені файли
 
-`frontend/src/official/catalog.ts`, `frontend/src/official/OfficialAssessment.tsx`, `frontend/src/v2/v2.css`, `frontend/tests/official.test.mjs`, `frontend/e2e/official-assessment.spec.ts`, `QUESTIONNAIRE_EXPERT_IMPLEMENTATION_REPORT.md`. Backend, release-гілка, scoring, Dashboard, Analytics, Docker і schema 3 не змінені.
+`frontend/src/official/catalog-v2.ts` (новий), `frontend/src/official/catalog.ts`, `frontend/src/official/OfficialAssessment.tsx`, `frontend/src/v2/v2.css`, `frontend/tests/official.test.mjs`, `frontend/e2e/official-assessment.spec.ts`, `OFFICIAL_QUESTIONNAIRE_COVERAGE.md` (новий), цей звіт. Змін тільки у власному WIP.
 
-Commit реалізації: `0504b71107684eec1c04a8dbe7d35241e612bc81`. Після push перевірено [Draft PR #25](https://github.com/golem86/hacaton/pull/25): 8 WIP-файлів, без backend, CI, SQLite та Assessment Manager. Head [Release PR #24](https://github.com/golem86/hacaton/pull/24) залишився `db70706f14cbcaba0d137151572aa996b106cd18`. Статус: **PARTIAL / DO NOT MERGE**.
+## Невирішені рішення №5
+
+Потрібно затвердити: (1) аудиторію Анкети 2 і можливе виправлення її заголовка; (2) редакційну придатність адаптованих формулювань для офіційного застосування, зокрема дубля №4/5 у першій формі; (3) спільні DDL/API зберігання описових відповідей, прив’язку до версії та циклу; (4) окрему backend роль і сховище експертів, 2FA/CSRF/аудит; (5) правила анонімності та suppression; (6) методику scoring й контракт Analytics. До цих рішень обидва маршрути залишаються Preview.
+
+Commit реалізації: `4bfb155d5387199fcdc0ee944443f3086e983513`. Після push перевірено: Draft PR #25 містить 10 WIP-файлів, без backend, CI, SQLite й Assessment Manager; head Release PR #24 залишився `db70706f14cbcaba0d137151572aa996b106cd18`. Merge не виконувався.
