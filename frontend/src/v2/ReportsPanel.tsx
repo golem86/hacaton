@@ -3,6 +3,7 @@ import { getManagedAssessments, type Assessment } from '../api/assessments'
 import { downloadCycleReport, getCycleReport, type ReportFormat } from '../api/reports'
 import { getLmStatus } from '../api/narrative'
 import { SuppressionNote } from '../dashboard/suppression'
+import { MaturityReportButtons } from '../dashboard/MaturityReportButtons'
 import { CompareNarrative, CycleNarrative, type LmState } from './NarrativePanel'
 
 type LoadState<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T }
@@ -142,6 +143,9 @@ function ReportDownload({ id, lm }: { id: number; lm: LmState }) {
       </div>
       {busy && <p role="status">Готуємо {busy.toUpperCase()}…</p>}
       {downloadError && <p className="v2-auth-error" role="alert">{downloadError}</p>}
+      <h3 className="v2-report__subheading">Зрілість за Додатком В</h3>
+      <p className="v2-muted">Рівні за критеріями, розриви джерел і пропозиції для робочої групи — за шаблоном звіту Додатка Г.</p>
+      <MaturityReportButtons id={id} />
       <CycleNarrative id={id} lm={lm} />
     </>
   )

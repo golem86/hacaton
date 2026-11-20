@@ -27,7 +27,7 @@
 | Recommendations Engine | `GET /api/assessments/{assessment_id}/recommendations` | `RecommendationProposal` | Реалізовано у пропозиції №4, GET лише пропонує |
 | Recommendations Tracker | `GET /api/assessments/{assessment_id}/tracker`; `POST /api/assessments/{assessment_id}/tracker/decisions`; `POST /api/tracker/{action_id}/transition` | `TrackedRecommendation` | Реалізовано (розділ «Recommendations Tracker» нижче) |
 | Audit Trail | `GET /api/audit-events` | `AuditEvent` | Реалізовано (backend-audit) |
-| Reporting Module V2 | `GET /v2/admin/reports/{id}`; `GET /v2/admin/reports/{id}/export?format=pdf\|xlsx` | Дозволені агрегати, PDF або XLSX | Локальна реалізація V2, [контракт](V2_INTEGRATION_CONTRACT.md#33-analytics-формати-без-змін) |
+| Reporting Module V2 | `GET /v2/admin/reports/{id}`; `GET /v2/admin/reports/{id}/export?format=pdf\|xlsx`; `GET /v2/admin/reports/{id}/maturity-export?format=pdf\|xlsx` | Дозволені агрегати, PDF або XLSX; звіт зрілості за Додатком В | Локальна реалізація V2, [контракт](V2_INTEGRATION_CONTRACT.md#33-analytics-формати-без-змін) |
 
 Шляхи зі статусом «Заплановано» є пропозицією для обговорення. Жоден з них зараз не повинен вважатися доступним API. Зовнішні інтеграції та формат експорту команда визначить окремо.
 
@@ -323,6 +323,7 @@ Tracker порівнює ID циклів після приведення чис�
 | POST | `/api/assessments/{id}/objective-indicators` | data_officer або admin, сесія + CSRF | Внести показник |
 | POST | `/api/objective-indicators/{indicator_id}/confirm` | admin, сесія + CSRF | Підтвердити показник (інший користувач) |
 | GET | `/api/assessments/{id}/maturity` | ролі аналітики, `INTEGRITY_ANALYTICS_DEMO=1` | Рівні, розриви, індекси й рекомендації закритого циклу |
+| GET | `/v2/admin/reports/{id}/maturity-export?format=pdf\|xlsx` | лише сесія V2 `admin` (2FA), `INTEGRITY_ANALYTICS_DEMO=1` | Звіт зрілості PDF/XLSX з того самого розрахунку, що й `/maturity` |
 
 ### Каталог і правило рівня
 
@@ -412,6 +413,25 @@ k-анонімність (як `/results`):
 - Для кожного критерію категорії додатково проходять те саме приховування за кількістю анкет із цим критерієм.
 - Загальний рівень критерію показується, лише якщо таких анкет ≥ k і приховану частину не можна приписати одній категорії.
 - Окремі анкети й варіанти відповідей API ніколи не повертає.
+
+### `GET /v2/admin/reports/{id}/maturity-export?format=pdf|xlsx`
+
+Звіт зрілості за Додатком В для адміністратора (за мотивами шаблону звіту Додатка Г). Код: `services/maturity_report.py` (подання), дані — `services/maturity.calculate`, тобто рівно та сама відповідь, що й `GET /api/assessments/{id}/maturity`; формул у звіті немає.
+
+Порядок перевірок: 401 — немає сесії V2 (демо `X-Role` не діє), 403 — роль не `admin` (`user`, `data_officer`), 503 — демо-режим вимкнено (`INTEGRITY_ANALYTICS_DEMO`, у release — ще й позначка синтетичної БД), 404 — циклу немає, 409 `"Зрілість доступна після закриття оцінювання"` — цикл не закрито; 422 — `format` не `pdf`/`xlsx` або id поза `1..2^63-1`.
+
+Відповідь 200: `Content-Type: application/pdf` або `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `Content-Disposition: attachment; filename="maturity-report-{id}.{pdf|xlsx}"` (лише ASCII), `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`.
+
+Вміст (одні таблиці для обох форматів; XLSX — аркуші «Зрілість», «Розриви й пропозиції», «Джерела»; PDF — ті самі розділи, шрифт DejaVuSans для кирилиці):
+
+- **Підсумок:** назва й id циклу, дата формування (UTC), версія методики, позначка «СИНТЕТИЧНІ ДАНІ», якщо `instance_meta.dataset = synthetic`, k, чи є приховані групи, три індекси джерел, заявлений загальний рівень (окремо, не в індексі).
+- **Рівні за критеріями:** назва, `self` і кількість анкет, `expert` і кількість експертів, `checklist` і «підтверджено N з M», підсумковий рівень за правилом методики (`maturity.base_level`: рівень експерта, без нього — самооцінка) і його джерело.
+- **Розриви** `self − expert`, `self − checklist` з позначкою (≥ 1,0); **пропозиції** — `rule_id` і текст; **правила методики** — коди з умовами.
+- **Джерела даних і обмеження:** k-анонімність (малі групи не показуються й не перелічуються), експерт — посада, а не особа, тексти пропозицій — чернетка для робочої групи, правило рівнів, статус методики.
+
+Приховане значення — «Приховано», відсутнє — «Немає даних»; `null` ніколи не стає 0. Текст циклу в XLSX записується літерально (без формул).
+
+Журнал: дія `report.maturity_export` — роль `admin`, `actor_user_id`, `assessment_id`, `details: {}`. Невдалі спроби не журналюються.
 
 ## V2 Hardening — зміни за аудитом backend (20.11.2026)
 

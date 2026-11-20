@@ -158,6 +158,7 @@
 .v2-report__metrics dt { color: var(--muted); font-size: .8rem; }
 .v2-report__metrics dd { margin: .25rem 0 0; font-weight: 720; overflow-wrap: anywhere; }
 .v2-report__downloads { display: flex; flex-wrap: wrap; gap: .65rem; }
+.v2-report__subheading { margin: .4rem 0 0; font-size: 1.05rem; }
 .v2-report__downloads .v2-button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .v2-blocked-banner { margin: 1rem 0; padding: 1rem 1.1rem; border: 1px solid #e6d5b2; border-left: 4px solid #9b742d; border-radius: .6rem; background: #fbf7ee; color: #4d4029; }
 .v2-blocked-banner strong { display: block; color: #614914; }

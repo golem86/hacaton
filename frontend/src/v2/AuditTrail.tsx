@@ -32,6 +32,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   'objective.create': 'Внесено об’єктивний показник',
   'objective.confirm': 'Підтверджено об’єктивний показник',
   'report.narrative': 'Чернетка тексту звіту (локальна ШІ)',
+  'report.maturity_export': 'Експорт звіту зрілості (Додаток В)',
   'demo.cycle_generated': 'Згенеровано синтетичний демо-цикл',
 }
 
@@ -72,6 +73,7 @@ const ACTION_KINDS: Readonly<Record<string, string>> = {
   'objective.create': 'maturity',
   'objective.confirm': 'maturity',
   'report.narrative': 'cycle',
+  'report.maturity_export': 'maturity',
   'demo.cycle_generated': 'cycle',
 }
 
