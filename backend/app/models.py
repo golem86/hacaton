@@ -283,3 +283,97 @@ class InstanceMeta(Base):
 
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[str] = mapped_column(Text)
+
+
+# ---------------------------------------------------------------------------
+# 8. ЗРІЛІСТЬ ЗА ДОДАТКОМ В (schema 6)
+# ---------------------------------------------------------------------------
+
+class AnnexVResponse(Base):
+    """
+    Одна анонімна анкета Додатка В. Як і ResponseSet: лише категорія, форма і версія шаблону.
+    Навмисно НЕМАЄ: user_id, коду доступу, підрозділу, часу подання (навіть дати).
+    """
+    __tablename__ = "annex_v_responses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cycle_id: Mapped[int] = mapped_column(ForeignKey("cycles.id"))
+    respondent_category: Mapped[str] = mapped_column(String(30))     # mgmt / npp / cadets / staff
+    form: Mapped[int] = mapped_column(Integer)                        # 1 або 2
+    version: Mapped[str] = mapped_column(String(20))                  # версія шаблону, "2.0.0"
+
+    answers: Mapped[list["AnnexVAnswer"]] = relationship(back_populates="response")
+
+
+class AnnexVAnswer(Base):
+    """Обраний варіант (id з каталогу annex_v.py) на одне питання анкети Додатка В."""
+    __tablename__ = "annex_v_answers"
+    __table_args__ = (UniqueConstraint("response_id", "question_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    response_id: Mapped[int] = mapped_column(ForeignKey("annex_v_responses.id"))
+    question_id: Mapped[str] = mapped_column(String(40))
+    option_id: Mapped[str] = mapped_column(String(40))
+
+    response: Mapped[AnnexVResponse] = relationship(back_populates="answers")
+
+
+class AnnexVExpertAssessment(Base):
+    """Експертна оцінка за формою 1. Експерт — посада/роль (expert_label), не ПІБ; вносить admin."""
+    __tablename__ = "annex_v_expert_assessments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cycle_id: Mapped[int] = mapped_column(ForeignKey("cycles.id"))
+    expert_label: Mapped[str] = mapped_column(String(120))
+    form: Mapped[int] = mapped_column(Integer)
+    version: Mapped[str] = mapped_column(String(20))
+    answers_json: Mapped[str] = mapped_column(Text)                   # {id питання: id варіанта}
+    entered_role: Mapped[str] = mapped_column(String(50))
+    entered_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)            # час сервера (UTC)
+
+
+class ChecklistEntry(Base):
+    """
+    Стан пункту чек-листа (Додаток Б, адаптовано) у циклі. Вносить data_officer (або admin),
+    підтверджує admin — інший користувач. У API — лише ролі; id користувача V2 (без email та імені)
+    зберігається тільки для правила «не можна підтвердити власний запис».
+    """
+    __tablename__ = "checklist_entries"
+    __table_args__ = (UniqueConstraint("cycle_id", "code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cycle_id: Mapped[int] = mapped_column(ForeignKey("cycles.id"))
+    code: Mapped[str] = mapped_column(String(10))                     # B-01 … з каталогу annex_v.py
+    status: Mapped[str] = mapped_column(String(10))                   # yes / partial / no
+    evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entered_role: Mapped[str] = mapped_column(String(50))
+    entered_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entered_at: Mapped[datetime] = mapped_column(DateTime)
+    confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    confirmed_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    confirmed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MaturityIndicator(Base):
+    """
+    Об'єктивний показник критерію Додатка В (%, значення і цільове значення за період).
+    Окремо від старої таблиці objective_indicators (Integrity Index), яку не змінюємо.
+    """
+    __tablename__ = "maturity_indicators"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cycle_id: Mapped[int] = mapped_column(ForeignKey("cycles.id"))
+    criterion: Mapped[str] = mapped_column(String(30))
+    name: Mapped[str] = mapped_column(String(200))
+    value: Mapped[float] = mapped_column(Float)                       # 0–100, %
+    target: Mapped[float] = mapped_column(Float)                      # 0–100, %
+    period: Mapped[str] = mapped_column(String(50))
+    entered_role: Mapped[str] = mapped_column(String(50))
+    entered_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entered_at: Mapped[datetime] = mapped_column(DateTime)
+    confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    confirmed_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    confirmed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

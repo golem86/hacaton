@@ -339,7 +339,7 @@ def test_v3_database_gets_tracker_table_with_backup(tmp_path):
     assert report["action"] == "migrated" and report["backup"]
     with closing(sqlite3.connect(db_file)) as con:
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        assert con.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 5
+        assert con.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 6
         assert "recommendation_actions" in tables
         assert con.execute("SELECT name FROM cycles").fetchall() == [("SYN",)]
     with closing(sqlite3.connect(report["backup"])) as con:

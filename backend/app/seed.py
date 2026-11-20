@@ -32,6 +32,7 @@ from .database import Base, SessionLocal, engine
 from .migrations import SCHEMA_VERSION, MigrationError, backup_database, migrate
 from .models import (AccessToken, Answer, Component, Cycle, InstanceMeta, ObjectiveIndicator,
                      Question, Recommendation, ResponseSet, Unit, hash_access_code)
+from .seed_annex_v import seed_annex_v
 
 random.seed(2026)  # однакове «випадкове» щоразу, щоб у всієї команди були ті самі дані
 
@@ -225,6 +226,10 @@ def run(reset: bool = False) -> bool:
         db.add(Recommendation(cycle_id=prev.id, component_id=components[code].id, text=text,
                               basis="Бал компонента нижче порогу в циклі 2026-I",
                               status=status, owner_role=owner, due_date=due))
+
+    # 5. Зрілість за Додатком В (закриті цикли): анкети, експерт, чек-лист, показники.
+    #    Детерміновано і БЕЗ модуля random — дані вище від цього не змінюються.
+    seed_annex_v(db, [c for c in db.query(Cycle).order_by(Cycle.id) if c.status == "closed"])
 
     db.commit()  # commit = «зберегти все остаточно»
     print("Готово! Анкет:", db.query(ResponseSet).count(),

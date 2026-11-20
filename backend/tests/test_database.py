@@ -19,7 +19,8 @@ def test_all_tables_created():
     assert tables == {"components", "questions", "cycles", "units", "response_sets", "answers",
                       "access_tokens", "access_token_policies", "cycle_configs",
                       "objective_indicators", "recommendations", "recommendation_actions", "audit_events",
-                      "instance_meta"}
+                      "instance_meta", "annex_v_responses", "annex_v_answers", "annex_v_expert_assessments",
+                      "checklist_entries", "maturity_indicators"}
 
 
 def test_demo_data_loaded():
