@@ -14,6 +14,7 @@ import { ExecutiveOverview } from './dashboard/ExecutiveOverview'
 import { PersonalModule, type PersonalView } from './v2/PersonalModule'
 import ReportsPanel from './v2/ReportsPanel'
 import AuditTrail from './v2/AuditTrail'
+import TrackerPanel from './v2/TrackerPanel'
 import { pathForPublicPage, publicPageFromPath, type PublicPage } from './v2/publicRoutes'
 import Survey from './pages/Survey'
 import AssessmentManager from './components/AssessmentManager'
@@ -21,11 +22,12 @@ import OfficialAssessment from './official/OfficialAssessment'
 import './style.css'
 import './v2/v2.css'
 
-type AdminSection = 'overview' | 'analytics' | 'testing' | 'expert' | 'audit' | 'reports'
+type AdminSection = 'overview' | 'analytics' | 'tracker' | 'testing' | 'expert' | 'audit' | 'reports'
 type UserSection = PersonalView | 'official'
 type Route = { role: 'admin'; section: AdminSection } | { role: 'user'; section: UserSection }
 const adminItems: { key: AdminSection; title: string }[] = [
   { key: 'overview', title: 'Огляд' }, { key: 'analytics', title: 'Аналітика' },
+  { key: 'tracker', title: 'Трекер рекомендацій' },
   { key: 'testing', title: 'Тестування' }, { key: 'expert', title: 'Експертний шаблон' }, { key: 'audit', title: 'Audit Trail' }, { key: 'reports', title: 'Звіти' },
 ]
 const userItems: { key: UserSection; title: string }[] = [
@@ -107,7 +109,7 @@ function App() {
     <main className="v2-main"><header className="v2-topbar"><div><p className="v2-overline">Integrity Management · {admin ? 'АДМІНІСТРАТОР' : 'КОРИСТУВАЧ'}</p><h1>{title}</h1><p>{admin ? 'Організаційні агрегати з Survey API та Analytics.' : 'Ваші особисті тестування й результати.'}</p></div>
       <div className="v2-account-menu"><span className="v2-account-avatar">{session.name.trim().slice(0, 2).toUpperCase()}</span><div className="v2-account-details"><strong>{session.name}</strong><span>{admin ? 'Адміністратор' : 'Користувач'}</span><small>{session.email}</small></div><button className="v2-logout-button" onClick={() => void signOut()} type="button">Вийти</button></div>
     </header><div className="v2-main-inner">
-      {admin ? (section === 'reports' ? <ReportsPanel /> : <AdminPanel section={section as AdminSection} />) :
+      {admin ? (section === 'reports' ? <ReportsPanel /> : section === 'tracker' ? <TrackerPanel /> : <AdminPanel section={section as AdminSection} />) :
         section === 'official' ? <OfficialAssessment mode="self" /> :
         <PersonalModule view={section as PersonalView} userId={session.id} userName={session.name} onStart={() => go('/app/attempt')} onFinish={() => go('/app/history')} />}
     </div></main>

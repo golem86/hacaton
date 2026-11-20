@@ -25,7 +25,11 @@ ALLOWED_DETAILS: dict[str, type] = {"count": int}
 # Дозволені дії журналу
 ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "assessment.activate",
                    "auth.login",          # успішний вхід після 2FA: лише роль, без email і пароля
-                   "user.create_admin"}   # створення адміністратора CLI-командою
+                   "user.create_admin",   # створення адміністратора CLI-командою
+                   # Recommendations Tracker: рішення посадової особи і зміни статусу
+                   # (лише роль і цикл; відповідальний, обґрунтування й докази — не в журналі)
+                   "tracker.accepted", "tracker.rejected", "tracker.in_progress",
+                   "tracker.completed", "tracker.verified"}
 # Роль auditor не вводиться до рішення №5 — журнал бачить лише admin (S12)
 AUDIT_ROLES = ("admin",)
 

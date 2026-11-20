@@ -14,6 +14,11 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   'tokens.issue': 'Видача кодів доступу',
   'auth.login': 'Вхід до системи (2FA)',
   'user.create_admin': 'Створення адміністратора',
+  'tracker.accepted': 'Рекомендацію прийнято до виконання',
+  'tracker.rejected': 'Рекомендацію відхилено',
+  'tracker.in_progress': 'Захід розпочато',
+  'tracker.completed': 'Захід виконано',
+  'tracker.verified': 'Результат заходу перевірено',
 }
 
 /** Ролі виконавця: сесійні ролі V2 (admin, user) і демонстраційні ролі V1 з backend/app/roles.py. */
@@ -35,6 +40,11 @@ const ACTION_KINDS: Readonly<Record<string, string>> = {
   'tokens.issue': 'codes',
   'auth.login': 'access',
   'user.create_admin': 'account',
+  'tracker.accepted': 'tracker',
+  'tracker.rejected': 'tracker',
+  'tracker.in_progress': 'tracker',
+  'tracker.completed': 'tracker',
+  'tracker.verified': 'tracker',
 }
 
 const ALL = 'all'
