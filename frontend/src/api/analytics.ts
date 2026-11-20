@@ -10,6 +10,10 @@ export interface Methodology {
   formula: string
   weights: Record<string, string>
   limitations: string[]
+  /** Optional, not validated: e.g. 'no_index_no_reweighting'. */
+  missing?: string
+  /** Optional, not validated: SHA-256 of the rule configuration. */
+  config_sha256?: string
 }
 
 export interface IndexComponent {
@@ -33,6 +37,36 @@ export interface IntegrityIndex {
   warnings: string[]
 }
 
+/**
+ * Inputs of the rule that produced a proposal. The shape depends on `rule_id`;
+ * unknown extra fields are allowed and kept.
+ * - DATA_QUALITY_V1: `{ status }` ('missing' | 'suppressed')
+ * - LOW_SCORE_LT_50_V1: `{ score, threshold }`
+ * - CATEGORY_GAP_GE_25_V1: the category comparison object
+ *   (`gap_points` = left_category score − right_category score)
+ */
+export interface RecommendationBasis {
+  [key: string]: unknown
+  status?: string
+  score?: number
+  threshold?: number
+  component_code?: string
+  left_category?: string
+  right_category?: string
+  gap_points?: number | null
+  gap_exact?: string | null
+  flag?: boolean | null
+  threshold_points?: number
+  interpretation?: string
+}
+
+/** Hashes of the rule configuration and input data; not validated. */
+export interface AnalyticsAudit {
+  [key: string]: unknown
+  config_sha256?: string
+  input_sha256?: string
+}
+
 export interface Recommendation {
   id: string
   rule_id: string
@@ -40,6 +74,30 @@ export interface Recommendation {
   text: string
   status: 'proposed'
   requires_human_decision: boolean
+  /** Optional additions (backend sends them; older payloads may not). */
+  assessment_id?: number
+  basis?: RecommendationBasis
+  audit?: AnalyticsAudit
+  owner_role?: string | null
+  due_date?: string | null
+}
+
+/**
+ * Objective indicator shown next to the self-assessment score. Context only:
+ * units differ, so the backend never computes a numeric gap (`gap_points` is null).
+ */
+export interface ObjectiveContextItem {
+  component_code: string
+  /** Indicator name, not the component name. */
+  name: string
+  /** Component self-assessment score 0–100; null when hidden or missing. */
+  survey_score: number | null
+  /** Only a confirmed value; null when unverified or missing. */
+  objective_value: number | null
+  status: 'ok' | 'unverified'
+  comparison_type?: string
+  gap_points?: number | null
+  reason?: string
 }
 
 export interface Recommendations {
@@ -48,6 +106,8 @@ export interface Recommendations {
   approval_status: string
   proposals: Recommendation[]
   persistence: string
+  objective_context?: ObjectiveContextItem[]
+  audit?: AnalyticsAudit
 }
 
 export interface CategoryComparison {
@@ -94,6 +154,44 @@ function isClosedAssessment(value: unknown, id?: number): boolean {
     && (id === undefined || value.id === id) && typeof value.name === 'string'
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+const isNullableNumber = (value: unknown) => value === null || isFiniteNumber(value)
+const isNullableString = (value: unknown) => value === null || typeof value === 'string'
+const isString = (value: unknown) => typeof value === 'string'
+/** Older payloads may omit a field; when it is present it must be valid. */
+const isOptional = (value: unknown, check: (value: unknown) => boolean) => value === undefined || check(value)
+
+/** Known rules must carry the fields their explanation shows; other rules only need an object. */
+function isRecommendationBasis(ruleId: unknown, basis: unknown): boolean {
+  if (!isRecord(basis)) return false
+  if (ruleId === 'LOW_SCORE_LT_50_V1') return isFiniteNumber(basis.score) && isFiniteNumber(basis.threshold)
+  if (ruleId === 'CATEGORY_GAP_GE_25_V1') return isString(basis.left_category) && isString(basis.right_category)
+    && isNullableNumber(basis.gap_points) && isOptional(basis.threshold_points, isFiniteNumber)
+  if (ruleId === 'DATA_QUALITY_V1') return isString(basis.status)
+  return true
+}
+
+function isRecommendation(item: unknown, id: number): boolean {
+  return isRecord(item)
+    && typeof item.id === 'string' && typeof item.rule_id === 'string'
+    && typeof item.component_code === 'string' && typeof item.text === 'string'
+    && item.status === 'proposed' && typeof item.requires_human_decision === 'boolean'
+    && isOptional(item.assessment_id, value => value === id)
+    && isOptional(item.basis, basis => isRecommendationBasis(item.rule_id, basis))
+    && isOptional(item.owner_role, isNullableString)
+    && isOptional(item.due_date, isNullableString)
+}
+
+function isObjectiveContextItem(item: unknown): boolean {
+  return isRecord(item) && isString(item.component_code) && isString(item.name)
+    && isNullableNumber(item.survey_score) && isNullableNumber(item.objective_value)
+    && (item.status === 'ok' || item.status === 'unverified')
+    && isOptional(item.comparison_type, isString) && isOptional(item.reason, isString)
+}
+
 async function validated<T>(path: string, check: (value: unknown) => boolean, signal?: AbortSignal): Promise<T> {
   const value = await getJson<unknown>(path, signal, messages)
   if (!check(value)) throw new ApiError(200, 'API повернув некоректну відповідь аналітики.')
@@ -133,10 +231,9 @@ export function getRecommendations(id: number, signal?: AbortSignal): Promise<Re
     isRecord(value) && isClosedAssessment(value.assessment, id)
     && value.methodology_version === DEMO_METHODOLOGY && typeof value.approval_status === 'string'
     && typeof value.persistence === 'string' && Array.isArray(value.proposals)
-    && value.proposals.every((item: unknown) => isRecord(item)
-      && typeof item.id === 'string' && typeof item.rule_id === 'string'
-      && typeof item.component_code === 'string' && typeof item.text === 'string'
-      && item.status === 'proposed' && typeof item.requires_human_decision === 'boolean'), signal)
+    && value.proposals.every((item: unknown) => isRecommendation(item, id))
+    && isOptional(value.objective_context, context =>
+      Array.isArray(context) && context.every(isObjectiveContextItem)), signal)
 }
 
 export function getComparisons(id: number, comparisonId?: number, signal?: AbortSignal): Promise<Comparisons> {
@@ -158,6 +255,9 @@ export function getComparisons(id: number, comparisonId?: number, signal?: Abort
       && ['limited_comparability', 'unavailable'].includes(String(value.period_comparison.status))
       && (value.period_comparison.change_points === null
         || typeof value.period_comparison.change_points === 'number' && Number.isFinite(value.period_comparison.change_points))
+      && Array.isArray(value.period_comparison.components)
+      && value.period_comparison.components.every((item: unknown) => isRecord(item)
+        && isString(item.component_code) && isNullableNumber(item.change_points))
       && Array.isArray(value.period_comparison.warnings)
       && value.period_comparison.warnings.every((item: unknown) => typeof item === 'string'))
     && (comparisonId === undefined ? value.period_comparison === null : value.period_comparison !== null), signal)
