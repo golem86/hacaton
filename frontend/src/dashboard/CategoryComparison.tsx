@@ -3,22 +3,28 @@ import Chart from 'chart.js/auto'
 import type { ResultCategory, ResultComponent } from './types'
 import { barWidth, categoryName, scoreText } from './format'
 import { describeScore, scoreZone, ZoneBadge, zoneColor, ZoneLegend } from './maturity'
+import { resultsSuppressed, SuppressionNote, visibleCategories as onlyVisible, visibleCells } from './suppression'
 import './dashboard.css'
 
 interface Props {
   categories: ResultCategory[]
   components: ResultComponent[]
+  /** Мінімальний розмір групи циклу (k) для примітки про приховані групи. */
+  minGroupSize?: number
+  /** Прапорець `suppressed` розрізу з відповіді API. */
+  suppressed?: boolean
 }
 
 const palette = ['#276456', '#4d9587', '#80ad73', '#b49755']
 
-export function CategoryComparison({ categories, components }: Props) {
+export function CategoryComparison({ categories: rawCategories, components, minGroupSize, suppressed = false }: Props) {
   const [mode, setMode] = useState<'chart' | 'table'>('chart')
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  // Сервер не перелічує прихованих груп; елементи старого формату з hidden: true відкидаються повністю.
+  const categories = useMemo(() => onlyVisible(rawCategories), [rawCategories])
   const visibleCategories = useMemo(() => categories.filter(category => selectedCategories.includes(category.category)), [categories, selectedCategories])
-  const hasSuppressed = categories.some(category => category.hidden
-    || components.some(component => component.by_category.some(cell => cell.category === category.category && cell.hidden)))
+  const hasSuppressed = suppressed || resultsSuppressed({ categories: rawCategories, components })
 
   useEffect(() => {
     setSelectedCategories(categories.map(category => category.category))
@@ -34,10 +40,7 @@ export function CategoryComparison({ categories, components }: Props) {
         labels: components.map(component => `${component.code} · ${component.name}`),
         datasets: visibleCategories.map((category, index) => ({
           label: categoryName(category.category),
-          data: components.map(component => {
-            const cell = component.by_category.find(item => item.category === category.category)
-            return category.hidden || cell?.hidden === true ? null : cell?.score ?? null
-          }),
+          data: components.map(component => cellFor(component, rawCategories, category.category)?.score ?? null),
           backgroundColor: palette[index % palette.length],
           borderRadius: 3,
           borderSkipped: false,
@@ -73,7 +76,7 @@ export function CategoryComparison({ categories, components }: Props) {
       },
     })
     return () => chart.destroy()
-  }, [components, mode, visibleCategories])
+  }, [components, mode, rawCategories, visibleCategories])
 
   function toggleCategory(category: string) {
     setSelectedCategories(current => current.includes(category)
@@ -102,50 +105,50 @@ export function CategoryComparison({ categories, components }: Props) {
               <label key={category.category}>
                 <input type="checkbox" checked={selectedCategories.includes(category.category)} onChange={() => toggleCategory(category.category)} />
                 <span>{categoryName(category.category)}</span>
-                {category.hidden && <small>Приховано</small>}
               </label>
             ))}
           </fieldset>
           {visibleCategories.length === 0 ? (
-            <p className="dashboard-empty">Оберіть щонайменше одну категорію. Приховані сервером дані залишаються недоступними.</p>
+            <p className="dashboard-empty">Оберіть щонайменше одну категорію. Групи, приховані сервером, недоступні.</p>
           ) : mode === 'chart' ? (
             <>
               <div className="chart-frame category-chart-frame">
                 <canvas ref={canvasRef} role="img" aria-label="Порівняльна діаграма балів компонентів за категоріями респондентів, шкала від 0 до 100" />
-                <ul className="sr-only">{components.flatMap(component => visibleCategories.map(category => {
-                  const cell = component.by_category.find(item => item.category === category.category)
-                  const hidden = category.hidden || cell?.hidden === true
-                  return <li key={`${component.code}-${category.category}`}>{component.code}, {categoryName(category.category)}: {hidden ? 'Приховано' : scoreText(cell?.score ?? null)}</li>
-                }))}</ul>
+                <ul className="sr-only">{components.flatMap(component => visibleCategories.map(category => (
+                  <li key={`${component.code}-${category.category}`}>{component.code}, {categoryName(category.category)}: {scoreText(cellFor(component, rawCategories, category.category)?.score ?? null)}</li>
+                )))}</ul>
               </div>
-              <p className="dashboard-chart-note">Повні назви компонентів доступні в підказках і таблиці. Бали прихованих груп не показано.</p>
+              <p className="dashboard-chart-note">Повні назви компонентів доступні в підказках і таблиці. Групи, менші за поріг, сервер не передає.</p>
             </>
           ) : (
             <>
               <p className="dashboard-scroll-cue">Прокрутіть таблицю вбік, щоб переглянути всі категорії →</p>
               <div className="dashboard-table-scroll" role="region" aria-label="Порівняння категорій, таблиця з горизонтальним прокручуванням" tabIndex={0}>
                 <table className="dashboard-table">
-                  <caption>Бали компонентів за категоріями, шкала 0–100. Приховані групи не показують бали й кількість відповідей.</caption>
-                  <thead><tr><th scope="col">Компонент</th>{visibleCategories.map(category => <th scope="col" key={category.category}>{categoryName(category.category)}<small>{category.hidden ? 'Приховано' : category.responses === null ? 'Немає даних' : `${category.responses.toLocaleString('uk-UA')} відповідей`}</small></th>)}</tr></thead>
+                  <caption>Бали компонентів за категоріями, шкала 0–100. Групи, менші за поріг, не показано.</caption>
+                  <thead><tr><th scope="col">Компонент</th>{visibleCategories.map(category => <th scope="col" key={category.category}>{categoryName(category.category)}<small>{category.responses == null ? 'Немає даних' : `${category.responses.toLocaleString('uk-UA')} відповідей`}</small></th>)}</tr></thead>
                   <tbody>{components.map(component => <tr key={component.code}>
                     <th scope="row"><span className="dashboard-code">{component.code}</span> {component.name}</th>
                     {visibleCategories.map(category => {
-                      const cell = component.by_category.find(item => item.category === category.category)
-                      const hidden = category.hidden || cell?.hidden === true
-                      // Zones are derived only from visible scores: a colour must not leak a hidden value.
-                      return <td key={category.category} className={hidden ? 'dashboard-hidden' : undefined}>
-                        {hidden ? 'Приховано' : cell?.score == null ? 'Немає даних' : <div className="dashboard-category-score" title={describeScore(cell.score)}><span className="dashboard-mini-track" aria-hidden="true"><span style={{ width: barWidth(cell.score), background: zoneColor(cell.score) }} /></span><span>{scoreText(cell.score)}</span><ZoneBadge zone={scoreZone(cell.score)} short /></div>}
+                      const cell = cellFor(component, rawCategories, category.category)
+                      // Zones are derived only from scores the server sent for visible groups.
+                      return <td key={category.category}>
+                        {cell?.score == null ? 'Немає даних' : <div className="dashboard-category-score" title={describeScore(cell.score)}><span className="dashboard-mini-track" aria-hidden="true"><span style={{ width: barWidth(cell.score), background: zoneColor(cell.score) }} /></span><span>{scoreText(cell.score)}</span><ZoneBadge zone={scoreZone(cell.score)} short /></div>}
                       </td>
                     })}
                   </tr>)}</tbody>
                 </table>
               </div>
-              <ZoneLegend note="Зони визначено лише для видимих балів; приховані групи не зафарбовано." />
+              <ZoneLegend note="Зони визначено лише для балів показаних груп." />
             </>
           )}
         </>
       )}
-      {hasSuppressed && <p className="dashboard-privacy-note">Бали та кількість відповідей малих груп приховано для захисту анонімності.</p>}
+      {hasSuppressed && <SuppressionNote k={minGroupSize} />}
     </section>
   )
+}
+
+function cellFor(component: ResultComponent, categories: readonly ResultCategory[], category: string) {
+  return visibleCells(component, categories).find(item => item.category === category)
 }

@@ -95,6 +95,19 @@ export function getAssessment(id: number, signal?: AbortSignal): Promise<Assessm
   return getValidatedJson(`/api/assessments/${id}`, isAssessment, signal, true)
 }
 
+/**
+ * Перелік циклів із сесією (cookie): admin бачить і чернетки, data_officer — відкриті та закриті.
+ * Анонімна анкета й далі використовує getAssessments() без cookie і чернеток не бачить.
+ */
+export function getManagedAssessments(signal?: AbortSignal): Promise<Assessment[]> {
+  return getValidatedJson('/api/assessments', isAssessmentList, signal)
+}
+
+/** Один цикл із сесією: чернетка доступна лише admin (для інших ролей backend повертає 404). */
+export function getManagedAssessment(id: number, signal?: AbortSignal): Promise<Assessment> {
+  return getValidatedJson(`/api/assessments/${id}`, isAssessment, signal)
+}
+
 export function getQuestionnaire(id: number, signal?: AbortSignal): Promise<Questionnaire> {
   return getValidatedJson(`/api/assessments/${id}/questionnaires`, isQuestionnaire, signal, true)
 }
@@ -143,6 +156,10 @@ function submissionError(status: number, detail: unknown): Error {
         : 'Немає доступу до надсилання анкети.')
     case 409:
       return new Error('Цикл оцінювання закрито. Анкету не надіслано.')
+    case 413:
+      return new Error('Запит завеликий. Анкету не надіслано.')
+    case 429:
+      return new Error('Забагато спроб надсилання. Анкету не надіслано, спробуйте пізніше.')
     case 422:
       if (validationField(detail, 'unit') || (typeof detail === 'string' && detail.startsWith('Підрозділ не з довідника'))) {
         return new Error('Оберіть підрозділ зі списку та повторіть спробу.')
@@ -183,7 +200,8 @@ export async function submitQuestionnaire(
     throw new SubmissionOutcomeUnknownError()
   }
 
-  if ([400, 401, 403, 409, 422].includes(response.status)) {
+  // 413 і 429 сервер повертає до обробки анкети, тому подання точно не прийнято.
+  if ([400, 401, 403, 409, 413, 422, 429].includes(response.status)) {
     throw submissionError(response.status, await readErrorDetail(response))
   }
   if (response.status !== 201) throw new SubmissionOutcomeUnknownError()

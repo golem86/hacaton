@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import Chart from 'chart.js/auto'
-import { getAssessments, type Assessment } from '../api/assessments'
-import { activateCycle, closeCycle, createCycle, getParticipation, issueAccessTokens, type Participation } from '../api/admin'
+import { useEffect, useState, type FormEvent } from 'react'
+import { getManagedAssessments, type Assessment } from '../api/assessments'
+import { activateCycle, closeCycle, createCycle } from '../api/admin'
+import { ALL_CATEGORIES, categoryLabels, type Category } from './categories'
+import { ParticipationPanel } from './Participation'
 import './AssessmentManager.css'
 
-const categoryLabels = { mgmt: 'Керівництво', npp: 'Науково-педагогічні працівники', cadets: 'Курсанти', staff: 'Працівники' }
-type Category = keyof typeof categoryLabels
+export { ParticipationChart } from './Participation'
 
 export const cycleStatusLabels: Readonly<Record<Assessment['status'], string>> = { draft: 'Чернетка', open: 'Відкритий', closed: 'Закритий' }
 
@@ -14,104 +14,41 @@ export function cycleStatusLabel(status: string) {
   return Object.hasOwn(cycleStatusLabels, status) ? cycleStatusLabels[status as Assessment['status']] : status
 }
 
-const usedColor = '#276456'
-const unusedColor = '#b7cec4'
-const formatCount = (value: number) => value.toLocaleString('uk-UA')
-const formatPercent = (value: number) => `${value.toLocaleString('uk-UA', { maximumFractionDigits: 1 })}%`
+/** Пояснення для admin: після посилення безпеки коди доступу видає окрема роль. */
+export const CODES_BY_DATA_OFFICER_NOTE = 'Коди видає Відповідальний за коди доступу (роль data_officer). Адміністратор бачить результати, тому кодів не отримує — так жодна людина не може зіставити код із відповіддю.'
 
-/**
- * Кругова діаграма використаних і невикористаних кодів.
- * null від API означає «приховано через мінімальний розмір групи» — його не перетворюємо на 0.
- */
-export function ParticipationChart({ participation }: { participation: Participation | null }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const issued = participation?.tokens_issued ?? null
-  const unused = participation?.tokens_unused ?? null
-  const used = issued !== null && unused !== null ? Math.max(issued - unused, 0) : null
-  const visible = issued !== null && issued > 0 && unused !== null && used !== null
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || !issued || used === null || unused === null) return
-    const chart = new Chart(canvas, {
-      type: 'doughnut',
-      data: {
-        labels: ['Використані коди', 'Невикористані коди'],
-        datasets: [{ data: [used, unused], backgroundColor: [usedColor, unusedColor], borderColor: '#ffffff', borderWidth: 2, hoverOffset: 4 }],
-      },
-      options: {
-        animation: false,
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '68%',
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: context => ` ${context.label}: ${formatCount(Number(context.raw))}` } },
-        },
-      },
-    })
-    return () => chart.destroy()
-  }, [issued, used, unused])
-
-  if (!participation) return <p className="cycle-manager__chart-state" role="status">Завантажуємо дані участі…</p>
-  if (participation.tokens_issued === 0) {
-    return <div className="cycle-manager__chart-state"><strong>Коди ще не видано</strong><span>Діаграма з’явиться після видачі перших кодів доступу.</span></div>
-  }
-  if (!visible) {
-    return <div className="cycle-manager__chart-state cycle-manager__chart-state--hidden"><strong>Розподіл кодів приховано</strong><span>Діаграма з’явиться, коли кількість анкет досягне порогу групи.</span></div>
-  }
+export function CodesDelegatedNote() {
   return (
-    <figure className="cycle-manager__chart">
-      <div className="cycle-manager__chart-canvas">
-        <canvas ref={canvasRef} role="img" aria-label={`Кругова діаграма участі: використано ${formatCount(used)} з ${formatCount(issued)} кодів, невикористаних ${formatCount(unused)}`} />
-        {participation.participation_percent !== null && (
-          <div className="cycle-manager__chart-center" aria-hidden="true"><strong>{formatPercent(participation.participation_percent)}</strong><span>участь</span></div>
-        )}
-      </div>
-      <figcaption>
-        <ul className="cycle-manager__legend">
-          <li><i style={{ background: usedColor }} aria-hidden="true" /><span>Використані коди</span><strong>{formatCount(used)}</strong></li>
-          <li><i style={{ background: unusedColor }} aria-hidden="true" /><span>Невикористані коди</span><strong>{formatCount(unused)}</strong></li>
-        </ul>
-      </figcaption>
-    </figure>
+    <section className="cycle-manager__codes cycle-manager__codes--delegated" aria-labelledby="cycle-codes-title">
+      <h4 id="cycle-codes-title">Коди доступу</h4>
+      <p className="cycle-manager__privacy-note">{CODES_BY_DATA_OFFICER_NOTE}</p>
+      <p className="cycle-manager__privacy-note">Призначити роль можна в розділі «Користувачі й ролі».</p>
+    </section>
   )
 }
 
 export default function AssessmentManager() {
   const [cycles, setCycles] = useState<Assessment[]>([])
   const [id, setId] = useState<number | null>(null)
-  const [participation, setParticipation] = useState<Participation | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [scope, setScope] = useState('')
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10))
   const [endDate, setEndDate] = useState('')
   const [minGroup, setMinGroup] = useState(5)
-  const [categories, setCategories] = useState<Category[]>(['mgmt', 'npp', 'cadets', 'staff'])
-  const [category, setCategory] = useState<Category>('mgmt')
-  const [count, setCount] = useState(10)
-  const [codes, setCodes] = useState<string[]>([])
+  const [categories, setCategories] = useState<Category[]>([...ALL_CATEGORIES])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const selected = cycles.find(c => c.id === id)
   const endDateTooEarly = Boolean(startDate && endDate && endDate < startDate)
 
+  // Цикли беруться із сесією: admin бачить і чернетки (анонімний перелік їх не містить).
   async function refresh(selectId?: number) {
-    const list = await getAssessments()
+    const list = await getManagedAssessments()
     setCycles(list)
     setId(current => selectId ?? current ?? list[0]?.id ?? null)
-    const nextCycle = list.find(c => c.id === selectId)
-    if (nextCycle?.categories?.length && !nextCycle.categories.includes(category)) setCategory(nextCycle.categories[0])
   }
   useEffect(() => { void refresh().catch(e => setError(e instanceof Error ? e.message : 'Не вдалося завантажити цикли')) }, [])
-  useEffect(() => {
-    if (!id) return
-    let active = true
-    getParticipation(id).then(value => { if (active) setParticipation(value) })
-      .catch(e => { if (active) setError(e instanceof Error ? e.message : 'Не вдалося завантажити участь') })
-    return () => { active = false }
-  }, [id, cycles])
 
   async function run(action: () => Promise<unknown>, selectId?: number) {
     setError(''); setBusy(true)
@@ -179,7 +116,7 @@ export default function AssessmentManager() {
           <fieldset className="cycle-manager__categories">
             <legend>Категорії</legend>
             <div className="cycle-manager__choices">
-              {(Object.keys(categoryLabels) as Category[]).map(item => (
+              {ALL_CATEGORIES.map(item => (
                 <label className="cycle-manager__choice" key={item}>
                   <input type="checkbox" checked={categories.includes(item)} onChange={e => setCategories(previous => e.target.checked ? [...previous, item] : previous.filter(x => x !== item))} />
                   <span>{categoryLabels[item]}</span>
@@ -197,7 +134,7 @@ export default function AssessmentManager() {
         <section className="v2-card cycle-manager__overview" aria-labelledby="cycle-overview-title">
           <h3 id="cycle-overview-title">Огляд циклу</h3>
           <label className="cycle-manager__field">Цикл
-            <select value={id ?? ''} onChange={e => { const next = cycles.find(c => c.id === Number(e.target.value)); setId(next?.id ?? null); setCategory(next?.categories?.[0] ?? 'mgmt'); setCodes([]); setParticipation(null) }}>
+            <select value={id ?? ''} onChange={e => { const next = cycles.find(c => c.id === Number(e.target.value)); setId(next?.id ?? null) }}>
               {cycles.map(c => <option key={c.id} value={c.id}>{c.name} · {cycleStatusLabel(c.status)}</option>)}
             </select>
           </label>
@@ -222,7 +159,7 @@ export default function AssessmentManager() {
                   <div className="cycle-manager__wide">
                     <dt>Категорії</dt>
                     <dd className="cycle-manager__category-list">
-                      {(selected.categories ?? Object.keys(categoryLabels) as Category[]).map(item => (
+                      {(selected.categories ?? ALL_CATEGORIES).map(item => (
                         <span key={item}>{categoryLabels[item]}</span>
                       ))}
                     </dd>
@@ -232,42 +169,9 @@ export default function AssessmentManager() {
                 {selected.status === 'open' && <button className="v2-button" disabled={busy} type="button" onClick={() => void run(() => closeCycle(selected.id))}>Закрити цикл</button>}
               </div>
 
-              <section className="cycle-manager__participation" aria-labelledby="cycle-participation-title">
-                <h4 id="cycle-participation-title">Участь</h4>
-                <ParticipationChart participation={participation} />
-                <dl className="cycle-manager__metrics">
-                  <div><dt>Видано кодів:</dt>{' '}<dd>{participation ? formatCount(participation.tokens_issued) : '—'}</dd></div>
-                  <div><dt>Невикористаних:</dt>{' '}<dd>{participation?.tokens_unused == null ? 'приховано' : formatCount(participation.tokens_unused)}</dd></div>
-                  <div><dt>Анкет:</dt>{' '}<dd>{participation?.responses_total == null ? 'приховано' : formatCount(participation.responses_total)}</dd></div>
-                  <div className="cycle-manager__metric-accent"><dt>Рівень участі:</dt>{' '}<dd>{participation?.participation_percent == null ? 'приховано' : formatPercent(participation.participation_percent)}</dd></div>
-                </dl>
-                <p className="cycle-manager__privacy-note">Участь малих груп приховано: доки анкет менше за поріг групи ({selected.min_group_size}), кількість анкет, невикористаних кодів і рівень участі не показуються, щоб захистити анонімність.</p>
-              </section>
+              <ParticipationPanel cycle={selected} refreshKey={cycles} />
 
-              {selected.status === 'open' && (
-                <section className="cycle-manager__codes" aria-labelledby="cycle-codes-title">
-                  <h4 id="cycle-codes-title">Коди доступу</h4>
-                  <div className="cycle-manager__fields">
-                    <label className="cycle-manager__field">Категорія кодів
-                      <select value={category} onChange={e => setCategory(e.target.value as Category)}>
-                        {(selected.categories ?? Object.keys(categoryLabels) as Category[]).map(item => (
-                          <option key={item} value={item}>{categoryLabels[item as Category]}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="cycle-manager__field">Кількість кодів
-                      <input type="number" min={1} max={500} value={count} onChange={e => setCount(Number(e.target.value))} />
-                    </label>
-                  </div>
-                  <button className="v2-button" disabled={busy} type="button" onClick={() => void run(async () => { const result = await issueAccessTokens(selected.id, count, category); setCodes(result.tokens) })}>Видати коди</button>
-                  {codes.length > 0 && (
-                    <div className="cycle-manager__issued" role="status">
-                      <p>Коди показуються лише зараз. Передайте їх респондентам окремо.</p>
-                      <textarea aria-label="Видані коди" readOnly value={codes.join('\n')} />
-                    </div>
-                  )}
-                </section>
-              )}
+              {selected.status === 'open' && <CodesDelegatedNote />}
             </>
           ) : <p className="cycle-manager__empty">Оберіть цикл зі списку, щоб переглянути його параметри.</p>}
         </section>

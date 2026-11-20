@@ -21,6 +21,8 @@ export default async function globalSetup(_config: FullConfig) {
     'migrate_auth_db()',
     'create_user("E2E Admin", "e2e-admin@example.test", __import__("os").environ["V2_E2E_TEST_PASSWORD"], role="admin")',
     'create_user("E2E User", "e2e-user@example.test", __import__("os").environ["V2_E2E_TEST_PASSWORD"], role="user")',
+    // V2 hardening: коди доступу видає лише роль data_officer (auth schema 2).
+    'create_user("E2E Officer", "e2e-officer@example.test", __import__("os").environ["V2_E2E_TEST_PASSWORD"], role="data_officer")',
   ].join('; ')
   const accounts = spawnSync(python, ['-c', createAccounts], {
     cwd: backendDir,

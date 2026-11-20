@@ -348,7 +348,7 @@ test('stateful ExecutiveOverview renders loading states and accepts a KPI slot',
   assert.doesNotMatch(markup, /Відповідей у циклі/)
 })
 
-test('ComponentDetail shows hidden categories as "Приховано" and never colours them', () => {
+test('ComponentDetail drops legacy hidden categories entirely and never colours them', () => {
   const component = {
     code: 'C2', name: 'Компонент C2', weight: 0.15, score: 80,
     by_category: [
@@ -378,7 +378,9 @@ test('ComponentDetail shows hidden categories as "Приховано" and never 
     previous: { name: 'Осінь 2025', score: 81.2 },
     onClose: () => {},
   }))
-  assert.equal(markup.match(/<span>Приховано<\/span>/g)?.length, 2, 'cell flag and category flag both hide')
+  // V2 hardening: hidden groups are not listed at all — neither the name nor the score (cell flag and category flag both hide).
+  const categoriesBlock = between(markup, 'id="component-detail-categories"', 'id="component-detail-indicators"')
+  assert.doesNotMatch(categoriesBlock, /Персонал|Керівництво|Приховано/)
   assert.doesNotMatch(markup, /12[,.]3|9[,.]9/)
   assert.doesNotMatch(markup, /Критична/, 'a hidden low score must not leak through colour or label')
   assert.match(markup, /Курсанти<\/span><span class="component-detail-score">/)
@@ -396,7 +398,27 @@ test('ComponentDetail shows hidden categories as "Приховано" and never 
   assert.match(markup, /Деталізація до окремих питань потребує розширення API/)
   assert.match(markup, /<h3 id="component-detail-heading" tabindex="-1">/)
   assert.match(markup, /aria-label="Закрити деталізацію C2"/)
-  assert.match(markup, /Бали малих груп приховано/)
+  assert.match(markup, /Частину груп приховано для захисту анонімності \(менше k відповідей\)/)
+})
+
+test('ComponentDetail shows the suppression note from the new `suppressed` flag with the cycle threshold', () => {
+  const markup = html(createElement(ComponentDetail, {
+    component: {
+      code: 'C1', name: 'Компонент C1', weight: 0.15, score: 70, suppressed: true,
+      by_category: [{ category: 'cadets', score: 71.2 }], objective_indicators: [],
+    },
+    categories: [{ category: 'cadets', responses: 30 }],
+    minGroupSize: 7,
+    onClose: () => {},
+  }))
+  assert.match(markup, /Курсанти<\/span><span class="component-detail-score">/)
+  assert.match(markup, /Частину груп приховано для захисту анонімності \(менше 7 відповідей\)/)
+  const clean = html(createElement(ComponentDetail, {
+    component: { code: 'C1', name: 'Компонент C1', weight: 0.15, score: 70, suppressed: false, by_category: [{ category: 'cadets', score: 71.2 }], objective_indicators: [] },
+    categories: [{ category: 'cadets', responses: 30 }],
+    onClose: () => {},
+  }))
+  assert.doesNotMatch(clean, /Частину груп приховано/)
 })
 
 test('ComponentDetail without analytics explains what is missing instead of inventing numbers', () => {

@@ -1,0 +1,256 @@
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { ApiError } from '../api/client'
+import { isUserRole, ROLE_LABELS, roleLabel, USER_ROLES, type UserRole } from '../api/auth'
+import {
+  changeUserRole, findUserByEmail, getRoleChanges, listUsers, revokeUserSessions,
+  ROLE_CONFLICT_MESSAGE, USER_NOT_FOUND_MESSAGE, type AdminUser, type AdminUserMatch, type RoleChange,
+} from '../api/users'
+import { formatAuditDate } from './AuditTrail'
+import './users.css'
+
+type LoadState<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T }
+
+/** Рядок таблиці: email — замаскований (перелік) або повний (лише результат точного пошуку). */
+export interface UserRowData { id: number; name: string; role: string; email: string; created_at: string }
+
+export type PendingAction =
+  | { kind: 'role'; user: UserRowData; newRole: UserRole }
+  | { kind: 'revoke'; user: UserRowData }
+
+const pluralRules = new Intl.PluralRules('uk-UA')
+export function sessionsLabel(count: number) {
+  const form = pluralRules.select(count)
+  return `${count.toLocaleString('uk-UA')} ${form === 'one' ? 'сесію' : form === 'few' ? 'сесії' : 'сесій'}`
+}
+
+function message(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
+}
+
+export const fromListed = (user: AdminUser): UserRowData => ({ id: user.id, name: user.name, role: user.role, email: user.email_masked, created_at: user.created_at })
+export const fromMatch = (user: AdminUserMatch): UserRowData => ({ id: user.id, name: user.name, role: user.role, email: user.email, created_at: user.created_at })
+
+export function confirmText(action: PendingAction): string {
+  if (action.kind === 'role') {
+    return `Змінити роль користувача «${action.user.name}» з «${roleLabel(action.user.role)}» на «${ROLE_LABELS[action.newRole]}»? Усі сесії цього користувача буде завершено, йому доведеться увійти знову.`
+  }
+  return `Завершити всі сесії користувача «${action.user.name}» на всіх пристроях? Йому доведеться увійти знову.`
+}
+
+export function ConfirmAction({ action, busy, onConfirm, onCancel }: { action: PendingAction; busy: boolean; onConfirm: () => void; onCancel: () => void }) {
+  const box = useRef<HTMLDivElement>(null)
+  // Підтвердження з’являється вгорі розділу: переносимо до нього фокус (і прокрутку), не натискаючи дію.
+  useEffect(() => { box.current?.focus() }, [action])
+  return (
+    <div ref={box} tabIndex={-1} className="users-panel__confirm" role="alertdialog" aria-labelledby="users-confirm-title" aria-describedby="users-confirm-text">
+      <strong id="users-confirm-title">{action.kind === 'role' ? 'Підтвердьте зміну ролі' : 'Підтвердьте завершення сесій'}</strong>
+      <p id="users-confirm-text">{confirmText(action)}</p>
+      <div className="users-panel__confirm-actions">
+        <button className="v2-button v2-button-primary" type="button" disabled={busy} onClick={onConfirm}>{busy ? 'Виконуємо…' : action.kind === 'role' ? 'Змінити роль' : 'Завершити сесії'}</button>
+        <button className="v2-button v2-button-quiet" type="button" disabled={busy} onClick={onCancel}>Скасувати</button>
+      </div>
+    </div>
+  )
+}
+
+export function UsersTable({ rows, currentUserId, drafts, busy, caption, onDraft, onRequest }: {
+  rows: UserRowData[]
+  currentUserId: number
+  drafts: Readonly<Record<number, UserRole>>
+  busy: boolean
+  caption: string
+  onDraft: (userId: number, role: UserRole) => void
+  onRequest: (action: PendingAction) => void
+}) {
+  return (
+    <div className="users-panel__scroll">
+      <table className="users-panel__table">
+        <caption className="users-panel__sr-only">{caption}</caption>
+        <thead><tr><th scope="col">Ім’я</th><th scope="col">Email</th><th scope="col">Роль</th><th scope="col">Створено</th><th scope="col">Дії</th></tr></thead>
+        <tbody>
+          {rows.map(user => {
+            const self = user.id === currentUserId
+            const draft = drafts[user.id] ?? (isUserRole(user.role) ? user.role : 'user')
+            return (
+              <tr key={user.id} data-self={self || undefined}>
+                <th scope="row" data-label="Ім’я"><span>{user.name}{self && <span className="v2-pill users-panel__self">Це ви</span>}</span></th>
+                <td data-label="Email" className="users-panel__email">{user.email}</td>
+                <td data-label="Роль"><span className="users-panel__role" data-role={user.role}>{roleLabel(user.role)}</span></td>
+                <td data-label="Створено">{formatAuditDate(user.created_at)}</td>
+                <td data-label="Дії">
+                  {self ? (
+                    <span className="users-panel__hint">Не можна змінити власну роль. Щоб завершити власні сесії, скористайтеся «Вийти на всіх пристроях».</span>
+                  ) : (
+                    <div className="users-panel__actions">
+                      <label className="users-panel__role-select">
+                        <span className="users-panel__sr-only">Нова роль для {user.name}</span>
+                        <select value={draft} disabled={busy} onChange={event => { if (isUserRole(event.target.value)) onDraft(user.id, event.target.value) }}>
+                          {USER_ROLES.map(role => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
+                        </select>
+                      </label>
+                      <button className="v2-button" type="button" disabled={busy || draft === user.role} onClick={() => onRequest({ kind: 'role', user, newRole: draft })}>Змінити роль</button>
+                      <button className="v2-button v2-button-quiet" type="button" disabled={busy} onClick={() => onRequest({ kind: 'revoke', user })}>Завершити сесії</button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export function RoleChangeHistory({ changes, users }: { changes: RoleChange[]; users: AdminUser[] }) {
+  const names = new Map(users.map(user => [user.id, user.name]))
+  const who = (id: number | null) => id === null ? 'Системна дія' : names.get(id) ?? `Користувач № ${id}`
+  if (changes.length === 0) return <p className="v2-muted">Змін ролей ще не було.</p>
+  return (
+    <div className="users-panel__scroll">
+      <table className="users-panel__table">
+        <caption className="users-panel__sr-only">Історія змін ролей: дата, хто змінив, кому, стара й нова роль</caption>
+        <thead><tr><th scope="col">Дата і час</th><th scope="col">Хто змінив</th><th scope="col">Кому</th><th scope="col">Зміна</th></tr></thead>
+        <tbody>
+          {changes.map(change => (
+            <tr key={change.id}>
+              <td data-label="Дата і час"><time dateTime={change.changed_at}>{formatAuditDate(change.changed_at)}</time></td>
+              <td data-label="Хто змінив">{who(change.actor_user_id)}</td>
+              <td data-label="Кому">{who(change.target_user_id)}</td>
+              <td data-label="Зміна">{roleLabel(change.old_role)} → {roleLabel(change.new_role)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Розділ admin «Користувачі й ролі»: перелік, пошук за точним email, зміна ролі, завершення сесій, історія. */
+export default function UsersPanel({ currentUserId }: { currentUserId: number }) {
+  const [users, setUsers] = useState<LoadState<AdminUser[]>>({ status: 'loading' })
+  const [history, setHistory] = useState<LoadState<RoleChange[]>>({ status: 'loading' })
+  const [attempt, setAttempt] = useState(0)
+  const [drafts, setDrafts] = useState<Record<number, UserRole>>({})
+  const [pending, setPending] = useState<PendingAction | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string; stale?: boolean } | null>(null)
+  const [email, setEmail] = useState('')
+  const [search, setSearch] = useState<{ status: 'idle' | 'loading' | 'missing' } | { status: 'found'; match: AdminUserMatch } | { status: 'error'; message: string }>({ status: 'idle' })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setUsers(current => current.status === 'ready' ? current : { status: 'loading' })
+    listUsers(controller.signal)
+      .then(data => { if (!controller.signal.aborted) setUsers({ status: 'ready', data }) })
+      .catch(error => { if (!controller.signal.aborted) setUsers({ status: 'error', message: message(error, 'Не вдалося завантажити користувачів.') }) })
+    getRoleChanges(controller.signal)
+      .then(data => { if (!controller.signal.aborted) setHistory({ status: 'ready', data }) })
+      .catch(error => { if (!controller.signal.aborted) setHistory({ status: 'error', message: message(error, 'Не вдалося завантажити історію змін ролей.') }) })
+    return () => controller.abort()
+  }, [attempt])
+
+  function reload() {
+    setDrafts({})
+    setAttempt(value => value + 1)
+  }
+
+  async function confirm() {
+    if (!pending) return
+    const action = pending
+    setBusy(true)
+    try {
+      if (action.kind === 'role') {
+        await changeUserRole(action.user.id, action.user.role, action.newRole)
+        setNotice({ kind: 'ok', text: `Роль користувача «${action.user.name}» змінено на «${ROLE_LABELS[action.newRole]}». Усі його сесії завершено.` })
+        if (search.status === 'found' && search.match.id === action.user.id) setSearch({ status: 'found', match: { ...search.match, role: action.newRole } })
+      } else {
+        const revoked = await revokeUserSessions(action.user.id)
+        setNotice({ kind: 'ok', text: revoked > 0 ? `Завершено ${sessionsLabel(revoked)} користувача «${action.user.name}».` : `Активних сесій у «${action.user.name}» не було.` })
+      }
+      reload()
+    } catch (error) {
+      const status = error instanceof ApiError ? error.status : 0
+      const text = status === 409 ? ROLE_CONFLICT_MESSAGE : status === 404 ? USER_NOT_FOUND_MESSAGE : message(error, 'Дію не виконано.')
+      setNotice({ kind: 'error', text, stale: status === 409 || status === 404 })
+    } finally {
+      setPending(null)
+      setBusy(false)
+    }
+  }
+
+  async function submitSearch(event: FormEvent) {
+    event.preventDefault()
+    setSearch({ status: 'loading' })
+    try {
+      const match = await findUserByEmail(email)
+      setSearch(match ? { status: 'found', match } : { status: 'missing' })
+    } catch (error) {
+      setSearch({ status: 'error', message: message(error, 'Пошук не виконано.') })
+    }
+  }
+
+  const request = (action: PendingAction) => { setNotice(null); setPending(action) }
+  const onDraft = (userId: number, role: UserRole) => setDrafts(current => ({ ...current, [userId]: role }))
+  const listed = users.status === 'ready' ? users.data : []
+
+  return (
+    <section className="users-panel" aria-labelledby="users-panel-title">
+      <div className="v2-card">
+        <div className="v2-section-heading">
+          <div><p className="v2-overline">Доступ</p><h2 id="users-panel-title">Користувачі й ролі</h2></div>
+          {users.status === 'ready' && <span className="v2-pill">{users.data.length.toLocaleString('uk-UA')} облікових записів</span>}
+        </div>
+        <p className="v2-muted">
+          Ролі: «Користувач» — особистий кабінет; «Адміністратор» — цикли, результати, аналітика, журнал і звіти;
+          «Відповідальний за коди доступу» — лише видача кодів і участь. Коди й результати розділено між різними людьми.
+          Після зміни ролі всі сесії користувача завершуються. Перелік показує лише замаскований email.
+        </p>
+        {notice && (
+          <div className={notice.kind === 'ok' ? 'users-panel__notice' : 'users-panel__notice users-panel__notice--error'} role={notice.kind === 'ok' ? 'status' : 'alert'}>
+            <span>{notice.text}</span>
+            {notice.stale && <button className="v2-button" type="button" onClick={() => { setNotice(null); reload() }}>Оновити список</button>}
+          </div>
+        )}
+        {pending && <ConfirmAction action={pending} busy={busy} onConfirm={() => void confirm()} onCancel={() => setPending(null)} />}
+      </div>
+
+      <div className="v2-card">
+        <h3>Пошук за точним email</h3>
+        <form className="users-panel__search" onSubmit={submitSearch}>
+          <label className="users-panel__search-field">Email користувача
+            <input type="email" required autoComplete="off" value={email} onChange={event => setEmail(event.target.value)} />
+          </label>
+          <button className="v2-button" type="submit" disabled={search.status === 'loading'}>{search.status === 'loading' ? 'Шукаємо…' : 'Знайти'}</button>
+        </form>
+        <p className="users-panel__hint">Повний email показується лише для точного збігу й не зберігається після нового пошуку.</p>
+        {search.status === 'missing' && <p className="v2-muted" role="status">Користувача з такою адресою не знайдено.</p>}
+        {search.status === 'error' && <p className="users-panel__notice users-panel__notice--error" role="alert">{search.message}</p>}
+        {search.status === 'found' && (
+          <UsersTable rows={[fromMatch(search.match)]} currentUserId={currentUserId} drafts={drafts} busy={busy || pending !== null}
+            caption="Результат пошуку за точним email" onDraft={onDraft} onRequest={request} />
+        )}
+      </div>
+
+      <div className="v2-card">
+        <div className="users-panel__card-head">
+          <h3>Облікові записи</h3>
+          <button className="v2-button v2-button-quiet" type="button" onClick={reload} disabled={busy}>Оновити</button>
+        </div>
+        {users.status === 'loading' && <p role="status">Завантажуємо користувачів…</p>}
+        {users.status === 'error' && <p className="users-panel__notice users-panel__notice--error" role="alert">{users.message}</p>}
+        {users.status === 'ready' && (users.data.length === 0
+          ? <p className="v2-muted">Облікових записів немає.</p>
+          : <UsersTable rows={users.data.map(fromListed)} currentUserId={currentUserId} drafts={drafts} busy={busy || pending !== null}
+              caption="Облікові записи: ім’я, замаскований email, роль, дата створення і дії" onDraft={onDraft} onRequest={request} />)}
+      </div>
+
+      <div className="v2-card">
+        <h3>Історія змін ролей</h3>
+        {history.status === 'loading' && <p role="status">Завантажуємо історію…</p>}
+        {history.status === 'error' && <p className="users-panel__notice users-panel__notice--error" role="alert">{history.message}</p>}
+        {history.status === 'ready' && <RoleChangeHistory changes={history.data} users={listed} />}
+      </div>
+    </section>
+  )
+}
