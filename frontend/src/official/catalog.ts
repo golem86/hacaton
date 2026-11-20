@@ -13,12 +13,14 @@ export type OfficialTemplate = {
   title: string
   audience: 'working_group' | 'ambiguous'
   audienceNote: string
+  sourceUrl?: string
+  contentNote?: string
   questions: readonly OfficialQuestion[]
 }
 
 // Verified against the published PDF, Appendix В, printed pages 53 and 60.
 // Option IDs represent selections only. Their order does not define Integrity Index scores.
-export const officialTemplates: readonly OfficialTemplate[] = [
+const legacyTemplates: readonly OfficialTemplate[] = [
   {
     id: 'appendix-v-form-1', version: '1.0.0', title: 'Анкета 1 · робоча група',
     audience: 'working_group', audienceNote: 'Заголовок на с. 53 прямо вказує членів робочої групи.',
@@ -52,6 +54,58 @@ export const officialTemplates: readonly OfficialTemplate[] = [
     }],
   },
 ]
+
+const sourceUrl = 'https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf'
+
+// 1.0.0 remains unchanged. New descriptive choices below are concise adaptations
+// of the cited PDF passages, not verbatim official wording or numeric scores.
+export const officialTemplates: readonly OfficialTemplate[] = [
+  ...legacyTemplates,
+  {
+    ...legacyTemplates[0], version: '1.1.0', title: 'Анкета 1 · робоча група · розширений preview',
+    sourceUrl, contentNote: 'Частковий каталог. Нове питання та варіанти стисло адаптовано за джерелом; звіряйте з PDF перед офіційним застосуванням.',
+    questions: [legacyTemplates[0].questions[0], {
+      id: 'av-f1-system-2', kind: 'single_choice', required: true,
+      text: 'Який стан стратегії доброчесності закладу найточніше описує практику?',
+      source: { appendix: 'В', page: 56, section: 'Розділ 2. Система.', number: 2 },
+      options: [
+        { id: 'av-f1-system-2-a', text: 'Внутрішніх політик немає; заходи переважно реактивні.' },
+        { id: 'av-f1-system-2-b', text: 'Програму й основні внутрішні політики затверджено.' },
+        { id: 'av-f1-system-2-c', text: 'Політики доведено до працівників і впроваджують.' },
+        { id: 'av-f1-system-2-d', text: 'Політики регулярно вдосконалюють за зібраними даними.' },
+        { id: 'av-f1-system-2-e', text: 'Політики оновлюють з огляду на дані, законодавство, практики й причини порушень.' },
+      ],
+    }],
+  },
+  {
+    ...legacyTemplates[1], version: '1.1.0', title: 'Анкета 2 · аудиторія не визначена · розширений preview',
+    sourceUrl, contentNote: 'Частковий каталог. Нове питання та варіанти стисло адаптовано за джерелом; аудиторію та формулювання має затвердити №5.',
+    questions: [legacyTemplates[1].questions[0], {
+      id: 'av-f2-system-2', kind: 'single_choice', required: true,
+      text: 'Як Ви оцінюєте стан стратегії доброчесності закладу?',
+      source: { appendix: 'В', page: 62, section: 'Розділ 2. Система.', number: 2 },
+      options: [
+        { id: 'av-f2-system-2-a', text: 'Внутрішніх політик немає; заходи переважно реактивні.' },
+        { id: 'av-f2-system-2-b', text: 'Програму й основні внутрішні політики затверджено.' },
+        { id: 'av-f2-system-2-c', text: 'Політики доведено до працівників і впроваджують.' },
+        { id: 'av-f2-system-2-d', text: 'Політики регулярно вдосконалюють за зібраними даними.' },
+        { id: 'av-f2-system-2-e', text: 'Політики оновлюють з огляду на дані, законодавство, практики й причини порушень.' },
+      ],
+    }],
+  },
+]
+
+for (const template of officialTemplates) {
+  for (const question of template.questions) {
+    Object.freeze(question.source)
+    for (const option of question.options) Object.freeze(option)
+    Object.freeze(question.options)
+    Object.freeze(question)
+  }
+  Object.freeze(template.questions)
+  Object.freeze(template)
+}
+Object.freeze(officialTemplates)
 
 export function getOfficialTemplate(id: string, version: string): OfficialTemplate | undefined {
   return officialTemplates.find(template => template.id === id && template.version === version)
