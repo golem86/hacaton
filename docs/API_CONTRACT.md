@@ -297,3 +297,36 @@ Tracker порівнює ID циклів після приведення чис�
 Тіло переходу: `{status: in_progress|completed|verified, reason, evidence_refs?, verified_in_assessment_id?}`. Дозволені переходи: прийнято → в роботі → виконано → перевірено; з «виконано» можна повернути «в роботу». Для «виконано» й «перевірено» потрібні посилання на докази (до 10, кожне до 200 символів). «Перевірено» вказує пізніше закрите оцінювання з тією самою версією анкети: результат заходу перевіряє наступний цикл. Відповіді: 200 — оновлений захід; 404 — заходу немає; 409 — перехід недозволений або захід щойно змінено іншим запитом; 422 — дані не пройшли перевірку.
 
 Прострочення не є окремим статусом: захід прострочений, якщо строк минув, а статус не «виконано» чи «перевірено».
+
+## V2 Hardening — зміни за аудитом backend (20.11.2026)
+
+Повний робочий контракт і обґрунтування: `docs/V2_HARDENING_CONTRACT.md`. Схеми: V2_AUTH_DB `user_version = 2`, INTEGRITY_DB `user_version = 5` (4 — Recommendations Tracker).
+
+### Ролі
+`user` (самореєстрація), `admin` (цикли, результати, аналітика, журнал, звіти, трекер, керування ролями), `data_officer` (лише видача кодів доступу й участь). Роль читається з БД на кожен запит; одна роль на акаунт.
+
+| Маршрут | Доступ | Примітки |
+|---|---|---|
+| `POST /api/assessments/{id}/tokens` | `data_officer` + CSRF | admin → 403. Відповідь `{"tokens":[…]}` — відкриті коди лише один раз, у БД зберігається SHA-256 |
+| `GET /api/assessments/{id}/participation` | `admin`, `data_officer` | у відкритому циклі `responses_total`/`tokens_unused` округлені вниз до кратного 5 (лише якщо ≥ k), `counts_exact:false`, `by_unit` = null; у закритому — точні, `counts_exact:true` |
+| `GET /api/assessments`, `GET /api/assessments/{id}` | публічні | чернетки бачить лише сесія admin; для аноніма/user draft → 404 |
+| `POST /v2/auth/logout-all` | сесія з 2FA + CSRF | `{"status":"logged_out_all"}`, видаляє всі сесії користувача |
+| `GET /v2/admin/users` | admin | `[{id, name, role, email_masked, created_at}]`, до 500; параметри ігноруються |
+| `POST /v2/admin/users/lookup` | admin + CSRF | тіло `{"email"}` → `{id, name, email, role, created_at}` або 404. Email не передається в URL |
+| `POST /v2/admin/users/{user_id}/role` | admin + CSRF | тіло `{"expected_role","new_role"}` (`user|admin|data_officer`) → `{user_id, old_role, new_role, sessions_revoked, changed_at}`; 403 `self_change`, 404 `user_not_found`, 409 `role_conflict`. Одна транзакція: роль, видалення всіх сесій цілі, гасіння відкритих кодів 2FA, журнал змін (append-only) |
+| `POST /v2/admin/users/{user_id}/revoke-sessions` | admin + CSRF | `{"revoked": n}`; гасить і відкриті коди 2FA |
+| `GET /v2/admin/role-changes` | admin | `{id, actor_user_id, target_user_id, old_role, new_role, changed_at}`, до 500 |
+
+### Формати відповідей
+- Результати й участь: приховані групи не повертаються взагалі; булеве `suppressed` на верхньому рівні (і в розрізах компонентів). Поле `hidden` лишено для сумісності й завжди `false`.
+- 413 `{"detail":"Request body too large"}` — тіло понад `V2_MAX_BODY_BYTES` (типово 65536).
+- 422 — лише `loc`, `msg`, `type` (без `input` і `ctx`).
+- Цілі параметри шляху й запиту — `1..2^63-1`, поза межами 422.
+- Журнал дій (`GET /api/audit-events`): нове поле `actor_user_id` (id з V2_AUTH_DB, без email/імен); нові дії `auth.logout`, `auth.logout_all`, `auth.password_reset`, `auth.2fa_lockout`, `user.role_change`, `user.sessions_revoke`.
+
+### Поведінка автентифікації
+- 2FA: перевірка коду, його споживання й ротація сесії — одна транзакція; не більше 5 перевірок на код навіть паралельно; 10 невдалих кодів за 24 год → 429 (`auth.2fa_lockout`).
+- Сесія до 2FA — 15 хв, після 2FA — 12 год.
+- Скидання пароля: не більше 5 кодів на акаунт за 24 год і 10 невдалих підтверджень; підтвердження атомарне й відкликає всі сесії.
+- Час відповіді входу й реєстрації не залежить від існування email.
+- OTP зберігається як HMAC-SHA256 з `V2_SECRET_KEY`; паролі — scrypt N=2^17 з переобчисленням старих хешів після входу.
