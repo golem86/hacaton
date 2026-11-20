@@ -264,5 +264,8 @@
 
 /* Десктоп: бічне меню закріплене — іконки вкладок завжди видимі під час прокручування сторінки. */
 @media (min-width: 900.02px) {
-  .v2-sidebar { position: sticky; top: 0; z-index: 30; align-self: start; height: 100vh; }
+  .v2-sidebar { position: sticky; top: 0; z-index: 30; align-self: start; height: 100vh; overflow-y: auto; gap: 1.1rem; padding: 1.1rem 1.15rem; }
+  .v2-sidebar .v2-nav { gap: .1rem; }
+  .v2-sidebar .v2-nav-label { margin: .1rem .7rem .3rem; }
+  .v2-sidebar .v2-nav button { min-height: 2.35rem; padding: .48rem .75rem; }
 }
