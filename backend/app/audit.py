@@ -32,7 +32,10 @@ ALLOWED_ACTIONS = {"tokens.issue", "assessment.close", "assessment.create", "ass
                    # Recommendations Tracker: рішення посадової особи і зміни статусу
                    # (лише роль і цикл; відповідальний, обґрунтування й докази — не в журналі)
                    "tracker.accepted", "tracker.rejected", "tracker.in_progress",
-                   "tracker.completed", "tracker.verified"}
+                   "tracker.completed", "tracker.verified",
+                   # Чернетка тексту звіту локальною LM: лише роль, id адміністратора, цикл і count —
+                   # кількість циклів у запиті (1 або 2). Ні тексту, ні виду, ні промпту в журналі немає
+                   "report.narrative"}
 # Роль auditor не вводиться до рішення №5 — журнал бачить лише admin (S12)
 AUDIT_ROLES = ("admin",)
 
