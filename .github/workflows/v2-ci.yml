@@ -5,9 +5,9 @@ name: V2 CI
 
 on:
   pull_request:
-    branches: [feature/v2-integration]
+    branches: [main, feature/v2-integration]
   push:
-    branches: [feature/v2-integration]
+    branches: [main, feature/v2-integration]
 
 # Мінімальні права: лише читання коду. pull_request (не pull_request_target): PR з форків без секретів і без запису.
 permissions:
@@ -20,8 +20,8 @@ concurrency:
 env:
   # Лічильники тестів — для поточного PR. Provenance нижче — історичний B1 REV6 snapshot.
   # PR, що змінює кількість тестів, має оновити ці значення — так зміна складу видна в рецензії.
-  EXPECTED_BACKEND_TESTS: "361"
-  EXPECTED_FRONTEND_TESTS: "38"
+  EXPECTED_BACKEND_TESTS: "458"
+  EXPECTED_FRONTEND_TESTS: "94"
   RELEASE_SHA: dde86e68f4405c23ec4aad14db80f0b764fb4556
   RELEASE_BACKEND_TREE: 834b96670600f0188714730c80007d6e8a808873   # backend, який перевіряє B1 REV6
 
