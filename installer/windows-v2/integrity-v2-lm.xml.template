@@ -1,0 +1,39 @@
+<!--
+  WinSW: служба локальної LM Integrity Management Dashboard V2 — llama.cpp llama-server (OpenAI-сумісний API), модель Qwen3 8B.
+  Шаблон БЕЗ секретів і без підстановок: ключ API лежить в окремому файлі lm\secrets\api-key.txt (ACL: Administrators/SYSTEM +
+  читання лише для NT SERVICE\integrity-v2-lm; аргумент api-key-file), тому ключ не видний у командному рядку процесу
+  (Win32_Process.CommandLine) і в журналі WinSW. Резерв (якщо бінарник не знає api-key-file): інсталятор переносить ключ у
+  змінну LLAMA_API_KEY цього XML, а не в аргументи.
+  Розміщення: C:\srv\integrity-v2\services\lm\integrity-v2-lm.xml поруч із integrity-v2-lm.exe (копія WinSW 2.12.0 backend).
+  Мережа: лише 127.0.0.1:8200 (backend: V2_LM_URL=http://127.0.0.1:8200); правил Firewall не додається.
+  Ресурси: CPU-збірка, 8 потоків, контекст 8192 токени, один слот, пріоритет процесу BelowNormal (WinSW priority і prio -1
+  llama.cpp), кеш промптів у RAM вимкнено (cache-ram 0; типово 8192 МіБ), thinking Qwen3 вимкнено (reasoning off), без Web UI і
+  без кінцевої точки slots (вміст промптів). Прапорці звірено з довідкою llama-server збірки b12180 (commit bcb015287).
+  Встановлює й перевіряє: installer\windows-v2\lm\Install-V2LmService.ps1 (startmode Manual, далі Automatic (Delayed) після перевірки).
+  Коментар не містить подвійних дефісів (вимога XML).
+-->
+<service>
+  <id>integrity-v2-lm</id>
+  <name>Integrity Dashboard V2 - local LM (llama.cpp)</name>
+  <description>Local language model for Integrity Management Dashboard V2 (llama-server, 127.0.0.1:8200 only).</description>
+  <executable>C:\srv\integrity-v2\lm\bin\llama-server.exe</executable>
+  <arguments>-m C:\srv\integrity-v2\lm\models\Qwen3-8B-Q4_K_M.gguf --host 127.0.0.1 --port 8200 -c 8192 -t 8 --parallel 1 --jinja --reasoning off --cache-ram 0 --prio -1 --no-webui --no-slots --api-key-file C:\srv\integrity-v2\lm\secrets\api-key.txt</arguments>
+  <workingdirectory>C:\srv\integrity-v2\lm\bin</workingdirectory>
+  <priority>BelowNormal</priority>
+
+  <startmode>Manual</startmode>
+  <serviceaccount>
+    <domain>NT SERVICE</domain>
+    <user>integrity-v2-lm</user>
+  </serviceaccount>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="none"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>30 sec</stoptimeout>
+  <logpath>C:\srv\integrity-v2\logs\lm</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

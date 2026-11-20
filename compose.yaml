@@ -18,10 +18,14 @@ services:
       V2_SECRET_KEY: ${V2_SECRET_KEY:?Set a random 32+ character V2_SECRET_KEY in .env}
       FRONTEND_ORIGINS: http://127.0.0.1:${DOCKER_DEMO_PORT:-8080}
       TRUSTED_PROXIES: ""
+      # Local LM (service "lm", profile "lm"): reachable only on the internal lm_net network.
+      # Without --profile lm the URL does not resolve and the backend must treat the LM as unavailable.
+      V2_LM_URL: ${V2_LM_URL:-http://lm:8080}
     volumes:
       - demo_data:/data
     networks:
       - demo_net
+      - lm_net
     healthcheck:
       test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).status == 200 else 1)"]
       interval: 10s
@@ -46,9 +50,58 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Local LM: llama.cpp llama-server (OpenAI-compatible API) + Qwen3 8B Q4_K_M, CPU only.
+  # Opt-in: docker compose --profile lm up   (model first: scripts/fetch-lm-model.ps1 or .sh -> ./models)
+  # No host port is published; only the backend reaches it via lm_net (internal: no internet egress).
+  lm:
+    profiles: ["lm"]
+    # Pinned release tag. After `docker pull`, the integrator may pin the digest instead:
+    #   LM_IMAGE=ghcr.io/ggml-org/llama.cpp@sha256:<digest>
+    image: ${LM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-b12180}
+    command:
+      - "-m"
+      - "/models/Qwen3-8B-Q4_K_M.gguf"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "-c"
+      - "8192"
+      - "-t"
+      - "${LM_THREADS:-4}"
+      - "--parallel"
+      - "1"
+      - "--reasoning"
+      - "off"
+      - "--cache-ram"
+      - "0"
+      - "--no-webui"
+      - "--no-slots"
+    volumes:
+      - ./models:/models:ro
+    networks:
+      - lm_net
+    mem_limit: ${LM_MEM_LIMIT:-8g}
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 180s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
 networks:
   demo_net:
     driver: bridge
+  lm_net:
+    driver: bridge
+    internal: true
 
 volumes:
   demo_data:
