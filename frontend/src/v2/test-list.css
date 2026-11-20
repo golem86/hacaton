@@ -1,0 +1,358 @@
+/* «Мої тестування»: пошук, фільтри, сортування та пагінація. Кольори й кнопки — з v2.css (--ink, --muted, --green, --teal, .v2-*). */
+.test-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.test-list .v2-section-heading {
+  margin-bottom: 0;
+}
+
+.test-list__controls {
+  display: grid;
+  gap: .85rem;
+  min-width: 0;
+  padding: .9rem;
+  border: 1px solid #e1ebe6;
+  border-radius: .75rem;
+  background: #f8fbf9;
+}
+
+.test-list__search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  align-items: end;
+  gap: .75rem 1rem;
+}
+
+.test-list__panel {
+  display: grid;
+  grid-template-columns: minmax(9rem, .7fr) minmax(0, 1.3fr) minmax(0, 1.3fr) auto;
+  align-items: end;
+  gap: .75rem 1rem;
+}
+
+.test-list__field {
+  display: grid;
+  gap: .3rem;
+  min-width: 0;
+}
+
+.test-list__field label,
+.test-list__range legend,
+.test-list__page-size label {
+  color: var(--ink);
+  font-size: .8rem;
+  font-weight: 700;
+}
+
+.test-list__range {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.test-list__range legend {
+  margin-bottom: .3rem;
+  padding: 0;
+}
+
+.test-list__range-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .5rem;
+}
+
+.test-list__range .test-list__field label {
+  color: var(--muted);
+  font-size: .74rem;
+  font-weight: 650;
+}
+
+.test-list__controls input,
+.test-list__controls select,
+.test-list__page-size select {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: .5rem .65rem;
+  border: 1px solid #9eb8ac;
+  border-radius: .5rem;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: .9rem;
+}
+
+.test-list__controls select,
+.test-list__page-size select {
+  cursor: pointer;
+}
+
+.test-list__controls input:hover,
+.test-list__controls select:hover,
+.test-list__page-size select:hover {
+  border-color: var(--green);
+}
+
+.test-list__controls input:focus-visible,
+.test-list__controls select:focus-visible,
+.test-list__page-size select:focus-visible {
+  outline: 3px solid rgba(40, 119, 122, .3);
+  outline-offset: 2px;
+  border-color: var(--teal);
+}
+
+.test-list__controls input::placeholder {
+  color: #7a8c87;
+}
+
+.test-list__panel-actions {
+  display: flex;
+  align-items: end;
+}
+
+.test-list__controls .v2-button {
+  min-height: 2.75rem;
+  white-space: nowrap;
+}
+
+/* Кнопка «Фільтри» потрібна лише на вузьких екранах; на ширших панель завжди відкрита.
+   Селектори з двох класів, бо v2.css підключається пізніше і має .v2-button { display: inline-flex }. */
+.test-list__controls .test-list__toggle {
+  display: none;
+}
+
+.test-list__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem 1rem;
+  scroll-margin-top: 1rem;
+}
+
+.test-list__heading {
+  margin: 0;
+  color: #17302f;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.test-list__heading span {
+  color: var(--muted);
+  font-size: .86rem;
+  font-weight: 600;
+}
+
+.test-list__heading:focus {
+  outline: none;
+}
+
+.test-list__heading:focus-visible {
+  border-radius: .3rem;
+  outline: 3px solid #54a996;
+  outline-offset: 3px;
+}
+
+.test-list__count {
+  margin: 0;
+  color: var(--muted);
+  font-size: .84rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.test-list__page-size {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-left: auto;
+}
+
+.test-list__page-size select {
+  width: auto;
+  min-width: 4.75rem;
+}
+
+.test-list__items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.test-list__item-main {
+  min-width: 0;
+}
+
+.test-list__item-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem .6rem;
+}
+
+.test-list__item-top .v2-pill {
+  padding: .22rem .55rem;
+  font-size: .68rem;
+}
+
+.v2-pill.test-list__pill-closed {
+  background: #eef1f0;
+  color: #55625e;
+}
+
+.test-list__item h4 {
+  margin: .3rem 0 .25rem;
+  color: #17302f;
+  font-size: 1rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.test-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem 1.1rem;
+  margin: .5rem 0 0;
+  font-size: .76rem;
+}
+
+.test-list__meta div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+}
+
+.test-list__meta dt {
+  color: #6a806f;
+}
+
+.test-list__meta dd {
+  margin: 0;
+  color: #2b4a44;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.test-list__item > .v2-button {
+  flex: none;
+  min-width: 8.5rem;
+  min-height: 2.75rem;
+}
+
+.test-list__empty strong {
+  display: block;
+  margin-bottom: .3rem;
+  color: var(--ink);
+}
+
+.test-list__pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+}
+
+.test-list__pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.test-list__pager .v2-button {
+  min-height: 2.75rem;
+}
+
+/* У inline-flex кнопці пробіл між стрілкою й текстом згортається, тому відступ задає gap. */
+.test-list__pager .test-list__pager-step,
+.test-list__controls .test-list__toggle {
+  gap: .4rem;
+}
+
+.test-list__pages .test-list__page {
+  min-width: 2.75rem;
+  padding: .4rem .6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.test-list__pages .test-list__page.is-current,
+.test-list__pages .test-list__page.is-current:hover {
+  border-color: var(--green);
+  background: var(--green);
+  color: #fff;
+  cursor: default;
+}
+
+.test-list__ellipsis {
+  min-width: 1.4rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .test-list__panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .test-list__controls {
+    padding: .75rem;
+  }
+
+  .test-list__search-row,
+  .test-list__panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .test-list__controls .test-list__toggle {
+    display: inline-flex;
+  }
+
+  .test-list__panel {
+    display: none;
+  }
+
+  .test-list__panel.is-expanded {
+    display: grid;
+  }
+
+  .test-list__summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .test-list__page-size {
+    margin-left: 0;
+  }
+
+  .test-list__item > .v2-button {
+    min-width: 0;
+  }
+
+  /* v2.css розтягує .v2-button на всю ширину на мобільному; у пагінації кнопки компактні. */
+  .test-list__pager .v2-button {
+    width: auto;
+  }
+
+  .test-list__pages {
+    order: -1;
+    width: 100%;
+  }
+
+  .test-list__pager-step {
+    flex: 1 1 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .test-list__range-inputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
