@@ -20,7 +20,8 @@ from app.database import SessionLocal
 from app.models import AuditEvent
 from app.v2_auth import (auth_db_path, authenticate, create_session, find_user_id, issue_challenge, user_for_session)
 
-from v2_helpers import PASSWORD, latest_code, login, make_user, new_email, preauth_client, start_login
+from v2_helpers import (PASSWORD, latest_code, login, make_user, new_email, preauth_client, start_login,
+                        wait_mail_queue)
 
 NEW_PASSWORD = "AnotherStrongPass1!"
 
@@ -41,7 +42,10 @@ def wrong(code: str) -> str:
 
 def reset_request(email: str, ip: str):
     client, preauth = preauth_client(client=(ip, 40000))
-    return client.post("/v2/auth/password-reset/request", json={"email": email}, headers={"X-CSRF-Token": preauth})
+    response = client.post("/v2/auth/password-reset/request", json={"email": email},
+                           headers={"X-CSRF-Token": preauth})
+    wait_mail_queue()                       # код видає фоновий воркер
+    return response
 
 
 def reset_confirm(email: str, code: str, ip: str = "198.18.5.1"):

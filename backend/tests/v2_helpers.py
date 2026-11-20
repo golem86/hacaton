@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app import v2_mail_queue
 from app.main import app
 from app.v2_auth import create_user, latest_dev_mail
 
@@ -19,7 +20,13 @@ def preauth_client(**kwargs) -> tuple[TestClient, str]:
     return client, client.get("/v2/auth/csrf").json()["csrf_token"]
 
 
+def wait_mail_queue() -> None:
+    """Код скидання пароля видає фоновий воркер — дочекатися його перед перевіркою скриньки чи БД."""
+    assert v2_mail_queue.mail_queue.wait_idle(timeout=30)
+
+
 def latest_code(email: str) -> str:
+    wait_mail_queue()
     return re.search(r"(\d{6})", latest_dev_mail(email)["body"]).group(1)
 
 
