@@ -98,8 +98,8 @@ const users = Array.from({ length: 23 }, (_, index) => ({
 
 test('users list is paginated above and below and keeps the table markup', () => {
   const markup = html(usersPanel.PaginatedUsersTable, {
-    rows: users.map(usersPanel.fromListed), currentUserId: 1, drafts: {}, busy: false,
-    caption: 'Облікові записи', onDraft: () => {}, onRequest: () => {},
+    rows: users.map(usersPanel.fromListed), currentUserId: 1, busy: false,
+    caption: 'Облікові записи', onRevoke: () => {},
   })
   assert.equal(count(markup, /aria-label="Сторінки облікових записів \(угорі\)"/g), 1)
   assert.equal(count(markup, /aria-label="Сторінки облікових записів \(унизу\)"/g), 1)
@@ -109,7 +109,8 @@ test('users list is paginated above and below and keeps the table markup', () =>
   assert.ok(!markup.includes('Користувач 11<'), 'одинадцятий запис — на другій сторінці')
   assert.match(markup, /Це ви/)
   assert.ok(markup.includes('<caption class="users-panel__sr-only">Облікові записи</caption>'))
-  assert.ok(markup.includes('Нова роль для Користувач 2'))
+  assert.ok(markup.includes('>Завершити сесії<'))
+  assert.ok(!markup.includes('Нова роль для') && !markup.includes('Змінити роль'), 'роль лише для читання')
 })
 
 test('role change history is paginated and keeps names', () => {

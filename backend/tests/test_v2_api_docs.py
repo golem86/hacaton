@@ -185,7 +185,7 @@ def test_operations_marked_csrf_really_reject_requests_without_token(method, pat
         client = TestClient(app)
     else:
         role = ("user" if path.startswith("/v2/user/") else
-                "data_officer" if path.endswith("/tokens") else "admin")          # коди видає лише data_officer
+                "data_officer" if path.endswith("/tokens") else "admin")          # коди видає data_officer (і admin)
         client, _ = login(make_user(role))
     response = client.request(method, concrete(path), json={})
     assert response.status_code == 403, f"{method} {path} → {response.status_code}"
@@ -242,8 +242,10 @@ def test_execute_write_with_session_csrf_succeeds_only_for_allowed_role():
     client, csrf = login(make_user("admin"))
     token = client.get("/v2/auth/csrf").json()["csrf_token"]          # як «Authorize» у Swagger
     assert {"X-CSRF-Token": token} == csrf
-    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 1}, headers=csrf).status_code == 403
-    officer, officer_csrf = login(make_user("data_officer"))         # коди видає лише data_officer
+    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 1}, headers=csrf).status_code == 201
+    user, user_csrf = login(make_user())                              # роль user кодів не видає
+    assert user.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 1}, headers=user_csrf).status_code == 403
+    officer, officer_csrf = login(make_user("data_officer"))         # коди видає data_officer (і admin)
     assert officer.get("/v2/auth/csrf").json()["csrf_token"] == officer_csrf["X-CSRF-Token"]
     assert officer.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 1},
                         headers=officer_csrf).status_code == 201

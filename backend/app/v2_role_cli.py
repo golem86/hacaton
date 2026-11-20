@@ -1,7 +1,7 @@
 """Серверна команда власника сервера: призначення й зняття ролей V2, зокрема ролі admin.
 
-Роль адміністратора через веб не призначає й не знімає ніхто (POST /v2/admin/users/{id}/role → 403
-admin_role_server_only). Лише власник сервера на самому сервері, з каталогу backend:
+Ролі admin і data_officer через веб не призначає й не знімає ніхто (POST /v2/admin/users/{id}/role → 403
+admin_role_server_only / data_officer_role_server_only). Лише власник сервера на самому сервері, з каталогу backend:
 
   python -m app.v2_role_cli set-role --email <email> --role admin|user|data_officer            # план
   python -m app.v2_role_cli set-role --email <email> --role admin|user|data_officer --confirm  # виконати

@@ -126,7 +126,7 @@ export function PrintSheet({ issued }: { issued: IssuedCodes }) {
 }
 
 /**
- * Видача кодів для відкритого циклу (роль data_officer): кількість, категорія, строк дії.
+ * Видача кодів для відкритого циклу (кабінет data_officer і «Цикли оцінювання» admin): кількість, категорія, строк дії.
  * Поки видані коди показано, нову видачу заблоковано, щоб коди не загубилися.
  */
 export function AccessCodeIssuer({ cycle, issued, onIssued, onDismiss }: {

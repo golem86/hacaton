@@ -90,7 +90,8 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `GET /api/assessments`, `GET /api/assessments/{id}`, `GET /api/assessments/{id}/questionnaires`, `GET /api/units` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `POST /api/assessments/{id}/submissions` | | ✓ | | | | | |
-| `POST /api/assessments/{id}/tokens`, `POST /api/assessments/{id}/close` | ✓ | | | | | | |
+| `POST /api/assessments/{id}/tokens` | ✓ | | | ✓ | | | |
+| `POST /api/assessments/{id}/close` | ✓ | | | | | | |
 | `GET /api/assessments/{id}/participation`, `GET /api/assessments/{id}/results` | ✓ | | | | ✓ | ✓ | ✓ |
 | `GET /api/audit-events` | ✓ | | | | | | ✓ |
 
@@ -335,7 +336,7 @@ Tracker порівнює ID циклів після приведення чис�
 
 ### `POST /api/assessments/{id}/annex-v/responses`
 
-Тіло: `{access_token, category: mgmt|npp|cadets|staff, form: 1|2, version: "2.0.0", answers: {questionId: optionId}}`; потрібна відповідь на кожне питання форми, зайві поля заборонені. Код — той самий одноразовий код циклу, що й для `/submissions` (видає data_officer). Категорія коду має збігатися з `category`; після подання код використаний для обох анкет.
+Тіло: `{access_token, category: mgmt|npp|cadets|staff, form: 1|2, version: "2.0.0", answers: {questionId: optionId}}`; потрібна відповідь на кожне питання форми, зайві поля заборонені. Код — той самий одноразовий код циклу, що й для `/submissions` (видають admin або data_officer). Категорія коду має збігатися з `category`; після подання код використаний для обох анкет.
 
 Відповіді: 201 `{"status": "accepted"}` без id і відповідей; 404 — циклу немає або він чернетка; 409 — цикл не відкритий, строк не настав чи минув, або код недійсний, використаний чи іншої категорії (одне повідомлення для всіх випадків); 422 — некоректні дані, інша версія або категорія не з цього циклу.
 
@@ -417,23 +418,23 @@ k-анонімність (як `/results`):
 Повний робочий контракт і обґрунтування: `docs/V2_HARDENING_CONTRACT.md`. Схеми: V2_AUTH_DB `user_version = 2`, INTEGRITY_DB `user_version = 5` (4 — Recommendations Tracker).
 
 ### Ролі
-`user` (самореєстрація), `admin` (цикли, результати, аналітика, журнал, звіти, трекер, керування ролями), `data_officer` (лише видача кодів доступу й участь). Роль читається з БД на кожен запит; одна роль на акаунт.
+`user` (самореєстрація), `admin` (цикли, результати, аналітика, журнал, звіти, трекер, перегляд користувачів і завершення сесій, а також усі права `data_officer`: видача кодів і участь), `data_officer` (лише видача кодів доступу й участь). Ролі `admin` і `data_officer` призначає й знімає **лише власник сервера** командою на сервері; у вебі ролі не змінюються. Роль читається з БД на кожен запит; одна роль на акаунт. Ризик n−1 (admin видає коди й бачить результати) свідомо прийнято власником — див. `docs/V2_HARDENING_CONTRACT.md`, розділ 1.1.
 
 | Маршрут | Доступ | Примітки |
 |---|---|---|
-| `POST /api/assessments/{id}/tokens` | `data_officer` + CSRF | admin → 403. Відповідь `{"tokens":[…]}` — відкриті коди лише один раз, у БД зберігається SHA-256 |
+| `POST /api/assessments/{id}/tokens` | `admin`, `data_officer` + CSRF | інші ролі → 403. Подія журналу `tokens.issue` з `actor_role`, `actor_user_id` і `count` (без кодів). Відповідь `{"tokens":[…]}` — відкриті коди лише один раз, у БД зберігається SHA-256 |
 | `GET /api/assessments/{id}/participation` | `admin`, `data_officer` | у відкритому циклі `responses_total`/`tokens_unused` округлені вниз до кратного 5 (лише якщо ≥ k), `counts_exact:false`, `by_unit` = null; у закритому — точні, `counts_exact:true` |
 | `GET /api/assessments`, `GET /api/assessments/{id}` | публічні | чернетки бачить лише сесія admin; для аноніма/user draft → 404 |
 | `POST /v2/auth/logout-all` | сесія з 2FA + CSRF | `{"status":"logged_out_all"}`, видаляє всі сесії користувача |
 | `GET /v2/admin/users` | admin | `[{id, name, role, email_masked, created_at}]`, до 500; параметри ігноруються |
 | `POST /v2/admin/users/lookup` | admin + CSRF | тіло `{"email"}` → `{id, name, email, role, created_at}` або 404. Email не передається в URL |
-| `POST /v2/admin/users/{user_id}/role` | admin + CSRF | тіло `{"expected_role","new_role"}` → `{user_id, old_role, new_role, sessions_revoked, changed_at}`. Лише `user` ↔ `data_officer`. `new_role` або `expected_role` = `admin`, а також поточна роль цілі `admin` (перевіряється й усередині транзакції BEGIN IMMEDIATE) → **403 `{"detail":"admin_role_server_only"}`** без жодних змін. Інші коди: 403 `self_change`, 404 `user_not_found`, 409 `role_conflict`, 422. Одна транзакція: роль, видалення всіх сесій цілі, гасіння відкритих кодів 2FA, журнал змін (append-only) |
-| `POST /v2/admin/users/{user_id}/revoke-sessions` | admin + CSRF | `{"revoked": n}`; гасить і відкриті коди 2FA. Ціль з роллю `admin` (крім себе) → 403 `admin_role_server_only`; власні сесії — як і раніше (а також `POST /v2/auth/logout-all`) |
+| `POST /v2/admin/users/{user_id}/role` | admin + CSRF | тіло `{"expected_role","new_role"}` — у вебі ролі не змінюються. `new_role` або `expected_role` = `admin`, а також поточна роль цілі `admin` (перевіряється й усередині транзакції BEGIN IMMEDIATE) → **403 `{"detail":"admin_role_server_only"}`**; те саме для `data_officer` → **403 `{"detail":"data_officer_role_server_only"}`**; без жодних змін. Інші коди: 403 `self_change`, 404 `user_not_found`, 409 `role_conflict` (`user` → `user`), 422. Frontend цей маршрут не викликає |
+| `POST /v2/admin/users/{user_id}/revoke-sessions` | admin + CSRF | `{"revoked": n}`; гасить і відкриті коди 2FA. Для `user` і `data_officer` — дозволено. Ціль з роллю `admin` (крім себе) → 403 `admin_role_server_only`; власні сесії — як і раніше (а також `POST /v2/auth/logout-all`) |
 | `GET /v2/admin/role-changes` | admin | `{id, actor_user_id, target_user_id, old_role, new_role, changed_at}`, до 500; `actor_user_id = 0` — серверна команда власника сервера |
 
-#### Роль admin — лише власник сервера
+#### Ролі admin і data_officer — лише власник сервера
 
-Роль адміністратора у вебі не призначає й не знімає ніхто, зокрема інший адміністратор. Її призначає й знімає лише власник сервера командою на сервері (з каталогу backend):
+Ролі адміністратора й відповідального за коди (`data_officer`) у вебі не призначає й не знімає ніхто, зокрема інший адміністратор. Їх призначає й знімає лише власник сервера командою на сервері (з каталогу backend):
 
 ```
 python -m app.v2_role_cli set-role --email <email> --role admin|user|data_officer            # план, без змін
@@ -447,7 +448,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Set-V2UserRole.ps1 -Email 
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Set-V2UserRole.ps1 -Email <email> -Role admin -Apply    # виконати
 ```
 
-- Та сама транзакція, що й веб-зміна: роль, видалення всіх сесій цілі, гасіння відкритих кодів 2FA, запис у `v2_role_changes` з `actor_user_id = 0` («сервер»: колонка NOT NULL без FK/CHECK, id користувачів починаються з 1). Після коміту — подія основного журналу `user.role_change` з `actor_role = "server"`, `actor_user_id = null`, без email.
+- Одна транзакція: роль, видалення всіх сесій цілі, гасіння відкритих кодів 2FA, запис у `v2_role_changes` з `actor_user_id = 0` («сервер»: колонка NOT NULL без FK/CHECK, id користувачів починаються з 1). Після коміту — подія основного журналу `user.role_change` з `actor_role = "server"`, `actor_user_id = null`, без email.
 - Останнього адміністратора не знімає (лишається щонайменше один `admin`).
 - Не мігрує БД (лише перевірка схем), не потребує `V2_SECRET_KEY`; зі змінних середовища читає `INTEGRITY_DB`, `V2_AUTH_DB` (у release обов'язкові) і `APP_ENV`. Backend зупиняти не потрібно.
 - Email у виводі лише замаскований. Коди виходу: `0` — виконано або план, `2` — відмова (немає користувача, та сама роль, останній адміністратор, неправильні аргументи), `1` — помилка.

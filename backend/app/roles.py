@@ -4,9 +4,15 @@
 Роль визначає ЛИШЕ перевірена серверна сесія (verified principal): cookie сесії V2 після 2FA.
 Ролі сесії V2 (v2_users.role, читається на кожен запит):
   - user — самореєстрація, лише власний кабінет /v2/user/*;
-  - admin — цикли, результати, аналітика, журнал, звіти, /docs, керування ролями й сесіями;
-  - data_officer — лише призначення admin: видача кодів доступу і перегляд участі.
-Маршрут сам перелічує дозволені ролі: require_role("data_officer"), require_role("admin", "data_officer").
+  - admin — цикли, результати, аналітика, журнал, звіти, /docs, перегляд користувачів і завершення сесій,
+    а також усі права data_officer (видача кодів доступу, участь);
+  - data_officer — видача кодів доступу і перегляд участі (результатів не бачить).
+Обидві ролі (admin і data_officer) призначає й знімає лише власник сервера серверною командою
+app.v2_role_cli (ops/Set-V2UserRole.ps1); у вебі — 403 admin_role_server_only / data_officer_role_server_only.
+Закрито: самопідвищення у вебі (другий акаунт адміністратору нічого не дає). Свідомо прийнято власником:
+admin сам видає коди й бачить результати — атака n−1 доступна будь-якому адміністратору; запобіжники —
+контрольоване коло адмінів, журнали tokens.issue і v2_role_changes, поріг k (docs/V2_HARDENING_CONTRACT.md).
+Маршрут сам перелічує дозволені ролі: require_role("admin"), require_role("admin", "data_officer").
 Анонімний респондент акаунта не має — його маршрут доступний за одноразовим кодом.
 
 Заголовок X-Role НЕ є автентифікацією. Він обробляється лише в режимі development з явним
@@ -37,7 +43,8 @@ ALL_ROLES = tuple(ROLES)
 # Ролі сесії V2 (v2_users.role)
 SESSION_ROLES = ("user", "admin", "data_officer")
 # Сесійна роль admin входить у кожен набір аналітики; ролі V1 діють лише в демо-режимі.
-# data_officer сюди НЕ входить: той, хто видає коди, не бачить результатів (атака n−1).
+# data_officer сюди НЕ входить (результатів не бачить). admin видає коди й бачить результати — ризик n−1
+# свідомо прийнято власником.
 ANALYTICS_ROLES = ("admin", "manager", "anticorruption", "auditor")
 
 
@@ -68,7 +75,7 @@ def require_role(*allowed: str):
     """
     Перевірка доступу для захищених маршрутів:
         @router.get(..., dependencies=[Depends(require_role("admin"))])
-        @router.post(..., dependencies=[Depends(require_role("data_officer"))])
+        @router.post(..., dependencies=[Depends(require_role("admin", "data_officer"))])
     401 — немає перевіреної сесії; 403 — немає прав або CSRF не пройдено.
     """
     def check(request: Request) -> str:

@@ -75,8 +75,7 @@
   font-weight: 680;
 }
 
-.users-panel__search-field input,
-.users-panel__role-select select {
+.users-panel__search-field input {
   min-height: 2.5rem;
   padding: .45rem .6rem;
   border: 1px solid #9eb8ac;
@@ -135,6 +134,9 @@
   white-space: nowrap;
 }
 
+/* Роль лише для читання: позначка ролі й підказка «Роль призначає власник сервера» одним блоком. */
+.users-panel__role-cell { display: grid; justify-items: start; gap: .2rem; }
+
 .users-panel__role[data-role="admin"] { background: #dcebf3; color: #1f4f6b; }
 .users-panel__role[data-role="data_officer"] { background: #f4eee1; color: #785d2a; }
 
@@ -161,8 +163,7 @@
   .users-panel__table td > * { justify-self: start; }
   .users-panel__email { white-space: normal; overflow-wrap: anywhere; }
   /* Картки — це мобільний вигляд: елементи керування не менші за 44 px. */
-  .users-panel__actions .v2-button,
-  .users-panel__role-select select { min-height: 2.75rem; }
+  .users-panel__actions .v2-button { min-height: 2.75rem; }
 }
 
 @media (max-width: 640px) {

@@ -34,7 +34,7 @@ def admin_client():
 
 
 def officer_client():
-    """Коди доступу видає лише data_officer (docs/V2_HARDENING_CONTRACT.md, розділ 1): admin отримує 403."""
+    """Коди доступу видають data_officer і admin (docs/V2_HARDENING_CONTRACT.md, розділ 1)."""
     return login(make_user("data_officer"))
 
 
@@ -99,7 +99,7 @@ def test_s1_admin_session_reaches_protected_routes():
     client, csrf = admin_client()
     assert client.get(f"/api/assessments/{CLOSED_ID}/results").status_code == 200
     assert client.get("/api/audit-events").status_code == 200
-    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=csrf).status_code == 403     # n−1: не видає
+    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=csrf).status_code == 201     # admin має права data_officer
     officer, officer_csrf = officer_client()
     assert officer.post(f"/api/assessments/{OPEN_ID}/tokens", headers=officer_csrf).status_code == 201
     assert officer.get(f"/api/assessments/{CLOSED_ID}/results").status_code == 403              # і не бачить
@@ -257,6 +257,28 @@ def test_s4_admin_api_write_requires_csrf():
     assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=csrf).status_code == 201
 
 
+def test_admin_issues_tokens_journaled_with_actor_id_and_user_gets_403():
+    """Рішення власника: admin видає коди (ризик n−1 прийнято); залишковий захист — tokens.issue з actor_user_id."""
+    email = make_user("admin")
+    admin, csrf = login(email)
+    actor_id = user_for_session(admin.cookies.get(session_cookie_name()))["id"]
+    with SessionLocal() as db:
+        before = db.query(AuditEvent).filter(AuditEvent.action == "tokens.issue").count()
+    issued = admin.post(f"/api/assessments/{OPEN_ID}/tokens", params={"count": 3}, headers=csrf)
+    assert issued.status_code == 201 and len(issued.json()["tokens"]) == 3
+    with SessionLocal() as db:
+        events = db.query(AuditEvent).filter(AuditEvent.action == "tokens.issue").order_by(AuditEvent.id).all()
+    assert len(events) == before + 1
+    last = events[-1]
+    assert (last.actor_role, last.actor_user_id, last.assessment_id) == ("admin", actor_id, OPEN_ID)
+    assert last.details == '{"count": 3}' and issued.json()["tokens"][0] not in (last.details or "")
+    assert admin.post(f"/api/assessments/{OPEN_ID}/tokens").status_code == 403                  # без CSRF
+    user, user_csrf = login(make_user())
+    assert user.post(f"/api/assessments/{OPEN_ID}/tokens", headers=user_csrf).status_code == 403
+    with SessionLocal() as db:
+        assert db.query(AuditEvent).filter(AuditEvent.action == "tokens.issue").count() == before + 1
+
+
 def test_assessment_manager_requires_verified_admin_session_and_csrf():
     body = {"name": "Синтетичний V2", "start_date": "2026-11-19",
             "categories": ["cadets"], "min_group_size": 5,
@@ -274,7 +296,7 @@ def test_assessment_manager_requires_verified_admin_session_and_csrf():
     path = f"/api/assessments/{cycle_id}"
     assert admin.post(path + "/activate").status_code == 403
     assert admin.post(path + "/activate", headers=csrf).status_code == 200
-    assert admin.post(path + "/tokens?category=cadets", headers=csrf).status_code == 403   # лише data_officer
+    assert admin.post(path + "/tokens?category=cadets", headers=csrf).status_code == 201   # admin теж видає коди
     officer, officer_csrf = officer_client()
     assert officer.post(path + "/tokens?category=cadets").status_code == 403                # CSRF
     assert officer.post(path + "/tokens?category=cadets", headers=officer_csrf).status_code == 201

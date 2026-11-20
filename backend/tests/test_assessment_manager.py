@@ -42,8 +42,7 @@ def test_admin_cycle_flow_and_privacy():
     assert client.post(path + "/activate", headers=ADMIN).status_code == 200
     assert client.post(path + "/activate", headers=ADMIN).status_code == 409
     assert client.post(path + "/tokens?category=mgmt", headers=DATA_OFFICER).status_code == 422
-    assert client.post(path + "/tokens?count=1&category=cadets", headers=ADMIN).status_code == 403
-    issued = client.post(path + "/tokens?count=1&category=cadets", headers=DATA_OFFICER)
+    issued = client.post(path + "/tokens?count=1&category=cadets", headers=ADMIN)   # admin має права data_officer
     assert issued.status_code == 201
     code = issued.json()["tokens"][0]
     body = {"token": code, "respondent_category": "cadets", "unit": "Факультет 1",

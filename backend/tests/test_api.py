@@ -14,7 +14,7 @@ OPEN_ID = 3  # у демо-даних відкритий цикл 2026-II
 CLOSED_ID = 1
 
 ADMIN = {"X-Role": "admin"}
-DATA_OFFICER = {"X-Role": "data_officer"}   # коди видає лише data_officer (V2_HARDENING_CONTRACT, розділ 1)
+DATA_OFFICER = {"X-Role": "data_officer"}   # коди видають data_officer і admin (V2_HARDENING_CONTRACT, розділ 1)
 MANAGER = {"X-Role": "manager"}
 RESPONDENT = {"X-Role": "respondent"}
 
@@ -82,10 +82,11 @@ def test_respondent_cannot_see_participation_statistics():
     assert client.get(f"/api/assessments/{OPEN_ID}/participation", headers=RESPONDENT).status_code == 403
 
 
-def test_only_data_officer_issues_tokens():
-    """D1: admin бачить результати, тож кодів не отримує (атака n−1); коди — лише data_officer."""
+def test_admin_and_data_officer_issue_tokens():
+    """Рішення власника: admin має права data_officer (ризик n−1 прийнято); інші ролі — 403."""
     assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=MANAGER).status_code == 403
-    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=ADMIN).status_code == 403
+    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=RESPONDENT).status_code == 403
+    assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=ADMIN).status_code == 201
     assert client.post(f"/api/assessments/{OPEN_ID}/tokens", headers=DATA_OFFICER).status_code == 201
 
 

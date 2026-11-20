@@ -14,7 +14,7 @@ from app.models import AccessToken, AuditEvent, Cycle, Question, hash_access_cod
 
 client = TestClient(app)
 ADMIN = {"X-Role": "admin"}
-DATA_OFFICER = {"X-Role": "data_officer"}   # коди видає лише data_officer (V2_HARDENING_CONTRACT, розділ 1)
+DATA_OFFICER = {"X-Role": "data_officer"}   # коди видають data_officer і admin (V2_HARDENING_CONTRACT, розділ 1)
 AUDITOR = {"X-Role": "auditor"}
 
 
@@ -76,7 +76,7 @@ def test_failed_operations_are_not_logged():
     cycle_id = new_open_cycle()
     client.post(f"/api/assessments/{cycle_id}/close", headers={"X-Role": "manager"})   # 403
     client.post(f"/api/assessments/{cycle_id}/tokens", headers={"X-Role": "respondent"})  # 403
-    client.post(f"/api/assessments/{cycle_id}/tokens", headers=ADMIN)                   # 403 (лише data_officer)
+    client.post(f"/api/assessments/{cycle_id}/tokens", headers={"X-Role": "manager"})     # 403
     client.post(f"/api/assessments/{cycle_id}/close", headers=ADMIN)                    # 200
     client.post(f"/api/assessments/{cycle_id}/close", headers=ADMIN)                    # 409
     client.post(f"/api/assessments/{cycle_id}/tokens", headers=DATA_OFFICER)            # 409 (закрито)

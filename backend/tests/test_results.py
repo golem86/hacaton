@@ -14,7 +14,7 @@ from app.models import Answer, Cycle, ResponseSet
 
 client = TestClient(app)
 ADMIN = {"X-Role": "admin"}
-DATA_OFFICER = {"X-Role": "data_officer"}   # коди видає лише data_officer (V2_HARDENING_CONTRACT, розділ 1)
+DATA_OFFICER = {"X-Role": "data_officer"}   # коди видають data_officer і admin (V2_HARDENING_CONTRACT, розділ 1)
 MANAGER = {"X-Role": "manager"}
 PARTICIPATION = ADMIN                       # участь бачать admin і data_officer
 RESPONDENT = {"X-Role": "respondent"}

@@ -37,6 +37,9 @@ from . import settings
 
 AUTH_SCHEMA_VERSION = 2
 ROLES = ("user", "admin", "data_officer")
+# Ролі, які призначає й знімає лише власник сервера (app.v2_role_cli), і код відмови для веб-зміни (403).
+# Порядок важливий: зміна admin ↔ data_officer відхиляється кодом admin_role_server_only.
+SERVER_ONLY_ROLE_ERRORS = {"admin": "admin_role_server_only", "data_officer": "data_officer_role_server_only"}
 # Актор серверної команди app.v2_role_cli у v2_role_changes.actor_user_id: колонка NOT NULL без FK і CHECK,
 # id користувачів починаються з 1 (AUTOINCREMENT), тож 0 ні з ким не збігається і означає «власник сервера».
 SERVER_ACTOR_ID = 0
@@ -94,7 +97,8 @@ class AdminExists(RuntimeError):
 
 class RoleChangeError(ValueError):
     """Зміна ролі або відкликання сесій відхилені. code: self_change, not_found, conflict, actor_unauthorized,
-    invalid_role, admin_role_server_only (роль admin у вебі не призначається й не знімається),
+    invalid_role, admin_role_server_only (роль admin у вебі не призначається й не знімається; сесії іншого
+    admin у вебі не завершуються), data_officer_role_server_only (те саме для ролі data_officer),
     unchanged і last_admin (лише серверна команда app.v2_role_cli)."""
 
     def __init__(self, code: str):
@@ -1046,6 +1050,14 @@ def latest_dev_mail(recipient: str | None = None) -> dict[str, Any] | None:
 # Ролі й керування сесіями (адміністратор)
 # ---------------------------------------------------------------------------
 
+def server_only_role_error(*roles: str) -> str | None:
+    """Код відмови, якщо серед ролей є роль, яку змінює лише власник сервера; інакше None."""
+    for role, code in SERVER_ONLY_ROLE_ERRORS.items():
+        if role in roles:
+            return code
+    return None
+
+
 def _require_admin_actor(db: sqlite3.Connection, actor_id: int, actor_session: str | None, now: datetime) -> None:
     """Повторна перевірка актора В ТІЙ САМІЙ транзакції: роль admin, сесія з 2FA, строк, token_hash."""
     actor = db.execute(
@@ -1075,27 +1087,31 @@ def change_user_role(actor_id: int, actor_session: str | None, target_id: int,
                      expected_role: str, new_role: str) -> dict[str, Any]:
     """
     A13: одна транзакція BEGIN IMMEDIATE на одному з'єднанні — повторна перевірка актора → поточна роль цілі
-    (admin → admin_role_server_only) → expected_role → UPDATE … WHERE id = ? AND role = ? (rowcount 1) →
-    видалення ВСІХ сесій цілі (включно з pending) → гасіння всіх відкритих кодів цілі → запис v2_role_changes.
+    (admin → admin_role_server_only, data_officer → data_officer_role_server_only) → expected_role →
+    UPDATE … WHERE id = ? AND role = ? (rowcount 1) → видалення ВСІХ сесій цілі (включно з pending) →
+    гасіння всіх відкритих кодів цілі → запис v2_role_changes.
 
-    Роль admin через веб не призначає й не знімає ніхто: new_role або expected_role «admin» відхиляються ще до
-    транзакції, а роль цілі «admin» — усередині неї (на випадок, якщо ціль стала адміністратором між читанням
-    переліку і запитом). Адміністраторів призначає й знімає лише власник сервера: python -m app.v2_role_cli.
+    Ролі admin і data_officer через веб не призначає й не знімає ніхто: expected_role або new_role з такою
+    роллю відхиляються ще до транзакції, а така роль цілі — усередині неї (на випадок, якщо роль змінили на
+    сервері між читанням переліку і запитом). Їх призначає й знімає лише власник сервера:
+    python -m app.v2_role_cli. Отже, у вебі змінити роль фактично неможливо (лишається лише user).
     """
     if expected_role not in ROLES or new_role not in ROLES:
         raise RoleChangeError("invalid_role")
     if actor_id == target_id:
         raise RoleChangeError("self_change")
-    if "admin" in (expected_role, new_role):
-        raise RoleChangeError("admin_role_server_only")
+    code = server_only_role_error(expected_role, new_role)
+    if code:
+        raise RoleChangeError(code)
     now = _utc_now()
     with _immediate() as db:
         _require_admin_actor(db, actor_id, actor_session, now)
         target = db.execute("SELECT role FROM v2_users WHERE id = ?", (target_id,)).fetchone()
         if target is None:
             raise RoleChangeError("not_found")
-        if target["role"] == "admin":
-            raise RoleChangeError("admin_role_server_only")
+        code = server_only_role_error(target["role"])
+        if code:
+            raise RoleChangeError(code)
         if target["role"] != expected_role or expected_role == new_role:
             raise RoleChangeError("conflict")
         return _apply_role_change(db, actor_id, target_id, expected_role, new_role, now)
@@ -1143,7 +1159,8 @@ def server_change_role(email: str, new_role: str) -> dict[str, Any]:
 
 def revoke_user_sessions(actor_id: int, actor_session: str | None, target_id: int) -> int:
     """A14: усі сесії користувача (включно з pending) і відкриті коди 2FA — одна транзакція з перевіркою актора.
-    Сесії іншого адміністратора через веб не завершуються (admin_role_server_only); власні — можна."""
+    Сесії user і data_officer — можна; сесії іншого адміністратора через веб не завершуються
+    (admin_role_server_only); власні — можна."""
     now = _utc_now()
     with _immediate() as db:
         _require_admin_actor(db, actor_id, actor_session, now)

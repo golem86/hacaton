@@ -1,5 +1,6 @@
 ﻿# Set-V2UserRole.ps1 — призначення й зняття ролей V2 (зокрема admin) власником сервера.
-# Роль адміністратора у вебі не призначає й не знімає ніхто; лише ця команда на сервері (python -m app.v2_role_cli).
+# Ролі адміністратора й відповідального за коди (data_officer) у вебі не призначає й не знімає ніхто;
+# лише ця команда на сервері (python -m app.v2_role_cli).
 # ЗАПУСК (неінтерактивно, придатно для SSH від адміністратора Windows):
 #   План:       powershell -NoProfile -ExecutionPolicy Bypass -File Set-V2UserRole.ps1 -Email user@example.org -Role admin
 #   Виконати:   powershell -NoProfile -ExecutionPolicy Bypass -File Set-V2UserRole.ps1 -Email user@example.org -Role admin -Apply

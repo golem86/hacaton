@@ -65,18 +65,20 @@ def submit(cycle_id, code, category="cadets", unit=UNITS[0], value=3):
         "questionnaire_version": "demo-v1", "answers": answers(value)})
 
 
-# --- D1: коди видає лише data_officer; admin кодів не отримує (атака n−1) ---------------
+# --- D1 (переглянуто рішенням власника): коди видають admin і data_officer; ризик n−1 для admin прийнято,
+# залишковий захист — журнал tokens.issue з роллю й actor_user_id і поріг k --------------------------------
 
-def test_admin_cannot_obtain_codes_so_n_minus_1_is_impossible():
+def test_admin_and_data_officer_issue_codes_and_every_issue_is_journaled():
     cycle_id = new_cycle()
     path = f"/api/assessments/{cycle_id}/tokens?count=4&category=cadets"
-    assert client.post(path, headers=ADMIN).status_code == 403            # демо-роль admin
+    assert client.post(path, headers=MANAGER).status_code == 403
     admin, csrf = login(make_user("admin"))                                # справжня сесія admin з 2FA і CSRF
-    assert admin.post(path, headers=csrf).status_code == 403
+    assert admin.post(path, headers=csrf).status_code == 201
     assert client.post(path, headers=DATA_OFFICER).status_code == 201
     with SessionLocal() as db:
-        [event] = db.query(AuditEvent).filter_by(assessment_id=cycle_id, action="tokens.issue").all()
-        assert event.actor_role == "data_officer"
+        events = db.query(AuditEvent).filter_by(assessment_id=cycle_id, action="tokens.issue").order_by(AuditEvent.id).all()
+        assert [event.actor_role for event in events] == ["admin", "data_officer"]
+        assert events[0].actor_user_id is not None and events[0].details == '{"count": 4}'
 
 
 def test_participation_for_admin_and_data_officer_but_results_not_for_data_officer():

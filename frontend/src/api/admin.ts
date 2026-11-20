@@ -25,9 +25,9 @@ export const DEFAULT_CODE_EXPIRY_DAYS = 14
 export const MAX_CODES_PER_REQUEST = 500
 export const MAX_CODE_EXPIRY_DAYS = 365
 
-/** Повідомлення для видачі кодів (POST …/tokens — лише роль data_officer). */
+/** Повідомлення для видачі кодів (POST …/tokens — ролі admin і data_officer). */
 export const TOKEN_ISSUE_MESSAGES: Readonly<Partial<Record<number, string>>> = {
-  403: 'Коди доступу видає лише Відповідальний за коди доступу (роль data_officer).',
+  403: 'Коди доступу видають лише адміністратор і відповідальний за коди доступу (data_officer).',
   404: 'Цикл не знайдено. Оновіть перелік циклів.',
   409: 'Цикл не відкритий — коди не видано.',
 }

@@ -1,9 +1,11 @@
 """
 Ролі й керування сесіями V2 (docs/V2_HARDENING_CONTRACT.md, розділи 1 і 3; аудит F3, F7–F10).
 
-  - POST /v2/admin/users/{id}/role: одна транзакція (роль, ВСІ сесії цілі включно з pending, відкриті коди,
-    v2_role_changes), повторна перевірка актора; 403 self_change, 404, 409, 422; лише user ↔ data_officer —
-    роль admin призначає й знімає власник сервера (test_v2_admin_server_only.py);
+  - зміна ролі — одна транзакція (роль, ВСІ сесії цілі включно з pending, відкриті коди, v2_role_changes);
+    ролі admin і data_officer призначає й знімає лише власник сервера (server_change_role / app.v2_role_cli,
+    test_v2_admin_server_only.py), тож механіку транзакції перевірено через серверну зміну;
+  - POST /v2/admin/users/{id}/role: повторна перевірка актора; 403 self_change, admin_role_server_only,
+    data_officer_role_server_only, 404, 409, 422 — успішної веб-зміни ролі немає;
   - POST /v2/admin/users/{id}/revoke-sessions і POST /v2/auth/logout-all;
   - GET /v2/admin/users (email замасковано; повний — лише за точним email) і GET /v2/admin/role-changes;
   - події основного журналу без email; SQLite зайнята → 503; data_officer працює з require_role.
@@ -59,38 +61,28 @@ def role_url(user_id) -> str:
 # --- Зміна ролі -------------------------------------------------------------------------------------------
 
 def test_role_change_revokes_all_target_sessions_codes_and_is_journaled():
-    admin, csrf, actor_id = admin_session()
+    admin, _, _ = admin_session()
     target_email = make_user()
     target_id = find_user_id(target_email)
     verified, _ = login(target_email)
     pending, _ = start_login(target_email)                       # pending-сесія і відкритий код 2FA
-    events_before = len(audit_events("user.role_change"))
-    response = admin.post(role_url(target_id), headers=csrf,
-                          json={"expected_role": "user", "new_role": "data_officer"})
-    assert response.status_code == 200, response.text
-    body = response.json()
+    body = server_change_role(target_email, "data_officer")       # лише власник сервера
     assert body["user_id"] == target_id and body["old_role"] == "user" and body["new_role"] == "data_officer"
-    assert body["sessions_revoked"] == 2
+    assert body["sessions_revoked"] == 2 and target_email not in str(body)
     assert verified.get("/v2/auth/me").status_code == 401 and pending.get("/v2/auth/me").status_code == 401
     assert query("SELECT COUNT(*) FROM v2_challenges WHERE user_id = ? AND consumed = 0", target_id) == [(0,)]
     assert authenticate(target_email, PASSWORD)["role"] == "data_officer"
-    changes = admin.get("/v2/admin/role-changes").json()
+    changes = admin.get("/v2/admin/role-changes").json()          # історію ролей адміністратор бачить
     assert {k: changes[0][k] for k in ("actor_user_id", "target_user_id", "old_role", "new_role")} == \
-        {"actor_user_id": actor_id, "target_user_id": target_id, "old_role": "user", "new_role": "data_officer"}
-    events = audit_events("user.role_change")
-    assert len(events) == events_before + 1
-    assert events[-1].actor_role == "admin" and events[-1].details == "{}"
-    assert events[-1].actor_user_id == actor_id                         # id актора, без email цілі
+        {"actor_user_id": 0, "target_user_id": target_id, "old_role": "user", "new_role": "data_officer"}
 
 
 def test_pending_verify_after_role_change_gets_no_session():
     """F3: код, виданий до зміни ролі, не дає нової сесії — pending-сесію видалено, код погашено."""
-    admin, csrf, _ = admin_session()
     target_email = make_user()
     pending, pending_csrf = start_login(target_email)
     code = latest_code(target_email)
-    assert admin.post(role_url(find_user_id(target_email)), headers=csrf,
-                      json={"expected_role": "user", "new_role": "data_officer"}).status_code == 200
+    server_change_role(target_email, "data_officer")
     response = pending.post("/v2/auth/2fa/verify", json={"code": code}, headers={"X-CSRF-Token": pending_csrf})
     assert response.status_code == 401
     assert query("SELECT COUNT(*) FROM v2_sessions WHERE user_id = ?", find_user_id(target_email)) == [(0,)]
@@ -118,18 +110,18 @@ def test_role_change_rejections():
     assert (self_change.status_code, self_change.json()) == (403, {"detail": "self_change"})
     assert admin.post(role_url(target_id), headers=csrf,
                       json={"expected_role": "user", "new_role": "user"}).status_code == 409             # та сама
-    assert admin.post(role_url(target_id), headers=csrf,
-                      json={"expected_role": "data_officer", "new_role": "user"}).status_code == 409     # expected
-    assert admin.post(role_url(MAX_ID), headers=csrf, json=body).status_code == 404
+    same = {"expected_role": "user", "new_role": "user"}
+    assert admin.post(role_url(MAX_ID), headers=csrf, json=same).status_code == 404
     for bad in (0, -1, MAX_ID + 1, "99999999999999999999"):                                               # F9
         assert admin.post(role_url(bad), headers=csrf, json=body).status_code == 422, bad
-    assert admin.post(role_url(target_id), headers=csrf, json=body).status_code == 200
-    assert admin.post(role_url(target_id), headers=csrf, json=body).status_code == 409                   # повтор
-    assert admin.get("/v2/admin/role-changes").json()[0]["target_user_id"] == target_id
+    for attempt in (body, {"expected_role": "data_officer", "new_role": "user"}):
+        response = admin.post(role_url(target_id), headers=csrf, json=attempt)
+        assert (response.status_code, response.json()) == (403, {"detail": "data_officer_role_server_only"})
+    assert query("SELECT role FROM v2_users WHERE id = ?", target_id) == [("user",)]
+    assert query("SELECT COUNT(*) FROM v2_role_changes WHERE target_user_id = ?", target_id) == [(0,)]
 
 
 def test_failed_role_journal_insert_rolls_back_role_and_sessions():
-    admin, csrf, _ = admin_session()
     target_email = make_user()
     target, _ = login(target_email)
     target_id = find_user_id(target_email)
@@ -139,9 +131,10 @@ def test_failed_role_journal_insert_rolls_back_role_and_sessions():
         db.commit()
     try:
         with pytest.raises(sqlite3.IntegrityError, match="test journal failure"):
-            admin.post(role_url(target_id), headers=csrf, json={"expected_role": "user", "new_role": "data_officer"})
+            server_change_role(target_email, "data_officer")
         assert authenticate(target_email, PASSWORD)["role"] == "user"
         assert target.get("/v2/user/profile").status_code == 200
+        assert query("SELECT COUNT(*) FROM v2_sessions WHERE user_id = ?", target_id) == [(1,)]
     finally:
         with closing(sqlite3.connect(auth_db_path())) as db:
             db.execute("DROP TRIGGER reject_role_journal")
@@ -149,20 +142,19 @@ def test_failed_role_journal_insert_rolls_back_role_and_sessions():
 
 
 def test_identical_concurrent_role_changes_have_one_winner():
-    admin, _, actor_id = admin_session()
-    target_id = find_user_id(make_user())
-    session = admin.cookies.get("v2_session")
+    email = make_user()
+    target_id = find_user_id(email)
     barrier = threading.Barrier(4)
 
     def run(_):
         barrier.wait(timeout=10)
         try:
-            return change_user_role(actor_id, session, target_id, "user", "data_officer")
+            return server_change_role(email, "data_officer")
         except RoleChangeError as error:
             return error.code
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(run, range(4)))
-    assert sum(isinstance(r, dict) for r in results) == 1 and results.count("conflict") == 3
+    assert sum(isinstance(r, dict) for r in results) == 1 and results.count("unchanged") == 3
     assert query("SELECT COUNT(*) FROM v2_role_changes WHERE target_user_id = ?", target_id) == [(1,)]
 
 
@@ -198,9 +190,9 @@ def test_demoted_admin_session_cannot_finish_a_role_change():
     actor_email = query("SELECT email FROM v2_users WHERE id = ?", actor_id)[0][0]
     server_change_role(actor_email, "user")                           # знімає лише власник сервера
     assert admin.post(role_url(target_id), headers=csrf,
-                      json={"expected_role": "user", "new_role": "data_officer"}).status_code == 401
+                      json={"expected_role": "user", "new_role": "user"}).status_code == 401
     with pytest.raises(RoleChangeError, match="actor_unauthorized"):    # навіть з токеном, вкраденим до зміни
-        change_user_role(actor_id, admin.cookies.get("v2_session"), target_id, "user", "data_officer")
+        change_user_role(actor_id, admin.cookies.get("v2_session"), target_id, "user", "user")
     assert other_id != actor_id
 
 
@@ -212,7 +204,7 @@ def test_busy_auth_db_gives_503_not_500(monkeypatch):
     try:
         blocker.execute("BEGIN IMMEDIATE")                               # інша транзакція тримає запис
         response = admin.post(role_url(target_id), headers=csrf,
-                              json={"expected_role": "user", "new_role": "data_officer"})
+                              json={"expected_role": "user", "new_role": "user"})
         assert response.status_code == 503 and response.headers["retry-after"] == "1"
         revoke = admin.post(f"/v2/admin/users/{target_id}/revoke-sessions", headers=csrf)
         assert revoke.status_code == 503
@@ -319,10 +311,9 @@ def test_role_changes_listing_is_admin_only_and_bounded():
 # --- Роль data_officer (A18) ----------------------------------------------------------------------------------
 
 def test_data_officer_session_works_with_role_guards_but_not_admin_or_user_routes():
-    admin, csrf, _ = admin_session()
+    admin, _, _ = admin_session()
     email = make_user()
-    assert admin.post(role_url(find_user_id(email)), headers=csrf,
-                      json={"expected_role": "user", "new_role": "data_officer"}).status_code == 200
+    server_change_role(email, "data_officer")                           # лише власник сервера
     officer, officer_csrf = login(email)
     assert officer.get("/v2/auth/me").json()["user"]["role"] == "data_officer"
     probe = FastAPI()

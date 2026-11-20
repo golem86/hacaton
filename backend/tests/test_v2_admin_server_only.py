@@ -1,9 +1,10 @@
 """
-Роль admin у вебі не призначає й не знімає ніхто — лише власник сервера командою на сервері.
+Ролі admin і data_officer у вебі не призначає й не знімає ніхто — лише власник сервера командою на сервері.
 
   - POST /v2/admin/users/{id}/role: підвищення до admin і пониження admin → 403 admin_role_server_only без змін
-    (роль, сесії, v2_role_changes, основний журнал); роль цілі перевіряється й усередині транзакції (гонка);
-  - POST /v2/admin/users/{id}/revoke-sessions для іншого admin → 403; власні сесії — як і раніше;
+    (роль, сесії, v2_role_changes, основний журнал); user → data_officer і data_officer → user → 403
+    data_officer_role_server_only без змін; роль цілі перевіряється й усередині транзакції (гонка);
+  - POST /v2/admin/users/{id}/revoke-sessions для іншого admin → 403; для user і data_officer і власні — дозволено;
   - python -m app.v2_role_cli set-role: план без --confirm нічого не змінює; з --confirm — роль, усі сесії цілі,
     v2_role_changes з actor_user_id = 0 і подія user.role_change з actor_role="server"; останній admin не
     знімається; невідомий email → код 2; у release працює без V2_SECRET_KEY.
@@ -101,8 +102,11 @@ def test_web_demotion_of_admin_is_403_and_changes_nothing():
         change_user_role(find_user_id(make_user()), None, other_id, "admin", "user")
 
 
-def test_target_that_became_admin_before_the_transaction_is_403(monkeypatch):
-    """Гонка: адміністратор бачив роль user, але ціль стала admin між читанням і транзакцією → 403, без змін."""
+@pytest.mark.parametrize(("raced_role", "code"), [("admin", "admin_role_server_only"),
+                                                   ("data_officer", "data_officer_role_server_only")])
+def test_target_that_got_a_server_only_role_before_the_transaction_is_403(monkeypatch, raced_role, code):
+    """Гонка: адміністратор бачив роль user, але ціль стала admin / data_officer (на сервері) між читанням і
+    транзакцією → 403 з кодом ролі цілі, без змін. Тіло user → user проходить попередню перевірку маршруту."""
     admin, csrf, _ = admin_session()
     target_email = make_user()
     target_id = find_user_id(target_email)
@@ -111,25 +115,60 @@ def test_target_that_became_admin_before_the_transaction_is_403(monkeypatch):
     def promote_then_now():
         if sys._getframe(1).f_code.co_name == "change_user_role":       # між перевіркою тіла і BEGIN IMMEDIATE
             with closing(sqlite3.connect(auth_db_path())) as db:
-                db.execute("UPDATE v2_users SET role = 'admin' WHERE id = ?", (target_id,))
+                db.execute("UPDATE v2_users SET role = ? WHERE id = ?", (raced_role, target_id))
                 db.commit()
         return original_now()
     monkeypatch.setattr(v2_auth, "_utc_now", promote_then_now)
+    response = admin.post(role_url(target_id), headers=csrf, json={"expected_role": "user", "new_role": "user"})
+    assert (response.status_code, response.json()) == (403, {"detail": code})
+    assert role_of(target_id) == raced_role and role_changes_of(target_id) == []
+
+
+# --- Веб: роль data_officer теж не призначається й не знімається ----------------------------------------------
+
+def test_web_user_to_data_officer_is_403_and_changes_nothing():
+    admin, csrf, _ = admin_session()
+    target_email = make_user()
+    target_id = find_user_id(target_email)
+    target, _ = login(target_email)
+    events_before = len(audit_events())
     response = admin.post(role_url(target_id), headers=csrf, json={"expected_role": "user", "new_role": "data_officer"})
-    assert (response.status_code, response.json()) == (403, {"detail": "admin_role_server_only"})
-    assert role_of(target_id) == "admin" and role_changes_of(target_id) == []
-    stale = admin.post(role_url(target_id), headers=csrf, json={"expected_role": "user", "new_role": "data_officer"})
-    assert (stale.status_code, stale.json()) == (403, {"detail": "admin_role_server_only"})
+    assert (response.status_code, response.json()) == (403, {"detail": "data_officer_role_server_only"})
+    assert role_of(target_id) == "user" and sessions_of(target_id) == 1
+    assert target.get("/v2/auth/me").status_code == 200
+    assert role_changes_of(target_id) == [] and len(audit_events()) == events_before
+    with pytest.raises(RoleChangeError, match="data_officer_role_server_only"):
+        change_user_role(find_user_id(make_user()), None, target_id, "user", "data_officer")
+    assert role_of(target_id) == "user"
 
 
-def test_user_and_data_officer_roles_still_change_through_the_web():
-    admin, csrf, actor_id = admin_session()
-    target_id = find_user_id(make_user())
-    forward = admin.post(role_url(target_id), headers=csrf, json={"expected_role": "user", "new_role": "data_officer"})
-    assert forward.status_code == 200 and role_of(target_id) == "data_officer"
-    back = admin.post(role_url(target_id), headers=csrf, json={"expected_role": "data_officer", "new_role": "user"})
-    assert back.status_code == 200 and role_of(target_id) == "user"
-    assert role_changes_of(target_id) == [(actor_id, "user", "data_officer"), (actor_id, "data_officer", "user")]
+def test_web_data_officer_to_user_is_403_and_changes_nothing():
+    admin, csrf, _ = admin_session()
+    officer_email = make_user("data_officer")
+    officer_id = find_user_id(officer_email)
+    officer, _ = login(officer_email)
+    events_before = len(audit_events())
+    response = admin.post(role_url(officer_id), headers=csrf,
+                          json={"expected_role": "data_officer", "new_role": "user"})
+    assert (response.status_code, response.json()) == (403, {"detail": "data_officer_role_server_only"})
+    # Тіло з неправдивою роллю user → user: роль цілі data_officer перевіряється в транзакції
+    disguised = admin.post(role_url(officer_id), headers=csrf, json={"expected_role": "user", "new_role": "user"})
+    assert (disguised.status_code, disguised.json()) == (403, {"detail": "data_officer_role_server_only"})
+    assert role_of(officer_id) == "data_officer" and sessions_of(officer_id) == 1
+    assert officer.get("/v2/auth/me").status_code == 200
+    assert role_changes_of(officer_id) == [] and len(audit_events()) == events_before
+
+
+def test_revoke_sessions_of_data_officer_and_user_is_allowed():
+    admin, csrf, _ = admin_session()
+    for role in ("data_officer", "user"):
+        email = make_user(role)
+        target_id = find_user_id(email)
+        target, _ = login(email)
+        response = admin.post(f"/v2/admin/users/{target_id}/revoke-sessions", headers=csrf)
+        assert (response.status_code, response.json()) == (200, {"revoked": 1})
+        assert sessions_of(target_id) == 0 and target.get("/v2/auth/me").status_code == 401
+        assert role_of(target_id) == role
 
 
 def test_revoke_sessions_of_another_admin_is_403_own_sessions_still_allowed():
@@ -186,6 +225,25 @@ def test_cli_confirm_promotes_revokes_sessions_and_journals_server_actor(capsys)
     assert run_cli(capsys, "--email", email, "--role", "data_officer", "--confirm")[0] == 0
     assert role_of(user_id) == "data_officer"
     assert role_changes_of(user_id)[-1] == (SERVER_ACTOR_ID, "admin", "data_officer")
+
+
+def test_cli_confirm_assigns_and_removes_data_officer_with_server_actor(capsys):
+    email = make_user()
+    user_id = find_user_id(email)
+    verified, _ = login(email)
+    events_before = len(audit_events())
+    code, out = run_cli(capsys, "--email", email, "--role", "data_officer", "--confirm")
+    assert code == 0, out
+    assert role_of(user_id) == "data_officer" and sessions_of(user_id) == 0
+    assert verified.get("/v2/auth/me").status_code == 401
+    assert role_changes_of(user_id) == [(0, "user", "data_officer")]
+    events = audit_events()
+    assert len(events) == events_before + 1
+    assert (events[-1].actor_role, events[-1].actor_user_id) == ("server", None)
+    assert run_cli(capsys, "--email", email, "--role", "user", "--confirm")[0] == 0
+    assert role_of(user_id) == "user"
+    assert role_changes_of(user_id)[-1] == (0, "data_officer", "user")
+    assert audit_events()[-1].actor_role == "server" and len(audit_events()) == events_before + 2
 
 
 def test_cli_refuses_unknown_email_and_bad_arguments(capsys):

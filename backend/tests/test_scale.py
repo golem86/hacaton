@@ -17,7 +17,7 @@ from app.questionnaire_contract import (MAX_SCALE_VALUES, SAFE_INTEGER, Question
 
 client = TestClient(app)
 ADMIN, RESPONDENT, MANAGER = {"X-Role": "admin"}, {"X-Role": "respondent"}, {"X-Role": "manager"}
-DATA_OFFICER = {"X-Role": "data_officer"}   # коди видає лише data_officer (V2_HARDENING_CONTRACT, розділ 1)
+DATA_OFFICER = {"X-Role": "data_officer"}   # коди видають data_officer і admin (V2_HARDENING_CONTRACT, розділ 1)
 
 
 # --- Правило шкали: граничні значення ---------------------------------------

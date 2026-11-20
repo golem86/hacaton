@@ -26,7 +26,7 @@ async function signOut(page: Page) {
   await expect(page).toHaveURL(/\/login$/)
 }
 
-// V2 hardening: адміністратор керує циклами, але коди видає лише data_officer.
+// Рішення власника: адміністратор має права data_officer — бачить форму видачі кодів; тут коди видає відповідальний.
 test('адміністратор створює цикл, відповідальний видає код, респондент подає анонімну анкету', async ({ page, playwright }) => {
   await signIn(page, adminEmail, /\/admin/)
   await page.getByRole('button', { name: 'Цикли оцінювання' }).click()
@@ -38,8 +38,8 @@ test('адміністратор створює цикл, відповідаль
   await expect(page.getByText('Статус: Чернетка')).toBeVisible()
   await page.getByRole('button', { name: 'Активувати' }).click()
   await expect(page.getByText('Статус: Відкритий')).toBeVisible()
-  await expect(page.getByText('Коди видає Відповідальний за коди доступу (роль data_officer)')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Видати коди' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Видати коди' })).toBeVisible()
+  await expect(page.getByText('Кожна видача фіксується в журналі дій')).toBeVisible()
   await signOut(page)
 
   await signIn(page, officerEmail, /\/officer/)

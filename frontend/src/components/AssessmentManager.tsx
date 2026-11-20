@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { getManagedAssessments, type Assessment } from '../api/assessments'
 import { activateCycle, closeCycle, createCycle } from '../api/admin'
+import { AccessCodeIssuer, type IssuedCodes } from './AccessCodeIssuer'
 import { ALL_CATEGORIES, categoryLabels, type Category } from './categories'
 import { ParticipationPanel } from './Participation'
 import './AssessmentManager.css'
@@ -14,18 +15,11 @@ export function cycleStatusLabel(status: string) {
   return Object.hasOwn(cycleStatusLabels, status) ? cycleStatusLabels[status as Assessment['status']] : status
 }
 
-/** Пояснення для admin: після посилення безпеки коди доступу видає окрема роль. */
-export const CODES_BY_DATA_OFFICER_NOTE = 'Коди видає Відповідальний за коди доступу (роль data_officer). Адміністратор бачить результати, тому кодів не отримує — так жодна людина не може зіставити код із відповіддю.'
-
-export function CodesDelegatedNote() {
-  return (
-    <section className="cycle-manager__codes cycle-manager__codes--delegated" aria-labelledby="cycle-codes-title">
-      <h4 id="cycle-codes-title">Коди доступу</h4>
-      <p className="cycle-manager__privacy-note">{CODES_BY_DATA_OFFICER_NOTE}</p>
-      <p className="cycle-manager__privacy-note">Призначити роль можна в розділі «Користувачі й ролі».</p>
-    </section>
-  )
-}
+/**
+ * Пояснення для admin поруч із видачею кодів. Рішення власника: адміністратор має права відповідального за коди,
+ * тож може і видати коди, і бачити результати (ризик n−1 свідомо прийнято). Кожна видача — у журналі дій.
+ */
+export const ADMIN_CODES_NOTE = 'Ви бачите результати й можете видавати коди. Роздавайте коди так, щоб не знати, хто який отримав (наприклад, роздруківки в конвертах), і не видавайте коди окремим людям під час збору відповідей. Кожна видача фіксується в журналі дій з вашим ідентифікатором; групи, менші за поріг, у результатах приховано.'
 
 export default function AssessmentManager() {
   const [cycles, setCycles] = useState<Assessment[]>([])
@@ -39,6 +33,10 @@ export default function AssessmentManager() {
   const [categories, setCategories] = useState<Category[]>([...ALL_CATEGORIES])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [issued, setIssued] = useState<IssuedCodes | null>(null)
+  const [issuedCount, setIssuedCount] = useState(0)
+  // Участь перезавантажується після дій із циклами і після кожної видачі кодів.
+  const participationKey = useMemo(() => ({ cycles, issuedCount }), [cycles, issuedCount])
   const selected = cycles.find(c => c.id === id)
   const endDateTooEarly = Boolean(startDate && endDate && endDate < startDate)
 
@@ -134,10 +132,11 @@ export default function AssessmentManager() {
         <section className="v2-card cycle-manager__overview" aria-labelledby="cycle-overview-title">
           <h3 id="cycle-overview-title">Огляд циклу</h3>
           <label className="cycle-manager__field">Цикл
-            <select value={id ?? ''} onChange={e => { const next = cycles.find(c => c.id === Number(e.target.value)); setId(next?.id ?? null) }}>
+            <select value={id ?? ''} disabled={issued !== null} onChange={e => { const next = cycles.find(c => c.id === Number(e.target.value)); setId(next?.id ?? null) }}>
               {cycles.map(c => <option key={c.id} value={c.id}>{c.name} · {cycleStatusLabel(c.status)}</option>)}
             </select>
           </label>
+          {issued !== null && <p className="cycle-manager__privacy-note">Інший цикл можна обрати після того, як ви збережете й сховаєте видані коди.</p>}
 
           {selected ? (
             <>
@@ -166,12 +165,19 @@ export default function AssessmentManager() {
                   </div>
                 </dl>
                 {selected.status === 'draft' && <button className="v2-button" disabled={busy} type="button" onClick={() => void run(() => activateCycle(selected.id))}>Активувати</button>}
-                {selected.status === 'open' && <button className="v2-button" disabled={busy} type="button" onClick={() => void run(() => closeCycle(selected.id))}>Закрити цикл</button>}
+                {selected.status === 'open' && <button className="v2-button" disabled={busy || issued !== null} type="button" onClick={() => void run(() => closeCycle(selected.id))}>Закрити цикл</button>}
               </div>
 
-              <ParticipationPanel cycle={selected} refreshKey={cycles} />
+              <ParticipationPanel cycle={selected} refreshKey={participationKey} />
 
-              {selected.status === 'open' && <CodesDelegatedNote />}
+              {selected.status === 'open' && (
+                <>
+                  <AccessCodeIssuer key={selected.id} cycle={selected} issued={issued}
+                    onIssued={codes => { setIssued(codes); setIssuedCount(value => value + 1) }}
+                    onDismiss={() => setIssued(null)} />
+                  <p className="cycle-manager__privacy-note">{ADMIN_CODES_NOTE}</p>
+                </>
+              )}
             </>
           ) : <p className="cycle-manager__empty">Оберіть цикл зі списку, щоб переглянути його параметри.</p>}
         </section>

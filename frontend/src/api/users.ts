@@ -1,8 +1,8 @@
 import { ApiError, readErrorBody, request, statusMessage } from './client'
-import { isUserRole, type UserRole } from './auth'
+import type { UserRole } from './auth'
 
 /**
- * Керування користувачами й ролями (лише admin; docs/V2_HARDENING_CONTRACT.md, розділ 3 «auth»).
+ * Користувачі, історія ролей і завершення сесій (лише admin; docs/V2_HARDENING_CONTRACT.md, розділ 3 «auth»).
  * Перелік містить лише замаскований email; повний email повертає тільки пошук за точною адресою.
  */
 export interface AdminUser {
@@ -32,13 +32,16 @@ export interface RoleChange {
   changed_at: string
 }
 
-export const SELF_ROLE_CHANGE_MESSAGE = 'Не можна змінити власну роль.'
-export const ROLE_CONFLICT_MESSAGE = 'Роль уже змінена іншим адміністратором, оновіть список.'
 export const USER_NOT_FOUND_MESSAGE = 'Користувача не знайдено. Оновіть список.'
-/** 403 `admin_role_server_only`: роль admin у вебі не призначає й не знімає ніхто — лише власник сервера командою. */
-export const ADMIN_ROLE_SERVER_ONLY_MESSAGE = 'Роль адміністратора призначає й знімає лише власник сервера.'
-/** Ролі, які адміністратор може призначити у вебі (без «Адміністратор»). */
-export const WEB_ASSIGNABLE_ROLES: readonly UserRole[] = ['user', 'data_officer']
+/**
+ * Ролі у вебі не змінюються: admin і data_officer призначає й знімає лише власник сервера серверною командою
+ * (python -m app.v2_role_cli; ops/Set-V2UserRole.ps1), а POST /v2/admin/users/{id}/role відповідає 403
+ * `admin_role_server_only` / `data_officer_role_server_only`. Тому frontend цей маршрут не викликає.
+ */
+export const ROLE_SERVER_ONLY_HINT = 'Роль призначає власник сервера'
+export const ROLES_SERVER_ONLY_NOTE = 'Ролі адміністратора й відповідального за коди призначає лише власник сервера.'
+/** 403 `admin_role_server_only` на revoke-sessions: сесії іншого адміністратора у вебі не завершуються. */
+export const ADMIN_SESSIONS_SERVER_ONLY_MESSAGE = 'Сесії іншого адміністратора завершує лише власник сервера.'
 /** `actor_user_id` серверної команди (python -m app.v2_role_cli) в історії змін ролей. */
 export const SERVER_ACTOR_ID = 0
 
@@ -56,25 +59,14 @@ function errorCodes(body: { detail?: unknown; code?: unknown }): string[] {
   return values.filter((value): value is string => typeof value === 'string')
 }
 
-/** 403 `self_change`: backend може передати код у `detail` (рядок або об’єкт) чи в полі `code`. */
-export function isSelfChangeError(body: { detail?: unknown; code?: unknown }): boolean {
-  return errorCodes(body).some(value => /self_change/.test(value))
-}
-
-/** 403 `admin_role_server_only` — у тих самих місцях, що й `self_change`. */
+/** 403 `admin_role_server_only`: backend може передати код у `detail` (рядок або об’єкт) чи в полі `code`. */
 export function isAdminRoleServerOnlyError(body: { detail?: unknown; code?: unknown }): boolean {
   return errorCodes(body).some(value => /admin_role_server_only/.test(value))
 }
 
-/** Роль admin (призначення чи зняття) вебом не змінюється: такий запит навіть не надсилається. */
-export function touchesAdminRole(expectedRole: string, newRole: string): boolean {
-  return expectedRole === 'admin' || newRole === 'admin'
-}
-
 async function fail(response: Response, messages: Partial<Record<number, string>>): Promise<never> {
   const body = await readErrorBody(response)
-  if (response.status === 403 && isSelfChangeError(body)) throw new ApiError(403, SELF_ROLE_CHANGE_MESSAGE)
-  if (response.status === 403 && isAdminRoleServerOnlyError(body)) throw new ApiError(403, ADMIN_ROLE_SERVER_ONLY_MESSAGE)
+  if (response.status === 403 && isAdminRoleServerOnlyError(body)) throw new ApiError(403, ADMIN_SESSIONS_SERVER_ONLY_MESSAGE)
   throw new ApiError(response.status, statusMessage(response.status, messages))
 }
 
@@ -133,30 +125,9 @@ export async function findUserByEmail(email: string, signal?: AbortSignal): Prom
 }
 
 /**
- * POST /v2/admin/users/{id}/role — зміна ролі з перевіркою конкурентних змін (`expected_role`).
- * Backend в одній транзакції змінює роль і завершує всі сесії цього користувача.
- * Лише «Користувач» ↔ «Відповідальний за коди доступу»: роль admin призначає й знімає власник сервера
- * (403 `admin_role_server_only`), тож такий запит не надсилається.
+ * POST /v2/admin/users/{id}/revoke-sessions → кількість завершених сесій. Для user і data_officer — дозволено;
+ * для іншого admin — 403 `admin_role_server_only`.
  */
-export async function changeUserRole(userId: number, expectedRole: string, newRole: UserRole): Promise<unknown> {
-  if (!isUserRole(newRole)) throw new ApiError(422, 'Невідома роль.')
-  if (touchesAdminRole(expectedRole, newRole)) throw new ApiError(403, ADMIN_ROLE_SERVER_ONLY_MESSAGE)
-  const response = await request(`/v2/admin/users/${userId}/role`, {
-    method: 'POST',
-    body: JSON.stringify({ expected_role: expectedRole, new_role: newRole }),
-  })
-  if (!response.ok) {
-    return fail(response, {
-      403: 'Недостатньо прав для зміни ролей.',
-      404: USER_NOT_FOUND_MESSAGE,
-      409: ROLE_CONFLICT_MESSAGE,
-      422: 'Сервер відхилив запит на зміну ролі. Оновіть список і повторіть спробу.',
-    })
-  }
-  return response.json().catch(() => null)
-}
-
-/** POST /v2/admin/users/{id}/revoke-sessions → кількість завершених сесій. Для іншого admin — 403 `admin_role_server_only`. */
 export async function revokeUserSessions(userId: number): Promise<number> {
   const response = await request(`/v2/admin/users/${userId}/revoke-sessions`, { method: 'POST' })
   if (!response.ok) return fail(response, { 403: 'Недостатньо прав для завершення сесій.', 404: USER_NOT_FOUND_MESSAGE })

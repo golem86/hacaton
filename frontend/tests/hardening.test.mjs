@@ -123,7 +123,7 @@ test('413 says «Запит завеликий» and 422 never echoes validation
   await withFetch(async () => new Response('too large', { status: 413 }), async () => {
     await assert.rejects(auth.loginUser({ email: 'a@example.test', password: 'x'.repeat(12) }), error => error.status === 413 && /^Запит завеликий/.test(error.message))
     await assert.rejects(admin.createCycle({ name: 'x' }), error => error.status === 413 && /^Запит завеликий/.test(error.message))
-    await assert.rejects(users.changeUserRole(5, 'user', 'data_officer'), error => error.status === 413 && /^Запит завеликий/.test(error.message))
+    await assert.rejects(users.findUserByEmail('a@example.test'), error => error.status === 413 && /^Запит завеликий/.test(error.message))
   })
   await withFetch(async () => reply({ detail: [{ loc: ['body', 'name'], msg: 'bad', type: 'x' }] }, 422), async () => {
     await assert.rejects(admin.createCycle({ name: 'secret-input' }), error => error.status === 422 && !/secret-input|loc|msg/.test(error.message))
@@ -168,82 +168,68 @@ const listed = [
   { id: 3, name: 'Користувач', role: 'user', email_masked: 'u***@example.test', created_at: '2026-11-03T08:00:00Z' },
 ]
 
-test('users API: list, exact email search, role change with expected_role, revoke sessions, history', async () => {
+test('users API: list, exact email search, revoke sessions, history — and no role-change request', async () => {
   client.setCsrfToken('session-csrf')
   const { calls, handler } = recorder((url, options) => {
     if (url === '/v2/admin/users') return reply(listed)
     if (url === '/v2/admin/users/lookup') return JSON.parse(options.body).email.startsWith('missing') ? reply({ detail: 'Not found' }, 404) : reply({ id: 3, name: 'Користувач', email: 'user+qa@example.test', role: 'user', created_at: '2026-11-03T08:00:00Z' })
-    if (url.endsWith('/role')) return reply({ id: 3, role: 'data_officer' })
     if (url.endsWith('/revoke-sessions')) return reply({ revoked: 2 })
-    if (url === '/v2/admin/role-changes') return reply([{ id: 9, actor_user_id: 1, target_user_id: 3, old_role: 'user', new_role: 'data_officer', changed_at: '2026-11-20T10:00:00Z' }])
+    if (url === '/v2/admin/role-changes') return reply([{ id: 9, actor_user_id: 0, target_user_id: 3, old_role: 'user', new_role: 'data_officer', changed_at: '2026-11-20T10:00:00Z' }])
     return reply({}, 500)
   })
   await withFetch(handler, async () => {
     assert.equal((await users.listUsers()).length, 3)
     assert.equal((await users.findUserByEmail(' user+qa@example.test ')).email, 'user+qa@example.test')
     assert.equal(await users.findUserByEmail('missing@example.test'), null)
-    await users.changeUserRole(3, 'user', 'data_officer')
-    assert.equal(await users.revokeUserSessions(3), 2)
+    assert.equal(await users.revokeUserSessions(2), 2)
     assert.equal((await users.getRoleChanges())[0].new_role, 'data_officer')
   })
   assert.deepEqual(calls.map(call => [call.method, call.url]), [
     ['GET', '/v2/admin/users'],
     ['POST', '/v2/admin/users/lookup'],
     ['POST', '/v2/admin/users/lookup'],
-    ['POST', '/v2/admin/users/3/role'],
-    ['POST', '/v2/admin/users/3/revoke-sessions'],
+    ['POST', '/v2/admin/users/2/revoke-sessions'],
     ['GET', '/v2/admin/role-changes'],
   ])
   // Email іде лише в JSON-тілі lookup (обрізаний), ніколи в URL.
   assert.deepEqual(calls[1].body, { email: 'user+qa@example.test' })
   assert.deepEqual(calls[2].body, { email: 'missing@example.test' })
   assert.ok(calls.every(call => !/email|%40|@/.test(call.url)), 'no email in any URL')
-  assert.deepEqual(calls[3].body, { expected_role: 'user', new_role: 'data_officer' })
+  assert.ok(calls.every(call => !call.url.endsWith('/role')), 'ролі у вебі не змінюються')
   assert.ok(calls.every(call => call.credentials === 'include'))
   assert.ok(calls.filter(call => call.method === 'POST').every(call => call.csrf === 'session-csrf'))
   assert.ok(calls.filter(call => call.method === 'GET').every(call => call.csrf === null))
 })
 
-test('role change errors: 403 self_change, other 403, 409 conflict, 404 missing', async () => {
+test('revoke-sessions errors: other 403 and 404 missing', async () => {
   client.setCsrfToken('session-csrf')
   const cases = [
-    [reply({ detail: 'self_change' }, 403), 403, /^Не можна змінити власну роль/],
-    [reply({ detail: { code: 'self_change', message: 'x' } }, 403), 403, /^Не можна змінити власну роль/],
-    [reply({ code: 'self_change' }, 403), 403, /^Не можна змінити власну роль/],
-    [reply({ detail: 'Недостатньо прав' }, 403), 403, /Недостатньо прав для зміни ролей/],
-    [reply({ detail: 'expected_role mismatch' }, 409), 409, /^Роль уже змінена іншим адміністратором, оновіть список/],
+    [reply({ detail: 'Недостатньо прав' }, 403), 403, /Недостатньо прав для завершення сесій/],
     [reply({ detail: 'Not found' }, 404), 404, /^Користувача не знайдено/],
   ]
   for (const [response, status, message] of cases) {
     await withFetch(async () => response.clone(), async () => {
-      await assert.rejects(users.changeUserRole(1, 'user', 'data_officer'), error => error.status === status && message.test(error.message))
+      await assert.rejects(users.revokeUserSessions(1), error => error.status === status && message.test(error.message))
     })
   }
-  await assert.rejects(users.changeUserRole(1, 'admin', 'root'), error => error.status === 422)
 })
 
-test('users table: masked email only, own row cannot change its role, others get role select and actions', () => {
+test('users table: masked email only, read-only roles, own row has no actions, others can end sessions', () => {
   const markup = html(createElement(usersPanel.UsersTable, {
-    rows: listed.map(usersPanel.fromListed), currentUserId: 1, drafts: {}, busy: false, caption: 'Облікові записи',
-    onDraft: () => {}, onRequest: () => {},
+    rows: listed.map(usersPanel.fromListed), currentUserId: 1, busy: false, caption: 'Облікові записи', onRevoke: () => {},
   }))
   assert.match(markup, /a\*\*\*@example\.test/)
   assert.doesNotMatch(markup, /user\+qa@example\.test/)
   assert.match(markup, /Це ви/)
-  assert.match(markup, /Не можна змінити власну роль/)
-  assert.equal(markup.match(/>Змінити роль</g)?.length, 2, 'two other accounts')
-  assert.equal(markup.match(/>Завершити сесії</g)?.length, 2)
-  for (const label of ['Користувач', 'Відповідальний за коди доступу']) assert.ok(markup.includes(`>${label}</option>`), label)
-  assert.ok(!markup.includes('>Адміністратор</option>'), 'роль admin у вебі не призначається')
+  assert.doesNotMatch(markup, /Змінити роль|<select|<option/)
+  assert.equal(markup.match(/>Завершити сесії</g)?.length, 2, 'оператор кодів і користувач')
+  assert.equal(markup.match(/>Роль призначає власник сервера</g)?.length, 3)
 })
 
-test('confirmation explains the effect before a role change or a session revoke', () => {
+test('confirmation explains the effect before a session revoke', () => {
   const user = usersPanel.fromListed(listed[2])
-  const role = html(createElement(usersPanel.ConfirmAction, { action: { kind: 'role', user, newRole: 'data_officer' }, busy: false, onConfirm: () => {}, onCancel: () => {} }))
-  assert.match(role, /role="alertdialog"/)
-  assert.match(role, /з «Користувач» на «Відповідальний за коди доступу»/)
-  assert.match(role, /Усі сесії цього користувача буде завершено/)
-  const revoke = html(createElement(usersPanel.ConfirmAction, { action: { kind: 'revoke', user }, busy: false, onConfirm: () => {}, onCancel: () => {} }))
+  const revoke = html(createElement(usersPanel.ConfirmRevoke, { user, busy: false, onConfirm: () => {}, onCancel: () => {} }))
+  assert.match(revoke, /role="alertdialog"/)
   assert.match(revoke, /Завершити всі сесії користувача «Користувач»/)
   assert.equal(usersPanel.sessionsLabel(1), '1 сесію')
   assert.equal(usersPanel.sessionsLabel(3), '3 сесії')
@@ -266,7 +252,7 @@ test('role change history names known accounts and keeps unknown ids', () => {
 
 // ---------------------------------------------------------------------------- коди доступу (data_officer) і admin
 
-test('token issuance sends count, category and expiry; 403 explains that only data_officer issues codes', async () => {
+test('token issuance sends count, category and expiry; 403 names the roles that issue codes', async () => {
   client.setCsrfToken('officer-csrf')
   const { calls, handler } = recorder(() => reply({ tokens: ['a'.repeat(32)] }, 201))
   await withFetch(handler, async () => {
@@ -275,17 +261,18 @@ test('token issuance sends count, category and expiry; 403 explains that only da
   assert.equal(calls[0].url, '/api/assessments/4/tokens?count=25&category=staff&expires_days=30')
   assert.equal(calls[0].csrf, 'officer-csrf')
   await withFetch(async () => reply({ detail: 'Недостатньо прав для цієї дії' }, 403), async () => {
-    await assert.rejects(admin.issueAccessTokens(4, 1, 'staff'), error => error.status === 403 && /data_officer/.test(error.message))
+    await assert.rejects(admin.issueAccessTokens(4, 1, 'staff'), error => error.status === 403 && /адміністратор і відповідальний за коди/.test(error.message))
   })
 })
 
-test('admin cycle manager no longer issues codes and explains who does', async () => {
+test('admin cycle manager issues codes with the same component as the data_officer cabinet', async () => {
   const source = await readFile(new URL('../src/components/AssessmentManager.tsx', import.meta.url), 'utf8')
-  assert.ok(!source.includes('issueAccessTokens'), 'admin UI has no token issuance call')
-  const markup = html(createElement(manager.default))
-  assert.doesNotMatch(markup, />Видати коди</)
-  const note = html(createElement(manager.CodesDelegatedNote))
-  assert.match(note, /Коди видає Відповідальний за коди доступу \(роль data_officer\)/)
+  const officerSource = await readFile(new URL('../src/v2/DataOfficerPanel.tsx', import.meta.url), 'utf8')
+  for (const text of [source, officerSource]) assert.match(text, /import \{ AccessCodeIssuer, type IssuedCodes \} from/)
+  assert.match(source, /selected\.status === 'open' && \(\s*<>\s*<AccessCodeIssuer key=\{selected\.id\} cycle=\{selected\} issued=\{issued\}/)
+  assert.ok(!source.includes('CodesDelegatedNote') && !source.includes('Коди видає Відповідальний'), 'стару нотатку прибрано')
+  assert.match(manager.ADMIN_CODES_NOTE, /журналі дій з вашим ідентифікатором/)
+  assert.match(manager.ADMIN_CODES_NOTE, /не видавайте коди окремим людям/)
 })
 
 const openCycle = { id: 7, name: 'Весна 2027', start_date: '2027-03-01', status: 'open', min_group_size: 5, categories: ['cadets', 'staff'] }

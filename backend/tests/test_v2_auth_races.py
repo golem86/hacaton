@@ -17,11 +17,11 @@ import pytest
 
 from app import v2_auth
 from app.routes import v2_auth as auth_routes
-from app.v2_auth import (SessionRevoked, auth_db_path, change_user_role, complete_two_factor, consume_rate_limit,
-                         create_session, delete_session, find_user_id, issue_challenge, reset_password_with_code,
-                         rotate_session_after_2fa, user_for_session, verify_challenge)
+from app.v2_auth import (SessionRevoked, auth_db_path, complete_two_factor, consume_rate_limit, create_session,
+                         delete_session, find_user_id, issue_challenge, reset_password_with_code,
+                         rotate_session_after_2fa, server_change_role, user_for_session, verify_challenge)
 
-from v2_helpers import latest_code, login, make_user, start_login
+from v2_helpers import latest_code, make_user, start_login
 
 
 def parallel(count: int, target) -> list:
@@ -191,15 +191,12 @@ def _verify(client, pending_csrf, code):
 
 
 def test_role_change_before_verify_commit_blocks_new_session(monkeypatch):
-    admin_email = make_user("admin")
-    admin, _ = login(admin_email)
-    actor_id = find_user_id(admin_email)
+    # Ролі admin і data_officer змінює лише власник сервера: та сама транзакція через server_change_role.
     email = make_user()
     target_id = find_user_id(email)
     client, pending_csrf = start_login(email)
     code = latest_code(email)
-    _interleave(monkeypatch, lambda: change_user_role(actor_id, admin.cookies.get("v2_session"), target_id,
-                                                      "user", "data_officer"))
+    _interleave(monkeypatch, lambda: server_change_role(email, "data_officer"))
     response = _verify(client, pending_csrf, code)
     assert response.status_code == 401
     assert sessions(target_id) == 0
@@ -207,14 +204,10 @@ def test_role_change_before_verify_commit_blocks_new_session(monkeypatch):
 
 
 def test_verify_committed_before_role_change_session_is_still_revoked():
-    admin_email = make_user("admin")
-    admin, _ = login(admin_email)
-    actor_id = find_user_id(admin_email)
     email = make_user()
-    target_id = find_user_id(email)
     client, pending_csrf = start_login(email)
     assert _verify(client, pending_csrf, latest_code(email)).status_code == 200
-    change_user_role(actor_id, admin.cookies.get("v2_session"), target_id, "user", "data_officer")
+    server_change_role(email, "data_officer")
     assert user_for_session(client.cookies.get("v2_session")) is None
     assert client.get("/v2/auth/me").status_code == 401
 
@@ -245,14 +238,10 @@ def test_password_reset_before_verify_commit_blocks_new_session(monkeypatch):
 
 @pytest.mark.parametrize("rounds", [5])
 def test_concurrent_verify_and_role_change_never_leave_a_session(rounds):
-    admin_email = make_user("admin")
-    admin, _ = login(admin_email)
-    actor_id = find_user_id(admin_email)
-    admin_session = admin.cookies.get("v2_session")
     for _ in range(rounds):
-        _, target_id, _, pending, code = pending_user()
+        email, target_id, _, pending, code = pending_user()
         actions = [lambda: complete_two_factor(pending, code),
-                   lambda: change_user_role(actor_id, admin_session, target_id, "user", "data_officer")]
+                   lambda: server_change_role(email, "data_officer")]
         results = parallel(2, lambda i: actions[i]())
         assert not any(isinstance(r, Exception) for r in results), results
         assert results[0].status in {"ok", "no_pending"}

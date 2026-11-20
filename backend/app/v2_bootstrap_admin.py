@@ -8,7 +8,8 @@
     Додатковий адміністратор створюється лише явним рішенням: --allow-additional-admin.
     Роль admin наявному користувачу призначає (і знімає) лише власник сервера:
     python -m app.v2_role_cli set-role --email … --role admin --confirm (журнал v2_role_changes).
-    Через веб (POST /v2/admin/users/{id}/role) змінюються лише ролі user ↔ data_officer.
+    Так само лише сервером призначається data_officer; через веб (POST /v2/admin/users/{id}/role) ролі
+    admin і data_officer не змінюються (403 admin_role_server_only / data_officer_role_server_only).
   - У release існуюча V2_AUTH_DB не мігрує: лише перевірка схеми (міграція — явною командою
     python -m app.migrations --apply --confirm-verified-backup).
   - Факт створення пишеться в журнал (user.create_admin) лише з роллю та id, без email (S12).

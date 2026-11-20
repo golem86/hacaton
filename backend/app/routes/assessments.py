@@ -27,9 +27,11 @@ router = APIRouter(prefix="/api", tags=["Оцінювання"])
 
 RespondentCategory = Literal["mgmt", "npp", "cadets", "staff"]
 DEMO_VERSION = "demo-v1"
-# Ролі (docs/V2_HARDENING_CONTRACT.md, розділ 1): коди видає лише data_officer, який не бачить
-# результатів; admin бачить результати, але не отримує кодів — так закрито атаку n−1 (D1).
-TOKEN_ISSUER_ROLES = ("data_officer",)
+# Ролі (docs/V2_HARDENING_CONTRACT.md, розділ 1): коди видають admin і data_officer. Рішення власника:
+# admin має всі права data_officer, тож атака n−1 (видати коди й бачити результати) доступна будь-якому
+# адміністратору — ризик свідомо прийнято. Запобіжники: адмінів призначає лише власник сервера, подія
+# журналу tokens.issue з роллю й actor_user_id, журнал v2_role_changes, поріг k (min_group_size).
+TOKEN_ISSUER_ROLES = ("admin", "data_officer")
 PARTICIPATION_ROLES = ("admin", "data_officer")
 OPEN_COUNT_STEP = 5           # у незакритому циклі кількості округлюються вниз до кратного 5 (D7)
 
@@ -270,7 +272,8 @@ def issue_tokens(assessment_id: BoundedId, request: Request, count: int = Query(
                  role: str = Depends(require_role(*TOKEN_ISSUER_ROLES)), db: Session = Depends(get_db)):
     """
     Видає одноразові коди доступу для учасників. Коди роздаються анонімно (напр. роздруківками).
-    Лише data_officer (admin → 403): хто роздає коди, не бачить результатів (D1, атака n−1).
+    admin і data_officer (інші → 403). Ризик n−1 для admin свідомо прийнято власником; кожна видача —
+    подія журналу tokens.issue з роллю, actor_user_id і кількістю (без кодів).
     Відкриті коди повертаються ОДИН раз; у БД зберігається лише SHA-256 кожного коду.
     """
     cycle = get_assessment(assessment_id, db)
