@@ -316,6 +316,28 @@ test('comparison panel shows per-component period changes and keeps comparabilit
   assert.match(markup, /Custom warning/)
 })
 
+test('category gaps list visible pairs in a table and only count the hidden ones', () => {
+  const markup = html(createElement(ComparisonsContent, {
+    data: {
+      assessment: assessment(1), methodology_version: api.DEMO_METHODOLOGY, period_comparison: null,
+      category_comparisons: [
+        { ...gapBasis('C1', 'cadets', 'mgmt', null), status: 'unavailable', flag: null },
+        { ...gapBasis('C1', 'cadets', 'npp', -27.5) },
+        { ...gapBasis('C2', 'cadets', 'npp', 4), flag: false },
+        { ...gapBasis('C2', 'cadets', 'staff', 88.8), status: 'unavailable' },
+      ],
+    },
+  }))
+  assert.match(markup, /25 п\.п\. або більше/)
+  assert.match(markup, /Курсанти \/ Науково-педагогічні працівники/)
+  assert.match(markup, /27[,.]5 п\.п\.<small class="ax-muted">вищий бал: Науково-педагогічні працівники<\/small>/)
+  assert.match(markup, /4 п\.п\.<small class="ax-muted">вищий бал: Курсанти<\/small>/)
+  assert.equal(count(markup, /class="ax-flag">Сигнал для перегляду</g), 1)
+  assert.match(markup, /Нижче порогу/)
+  assert.match(markup, /недоступно через приховування або брак даних \(малі групи не розкриваються\): 2 з 4\./)
+  assert.doesNotMatch(markup, /88[,.]8|Керівництво|Персонал/, 'hidden pairs are counted, not listed')
+})
+
 test('index panel shows weights, contributions, formula and visible limitations', () => {
   const markup = html(createElement(IndexContent, {
     index: {

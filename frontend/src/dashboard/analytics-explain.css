@@ -29,6 +29,7 @@
 .ax-num { font-variant-numeric: tabular-nums; }
 .ax-list { margin: .5rem 0; padding-left: 1.3rem; line-height: 1.6; }
 .ax-period { margin-top: 1rem; }
+.ax-period > strong { display: block; margin-top: 1rem; }
 
 /* Recommendations grouped by component */
 .ax-group { margin-top: 1.1rem; }
@@ -63,6 +64,7 @@
 .ax-table tfoot th, .ax-table tfoot td { border-top: 2px solid #a8beb6; border-bottom: 0; font-weight: 700; }
 .ax-table td small { display: block; font-size: .78rem; }
 .ax-change-table { max-width: 26rem; }
+.ax-table .dashboard-badge { white-space: nowrap; }
 .ax-row-flagged { background: #fffaf0; }
 .ax-flag { display: inline-block; padding: .15rem .45rem; border-radius: 4px; background: #fbe6c8; color: #6b3d0b; font-size: .76rem; font-weight: 750; }
 .ax-reasons { display: block; margin-top: .25rem; color: var(--muted); font-size: .8rem; line-height: 1.4; }
@@ -77,6 +79,13 @@
   .ax-table-stack tr > :last-child { border-bottom: 0; }
   .ax-table-stack tfoot th, .ax-table-stack tfoot td { border-top: 0; }
   .ax-table-stack td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: .74rem; font-weight: 700; }
+  /* Denser cards: short values side by side, the row header and long cells across the full width. */
+  .ax-index-table tr, .ax-objective-table tr, .ax-gap-table tr { display: grid; column-gap: .75rem; }
+  .ax-index-table tr { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ax-objective-table tr, .ax-gap-table tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ax-index-table tr > th, .ax-objective-table tr > th, .ax-gap-table tr > th,
+  .ax-table-stack td.ax-wide { grid-column: 1 / -1; }
+  .ax-index-table td, .ax-objective-table td, .ax-gap-table td { border-bottom: 0; }
   .ax-card { padding: .75rem .8rem; }
   .ax-rules, .ax-formula { padding: .7rem .8rem; }
 }

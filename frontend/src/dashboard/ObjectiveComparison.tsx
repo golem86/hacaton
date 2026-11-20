@@ -32,7 +32,7 @@ export function ObjectiveComparison({ items }: { items: ObjectiveContextItem[] |
         <>
           <p className="ax-summary">Позначено «Потребує перевірки»: {flagged} з {items.length}.</p>
           <div className="ax-table-wrap">
-            <table className="ax-table ax-table-stack">
+            <table className="ax-table ax-table-stack ax-objective-table">
               <caption>Самооцінка компонента поруч з об’єктивним показником того самого циклу</caption>
               <thead>
                 <tr>
@@ -60,7 +60,7 @@ export function ObjectiveComparison({ items }: { items: ObjectiveContextItem[] |
                         {item.status === 'ok' ? 'Підтверджено' : 'Не підтверджено'}
                       </span>
                     </td>
-                    <td data-label="Перевірка">
+                    <td data-label="Перевірка" className="ax-wide">
                       {review.needsReview ? (
                         <>
                           <span className="ax-flag">Потребує перевірки</span>

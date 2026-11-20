@@ -158,7 +158,7 @@ export function IndexContent({ index, methodology }: { index: IntegrityIndex; me
         ? <p>Складових поки немає.</p>
         : (
           <div className="ax-table-wrap">
-            <table className="ax-table ax-table-stack">
+            <table className="ax-table ax-table-stack ax-index-table">
               <caption>Бал, вага і внесок кожного компонента в індекс</caption>
               <thead>
                 <tr>
@@ -339,25 +339,69 @@ function ComparisonsPanel({ id, assessments }: { id: number; assessments: Assess
   )
 }
 
+function CategoryGaps({ items }: { items: Comparisons['category_comparisons'] }) {
+  const visible = items.flatMap(item => item.status === 'ok' && item.gap_points !== null
+    ? [{ ...item, gap: item.gap_points }] : [])
+  const unavailable = items.length - visible.length
+  return (
+    <>
+      <p className="ax-meta">
+        Сигнал для перегляду ставиться, якщо розрив між двома видимими категоріями — {CATEGORY_GAP_THRESHOLD} п.п. або більше.
+      </p>
+      {visible.length > 0 && (
+        <div className="ax-table-wrap">
+          <table className="ax-table ax-table-stack ax-gap-table">
+            <caption>Розриви між видимими категоріями респондентів</caption>
+            <thead>
+              <tr>
+                <th scope="col">Компонент</th>
+                <th scope="col">Категорії</th>
+                <th scope="col">Розрив</th>
+                <th scope="col">Сигнал</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((item, position) => {
+                // gap_points = left score − right score.
+                const higher = item.gap === 0 ? null : item.gap > 0 ? item.left_category : item.right_category
+                return (
+                  <tr key={`${item.component_code}-${item.left_category}-${item.right_category}-${position}`}
+                    className={item.flag ? 'ax-row-flagged' : undefined}>
+                    <th scope="row"><span className="dashboard-code">{item.component_code}</span></th>
+                    <td data-label="Категорії" className="ax-wide">
+                      {categoryName(item.left_category)} / {categoryName(item.right_category)}
+                    </td>
+                    <td data-label="Розрив" className="ax-num">
+                      {formatNumber(Math.abs(item.gap))} п.п.
+                      {higher && <small className="ax-muted">вищий бал: {categoryName(higher)}</small>}
+                    </td>
+                    <td data-label="Сигнал">
+                      {item.flag ? <span className="ax-flag">Сигнал для перегляду</span> : <span className="ax-muted">Нижче порогу</span>}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {unavailable > 0 && (
+        <p className="ax-meta">
+          Для частини пар категорій порівняння недоступно через приховування або брак даних (малі групи
+          не розкриваються): {unavailable} з {items.length}.
+        </p>
+      )}
+    </>
+  )
+}
+
 export function ComparisonsContent({ data }: { data: Comparisons }) {
   const period = data.period_comparison
   return (
     <>
       {data.category_comparisons.length === 0
         ? <p>Порівнянь категорій поки немає.</p>
-        : (
-          <>
-            <p className="ax-meta">Сигнал для перегляду ставиться, якщо розрив між двома видимими категоріями — {CATEGORY_GAP_THRESHOLD} п.п. або більше.</p>
-            <ul className="ax-list">{data.category_comparisons.map((item, position) => (
-              <li key={`${item.component_code}-${item.left_category}-${item.right_category}-${position}`}>
-                {item.component_code}: {categoryName(item.left_category)} / {categoryName(item.right_category)} —{' '}
-                {item.status === 'ok' && item.gap_points !== null
-                  ? `${item.gap_points.toLocaleString('uk-UA')} п.п.${item.flag ? ' · сигнал для перегляду' : ''}`
-                  : 'недоступно через приховування або брак даних'}
-              </li>
-            ))}</ul>
-          </>
-        )}
+        : <CategoryGaps items={data.category_comparisons} />}
       {period && (
         <div className="ax-period">
           <h3>Зіставлення циклів</h3>
