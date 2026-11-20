@@ -225,7 +225,7 @@ export function ExecutiveOverviewView({
         </p>
       )}
 
-      {selected && <ComponentDetail id={DETAIL_ID} component={selected} categories={results.categories}
+      {selected && <ComponentDetail id={DETAIL_ID} component={selected} categories={results.categories} minGroupSize={results.min_group_size}
         indexComponent={index?.components.find(row => row.code === selected.code)}
         recommendations={proposals ?? null}
         analyticsNote={analyticsNote}

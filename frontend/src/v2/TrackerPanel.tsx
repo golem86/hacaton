@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { getRecommendations, type Recommendation, type Recommendations } from '../api/analytics'
-import { getAssessments, type Assessment } from '../api/assessments'
+import { getManagedAssessments, type Assessment } from '../api/assessments'
 import { ApiError } from '../api/client'
 import {
   EVIDENCE_MAX, EVIDENCE_MAX_ITEMS, OVERDUE_RULE, OWNER_MAX, OWNER_MIN, REASON_MAX, RULE_LABELS, STATUS_LABELS,
@@ -51,7 +51,7 @@ export default function TrackerPanel() {
 
   useEffect(() => {
     const controller = new AbortController()
-    getAssessments(controller.signal).then(list => {
+    getManagedAssessments(controller.signal).then(list => {
       if (controller.signal.aborted) return
       const closed = list.filter(cycle => cycle.status === 'closed')
         .sort((left, right) => right.start_date.localeCompare(left.start_date))

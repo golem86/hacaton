@@ -1,0 +1,163 @@
+.users-panel {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.users-panel h3 { margin: 0 0 .75rem; }
+
+.users-panel__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .75rem;
+}
+
+.users-panel__card-head h3 { margin: 0; }
+
+.users-panel__notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  margin: .8rem 0 0;
+  padding: .7rem .85rem;
+  border: 1px solid #c3dcd0;
+  border-radius: .6rem;
+  background: #e8f4ed;
+  color: #1f5844;
+  font-size: .86rem;
+}
+
+.users-panel__notice--error {
+  border-color: #e0b4a6;
+  background: #fdf1ed;
+  color: #6b2f1d;
+}
+
+.users-panel__confirm {
+  display: grid;
+  gap: .55rem;
+  margin-top: .9rem;
+  padding: .9rem 1rem;
+  border: 1px solid #d9c38d;
+  border-radius: .7rem;
+  background: #fbf6e8;
+  color: #4d3c17;
+}
+
+.users-panel__confirm p { margin: 0; line-height: 1.5; }
+.users-panel__confirm:focus { outline: 3px solid rgba(40, 119, 122, .3); outline-offset: 2px; }
+
+.users-panel__confirm-actions,
+.users-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem;
+}
+
+.users-panel__search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: .6rem;
+}
+
+.users-panel__search-field {
+  display: grid;
+  flex: 1 1 18rem;
+  gap: .35rem;
+  color: var(--ink);
+  font-size: .84rem;
+  font-weight: 680;
+}
+
+.users-panel__search-field input,
+.users-panel__role-select select {
+  min-height: 2.5rem;
+  padding: .45rem .6rem;
+  border: 1px solid #9eb8ac;
+  border-radius: .5rem;
+  background: #fbfdfb;
+  color: var(--ink);
+  font: inherit;
+}
+
+.users-panel__hint {
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.users-panel__scroll {
+  container: users-table / inline-size;
+  overflow-x: auto;
+  margin-top: .6rem;
+}
+
+.users-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .86rem;
+}
+
+.users-panel__table th,
+.users-panel__table td {
+  padding: .6rem .55rem;
+  border-bottom: 1px solid #e3ece7;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.users-panel__table thead th {
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 750;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.users-panel__table tbody th { font-weight: 650; }
+.users-panel__self { margin-left: .45rem; }
+.users-panel__email { white-space: nowrap; }
+
+.users-panel__role {
+  display: inline-flex;
+  padding: .2rem .5rem;
+  border-radius: 999px;
+  background: #eef3f1;
+  color: #29634f;
+  font-size: .76rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.users-panel__role[data-role="admin"] { background: #dcebf3; color: #1f4f6b; }
+.users-panel__role[data-role="data_officer"] { background: #f4eee1; color: #785d2a; }
+
+.users-panel__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+/* Таблиця складається в картки за шириною власного блока (не вікна): у вузькій колонці кожен рядок — підписані поля. */
+@container users-table (max-width: 54rem) {
+  .users-panel__table,
+  .users-panel__table tbody { display: block; }
+  .users-panel__table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .users-panel__table tr { display: grid; gap: .3rem; padding: .7rem 0; border-bottom: 1px solid #e3ece7; }
+  .users-panel__table th,
+  .users-panel__table td { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); align-items: center; gap: .5rem; padding: .15rem 0; border: 0; }
+  .users-panel__table th::before,
+  .users-panel__table td::before { content: attr(data-label); color: var(--muted); font-size: .74rem; font-weight: 700; }
+  .users-panel__table th > *,
+  .users-panel__table td > * { justify-self: start; }
+  .users-panel__email { white-space: normal; overflow-wrap: anywhere; }
+}

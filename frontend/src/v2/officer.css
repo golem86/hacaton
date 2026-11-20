@@ -1,0 +1,52 @@
+.officer-panel__layout {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 1.2rem;
+  align-items: start;
+}
+
+.officer-panel__layout h3 { margin: 0 0 .8rem; }
+
+.officer-panel__cycles {
+  display: grid;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.officer-panel__cycle {
+  display: grid;
+  gap: .2rem;
+  width: 100%;
+  padding: .75rem .85rem;
+  border: 1px solid #d4e4dc;
+  border-radius: .7rem;
+  background: #fbfdfc;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.officer-panel__cycle:hover:not(:disabled) { border-color: #276456; background: #edf7f1; }
+.officer-panel__cycle.is-active { border-color: #276456; background: #e3f1ea; box-shadow: inset .25rem 0 0 #276456; }
+.officer-panel__cycle:disabled { cursor: not-allowed; opacity: .55; }
+.officer-panel__cycle:focus-visible { outline: 3px solid rgba(40, 119, 122, .3); outline-offset: 2px; }
+.officer-panel__cycle strong { font-size: .95rem; }
+.officer-panel__cycle span,
+.officer-panel__cycle small { color: var(--muted); font-size: .78rem; }
+
+.officer-panel__hint {
+  margin: .7rem 0 0;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.officer-panel__empty strong { display: block; margin-bottom: .3rem; }
+.officer-panel__empty p { margin: 0; color: var(--muted); font-size: .86rem; }
+
+/* .officer-panel має container-type від .cycle-manager: колонки складаються за шириною самої панелі. */
+@container (max-width: 50rem) {
+  .officer-panel__layout { grid-template-columns: minmax(0, 1fr); }
+}

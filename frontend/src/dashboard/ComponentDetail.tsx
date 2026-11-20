@@ -3,12 +3,15 @@ import type { IndexComponent, Recommendation } from '../api/analytics'
 import type { ResultCategory, ResultComponent } from './types'
 import { barWidth, categoryName, scoreText } from './format'
 import { formatDeltaPoints, isScore, maturityLevel, scoreZone, ZONE_META, ZoneBadge } from './maturity'
+import { componentSuppressed, SuppressionNote, visibleCells } from './suppression'
 import './dashboard.css'
 
 export interface ComponentDetailProps {
   component: ResultComponent
-  /** Category-level suppression flags; a hidden category hides its cells even if a score is sent. */
+  /** Visible categories of the cycle; a cell of a category not listed here is never shown. */
   categories?: ResultCategory[]
+  /** Minimum group size (k) of the cycle for the suppression note. */
+  minGroupSize?: number
   /** Row of the Integrity Index response. Undefined when the index is not loaded in this view. */
   indexComponent?: IndexComponent
   /** All proposals of the cycle (filtered here by component code); null when unavailable. */
@@ -34,14 +37,16 @@ function contributionText(row: IndexComponent | undefined): string {
 }
 
 export function ComponentDetail({
-  component, categories, indexComponent, recommendations, analyticsNote, previous, onClose, id = 'component-detail',
+  component, categories, minGroupSize, indexComponent, recommendations, analyticsNote, previous, onClose, id = 'component-detail',
 }: ComponentDetailProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   useEffect(() => { headingRef.current?.focus() }, [component.code])
 
   const zone = scoreZone(component.score)
   const level = maturityLevel(component.score)
-  const hiddenCategories = new Set((categories ?? []).filter(item => item.hidden).map(item => item.category))
+  // Hidden groups are not listed at all (neither name nor score); a legacy hidden entry is dropped.
+  const cells = visibleCells(component, categories)
+  const suppressed = componentSuppressed(component, categories)
   const own = recommendations ? recommendations.filter(item => item.component_code === component.code) : null
   const weight = indexComponent?.weight ?? component.weight
   const delta = previous && isScore(previous.score) && isScore(component.score) ? component.score - previous.score : null
@@ -80,15 +85,14 @@ export function ComponentDetail({
       <div className="component-detail-grid">
         <section aria-labelledby={`${id}-categories`}>
           <h4 id={`${id}-categories`}>Бал за категоріями</h4>
-          {component.by_category.length === 0 ? <p className="component-detail-empty">Категорій у результатах немає.</p> : (
+          {cells.length === 0 ? <p className="component-detail-empty">{suppressed ? 'Усі групи цього компонента приховано.' : 'Категорій у результатах немає.'}</p> : (
             <ul className="component-detail-list">
-              {component.by_category.map(cell => {
-                const hidden = cell.hidden || hiddenCategories.has(cell.category)
-                const cellZone = hidden ? 'none' : scoreZone(cell.score)
+              {cells.map(cell => {
+                const cellZone = scoreZone(cell.score)
                 return (
-                  <li key={cell.category} className={hidden ? 'dashboard-hidden' : undefined}>
+                  <li key={cell.category}>
                     <span>{categoryName(cell.category)}</span>
-                    {hidden ? <span>Приховано</span> : cell.score === null ? <span>Немає даних</span> : (
+                    {cell.score == null ? <span>Немає даних</span> : (
                       <span className="component-detail-score">
                         <span className="dashboard-mini-track" aria-hidden="true"><span style={{ width: barWidth(cell.score), background: ZONE_META[cellZone].color }} /></span>
                         <span>{scoreText(cell.score)}</span>
@@ -100,8 +104,7 @@ export function ComponentDetail({
               })}
             </ul>
           )}
-          {component.by_category.some(cell => cell.hidden || hiddenCategories.has(cell.category))
-            && <p className="dashboard-privacy-note">Бали малих груп приховано для захисту анонімності.</p>}
+          {suppressed && <SuppressionNote k={minGroupSize} />}
         </section>
 
         <section aria-labelledby={`${id}-indicators`}>

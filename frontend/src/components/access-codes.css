@@ -1,0 +1,96 @@
+.access-codes__form {
+  display: grid;
+  gap: .75rem;
+}
+
+.access-codes__form .cycle-manager__fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+}
+
+.access-codes__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.access-codes {
+  display: grid;
+  gap: .75rem;
+  padding: .9rem;
+  border: 1px solid #cfe0d7;
+  border-radius: .75rem;
+  background: #f7fbf9;
+}
+
+.access-codes__form .v2-button,
+.access-codes__actions .v2-button {
+  margin-top: 0;
+}
+
+.access-codes__form .v2-button { justify-self: start; }
+
+.access-codes .access-codes__warning {
+  margin: 0;
+  padding: .7rem .85rem;
+  border: 1px solid #e0b4a6;
+  border-radius: .6rem;
+  background: #fdf1ed;
+  color: #6b2f1d;
+  font-size: .84rem;
+  line-height: 1.5;
+}
+
+.access-codes__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: .5rem;
+  margin: 0;
+}
+
+.access-codes__facts div { min-width: 0; }
+.access-codes__facts dt { color: var(--muted); font-size: .72rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.access-codes__facts dd { margin: .15rem 0 0; color: var(--ink); font-size: .86rem; font-weight: 650; overflow-wrap: anywhere; }
+
+.access-codes textarea {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: .86rem;
+  resize: vertical;
+}
+
+.access-codes__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+
+.access-codes__confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem;
+  color: #6b2f1d;
+  font-size: .82rem;
+  font-weight: 650;
+}
+
+.access-codes-sheet { display: none; }
+
+@media print {
+  body.access-codes-printing > :not(.access-codes-sheet) { display: none !important; }
+  body.access-codes-printing > .access-codes-sheet {
+    display: block;
+    color: #000;
+    background: #fff;
+    font: 11pt/1.4 system-ui, sans-serif;
+  }
+  .access-codes-sheet h2 { margin: 0 0 4pt; font-size: 14pt; }
+  .access-codes-sheet ol { columns: 2; column-gap: 14pt; margin: 10pt 0; padding-left: 18pt; }
+  .access-codes-sheet li {
+    margin-bottom: 6pt;
+    padding: 6pt;
+    border: 1px dashed #666;
+    break-inside: avoid;
+  }
+  .access-codes-sheet code { font: 11pt/1.2 ui-monospace, Consolas, monospace; letter-spacing: .04em; }
+}

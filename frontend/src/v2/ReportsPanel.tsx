@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { getAssessments, type Assessment } from '../api/assessments'
+import { getManagedAssessments, type Assessment } from '../api/assessments'
 import { downloadCycleReport, getCycleReport, type ReportFormat } from '../api/reports'
+import { SuppressionNote } from '../dashboard/suppression'
 
 type LoadState<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T }
 type Report = Awaited<ReturnType<typeof getCycleReport>>
@@ -17,7 +18,7 @@ export default function ReportsPanel() {
 
   useEffect(() => {
     const controller = new AbortController()
-    getAssessments(controller.signal).then(list => {
+    getManagedAssessments(controller.signal).then(list => {
       if (controller.signal.aborted) return
       const closed = list.filter(cycle => cycle.status === 'closed')
       setCycles({ status: 'ready', data: closed })
@@ -114,6 +115,7 @@ function ReportDownload({ id }: { id: number }) {
         <div><dt>Поріг групи</dt><dd>{aggregates.min_group_size}</dd></div>
       </dl>
       <p className="v2-muted">Малі групи приховано за тими самими правилами, що й в аналітиці.</p>
+      {aggregates.suppressed && <SuppressionNote k={aggregates.min_group_size} className="v2-muted" />}
       <div className="v2-report__downloads">
         {(['pdf', 'xlsx'] as const).map(format => (
           <button key={format} type="button"

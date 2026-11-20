@@ -61,14 +61,15 @@ test('null scores and response totals do not render as zero', () => {
   assert.doesNotMatch(html, /width:0%/)
 })
 
-test('hidden categories never render numeric values even if the API sends them', () => {
+test('legacy hidden categories are dropped entirely (no name, no numbers) even if the API sends them', () => {
   const data = result(1)
   const html = renderToStaticMarkup(createElement(CategoryComparison, {
     categories: data.categories, components: data.components,
   }))
   assert.doesNotMatch(html, /73[,.]1/)
   assert.doesNotMatch(html, /4 відповідей/)
-  assert.match(html, /Приховано/)
+  assert.doesNotMatch(html, /Персонал/, 'the hidden category is not even named')
+  assert.match(html, /Частину груп приховано для захисту анонімності \(менше k відповідей\)/)
 })
 
 test('409 for an open cycle has the approved message and API errors stay handled', async () => {

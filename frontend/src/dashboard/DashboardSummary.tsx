@@ -1,4 +1,5 @@
 import type { AssessmentResults } from './types'
+import { resultsSuppressed, suppressionNoteText, visibleCategories } from './suppression'
 import './dashboard.css'
 
 interface Props {
@@ -7,7 +8,9 @@ interface Props {
 
 export function DashboardSummary({ results }: Props) {
   const scoredComponents = results.components.filter((component) => component.score !== null).length
-  const visibleCategories = results.categories.filter((category) => !category.hidden).length
+  // Hidden groups are not listed by the server, so only the visible count is known.
+  const shownCategories = visibleCategories(results.categories).length
+  const suppressed = resultsSuppressed(results)
 
   return (
     <section className="dashboard-summary" aria-label="Ключові агреговані показники">
@@ -22,9 +25,9 @@ export function DashboardSummary({ results }: Props) {
         <small>Бали за шкалою 0–100</small>
       </div>
       <div className="dashboard-kpi">
-        <span>Доступних категорій</span>
-        <strong>{visibleCategories} <small>з {results.categories.length}</small></strong>
-        <small>Малі групи приховано</small>
+        <span>Показаних категорій</span>
+        <strong>{shownCategories}</strong>
+        <small>{suppressed ? suppressionNoteText(results.min_group_size) : 'Усі групи досягли порогу'}</small>
       </div>
     </section>
   )

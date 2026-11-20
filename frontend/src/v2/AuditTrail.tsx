@@ -13,6 +13,12 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   'assessment.close': 'Закриття циклу оцінювання',
   'tokens.issue': 'Видача кодів доступу',
   'auth.login': 'Вхід до системи (2FA)',
+  'auth.logout': 'Вихід із системи',
+  'auth.logout_all': 'Вихід на всіх пристроях',
+  'auth.password_reset': 'Скидання пароля',
+  'auth.2fa_lockout': 'Блокування 2FA після невдалих кодів',
+  'user.role_change': 'Зміна ролі користувача',
+  'user.sessions_revoke': 'Завершення сесій користувача',
   'user.create_admin': 'Створення адміністратора',
   'tracker.accepted': 'Рекомендацію прийнято до виконання',
   'tracker.rejected': 'Рекомендацію відхилено',
@@ -21,14 +27,14 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
   'tracker.verified': 'Результат заходу перевірено',
 }
 
-/** Ролі виконавця: сесійні ролі V2 (admin, user) і демонстраційні ролі V1 з backend/app/roles.py. */
+/** Ролі виконавця: сесійні ролі V2 (admin, user, data_officer) і демонстраційні ролі V1 з backend/app/roles.py. */
 export const ACTOR_ROLE_LABELS: Readonly<Record<string, string>> = {
   admin: 'Адміністратор',
   user: 'Користувач',
   manager: 'Керівник',
   auditor: 'Аудитор',
   anticorruption: 'Уповноважений з антикорупції',
-  data_officer: 'Відповідальний за дані',
+  data_officer: 'Відповідальний за коди доступу',
   expert: 'Експерт',
   respondent: 'Респондент',
 }
@@ -39,6 +45,12 @@ const ACTION_KINDS: Readonly<Record<string, string>> = {
   'assessment.close': 'cycle',
   'tokens.issue': 'codes',
   'auth.login': 'access',
+  'auth.logout': 'access',
+  'auth.logout_all': 'access',
+  'auth.password_reset': 'access',
+  'auth.2fa_lockout': 'access',
+  'user.role_change': 'account',
+  'user.sessions_revoke': 'account',
   'user.create_admin': 'account',
   'tracker.accepted': 'tracker',
   'tracker.rejected': 'tracker',
@@ -85,6 +97,8 @@ export function formatAuditDetails(action: string, details: Record<string, numbe
     const amount = value.toLocaleString('uk-UA')
     if (key === 'count' && action === 'tokens.issue') return `${amount} ${plural(value, 'код', 'коди', 'кодів')}`
     if (key === 'count') return `Кількість: ${amount}`
+    if (key === 'revoked') return `Завершено сесій: ${amount}`
+    if (key === 'target_user_id') return `Користувач № ${value}`
     return `${key}: ${amount}`
   })
 }

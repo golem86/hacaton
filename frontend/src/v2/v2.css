@@ -21,6 +21,13 @@
 .v2-logout-button { display: inline-flex; flex: none; align-items: center; justify-content: center; min-height: 2.25rem; padding: .48rem .78rem; border: 1px solid #8eb3a5; border-radius: .5rem; background: #fff; color: #215e50; font: inherit; font-size: .76rem; font-weight: 800; cursor: pointer; }
 .v2-logout-button:hover { border-color: #276456; background: #edf7f1; }
 .v2-logout-button:focus-visible { outline: 3px solid rgba(40,119,122,.25); outline-offset: 2px; }
+.v2-logout-button:disabled { cursor: not-allowed; opacity: .55; }
+.v2-logout-button-quiet { border-color: transparent; background: #f1f5f3; }
+.v2-logout-all-button { padding: .2rem .1rem; border: 0; background: transparent; color: #215e50; font: inherit; font-size: .76rem; font-weight: 750; text-decoration: underline; text-underline-offset: .18em; cursor: pointer; }
+.v2-logout-all-button:hover { color: #123b36; }
+.v2-logout-all-button:focus-visible { outline: 3px solid rgba(40,119,122,.25); outline-offset: 2px; }
+.v2-logout-all-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .45rem; max-width: 28rem; color: #4d3c17; font-size: .78rem; font-weight: 650; }
+.v2-topbar-actions .v2-auth-error { max-width: 28rem; margin: 0; }
 .v2-role-switch { display: grid; gap: .45rem; padding: .75rem; border: 1px solid rgba(194,229,211,.2); border-radius: .75rem; background: rgba(255,255,255,.04); }
 .v2-role-switch > span { color: #9fc2b4; font-size: .68rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .v2-role-switch > div { display: grid; grid-template-columns: 1fr 1fr; gap: .3rem; }
