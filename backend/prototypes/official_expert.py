@@ -28,7 +28,7 @@ FORM_SECTIONS = {1: (5, 2, 4, 1), 2: (3, 2, 4, 1)}
 
 
 def fixture_catalog() -> dict[tuple[str, str], dict[str, frozenset[str]]]:
-    """Mirror only immutable 2.0.0 IDs; verify against frontend in tests."""
+    """Mirror immutable full-catalog IDs (2.0.0 and 2.1.0 share them); verify against frontend in tests."""
     result = {}
     for form, counts in FORM_SECTIONS.items():
         questions = {}
@@ -39,7 +39,8 @@ def fixture_catalog() -> dict[tuple[str, str], dict[str, frozenset[str]]]:
                 questions[question_id] = frozenset(
                     f"{question_id}-{letter}" for letter in "abcdef"[:option_count]
                 )
-        result[(f"appendix-v-form-{form}", "2.0.0")] = questions
+        for version in ("2.0.0", "2.1.0"):
+            result[(f"appendix-v-form-{form}", version)] = questions
     return result
 
 

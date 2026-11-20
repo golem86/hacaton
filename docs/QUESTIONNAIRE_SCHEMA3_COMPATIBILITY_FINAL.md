@@ -1,5 +1,19 @@
 # Questionnaire integration: schema-3 compatibility review
 
+> **Update 2026-11-20 — prototype moved to integrity schema 5.** The isolated prototype
+> (`backend/prototypes/questionnaire_integration.py`) now targets the current integrity schema 5
+> instead of a frozen schema-3 DDL copy. The synthetic source DB is created by `app.migrations.migrate()`
+> on an empty file (`PRAGMA user_version=5`, `access_tokens.token_hash`, `audit_events.actor_user_id`,
+> `instance_meta('dataset','synthetic')`); a test pins `PROTOTYPE_SCHEMA_VERSION == app.migrations.SCHEMA_VERSION`.
+> One-time codes are redeemed by `hash_access_code(code)`; plaintext codes are never stored.
+> Selectively ported from draft PR #25: 2.1.0 catalog IDs, the `binding_insert_requires_draft` trigger,
+> serialized `bind_cycle`/`activate_cycle`, the E2E-only server `prototypes/official_e2e_server.py`
+> and a browser harness that saves both full 2.1.0 forms to the synthetic DB
+> (`frontend/e2e/official-integration-harness.*`, excluded from production builds by
+> `frontend/scripts/check-production-artifact.mjs`). Still a prototype: production submission of official
+> questionnaires and the expert mode need an approved API/DDL; the blockers below remain open
+> (read "schema 3" there as "current integrity schema").
+
 **Status: prototype compatible with the inspected schema-3 shape; production integration blocked pending #5 approvals.** Release branch/PR #24 and deployment files are outside this change.
 
 ## Verified database facts
