@@ -180,6 +180,7 @@ jobs:
       - name: Check build output
         run: |
           if grep -rl 'X-Role' dist; then echo "::error::У збірці є X-Role"; exit 1; fi
+          node scripts/check-production-artifact.mjs   # тестовий стенд офіційних анкет не в збірці й образах
           if grep -rlE 'https?://(127\.0\.0\.1|localhost)' dist; then echo "::error::У збірці є локальні адреси API"; exit 1; fi
           (cd dist && find . -type f | sort | sed 's|^\./||' | xargs sha256sum) > "$RUNNER_TEMP/DIST-SHA256.txt"
           cp "$RUNNER_TEMP/DIST-SHA256.txt" dist-SHA256.txt

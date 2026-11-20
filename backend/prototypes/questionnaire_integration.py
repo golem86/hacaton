@@ -1,7 +1,8 @@
 """Isolated official-questionnaire integration prototype (never mounted in app.main).
 
 All database operations require an explicit .prototype.sqlite guard created from a
-synthetic copy of the actual schema-3 tables. No production migration is exposed.
+synthetic copy of the current integrity schema 5 (built by app.migrations, with
+access_tokens.token_hash). No production migration is exposed.
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models import hash_access_code
 from app.request_security import require_session_csrf
 from app.roles import session_user
 from app.v2_auth import auth_db_path
@@ -35,7 +37,13 @@ from .official_expert import CATALOG, Answer, PrototypeError, validate_answers
 
 
 GUARD_TABLE = "__questionnaire_prototype_guard"
-GUARD_VALUE = "synthetic-schema3-copy-only-v1"
+GUARD_VALUE = "synthetic-schema5-copy-only-v1"
+# Прототип працює лише з копією поточної integrity schema 5. Нова версія схеми застосунку
+# має свідомо оновити це значення (тест звіряє його з app.migrations.SCHEMA_VERSION).
+PROTOTYPE_SCHEMA_VERSION = 5
+SYNTHETIC_SOURCE_SUFFIX = ".schema5-synthetic.sqlite"
+SYNTHETIC_CYCLE_NAME = "Synthetic schema5 cycle"
+SYNTHETIC_CODE = "synthetic-assessment-code"
 MIGRATION_VERSION = 1
 MIGRATION_TABLES = {
     "questionnaire_templates", "questionnaire_questions", "questionnaire_options",
@@ -47,7 +55,8 @@ MIGRATION_TABLES = {
 CORE_TABLES = (
     "components", "questions", "cycles", "units", "response_sets", "answers",
     "access_tokens", "access_token_policies", "cycle_configs",
-    "objective_indicators", "recommendations", "audit_events",
+    "objective_indicators", "recommendations", "recommendation_actions", "audit_events",
+    "instance_meta",
 )
 
 DDL = (
@@ -191,6 +200,9 @@ DDL = (
     """CREATE TRIGGER binding_frozen_after_activation BEFORE UPDATE ON cycle_questionnaires
       WHEN (SELECT status FROM cycles WHERE id=OLD.cycle_id)!='draft'
       BEGIN SELECT RAISE(ABORT,'cycle questionnaire binding frozen'); END""",
+    """CREATE TRIGGER binding_insert_requires_draft BEFORE INSERT ON cycle_questionnaires
+      WHEN COALESCE((SELECT status FROM cycles WHERE id=NEW.cycle_id),'')!='draft'
+      BEGIN SELECT RAISE(ABORT,'cycle questionnaire binding requires draft'); END""",
     """CREATE TRIGGER binding_delete_frozen_after_activation BEFORE DELETE ON cycle_questionnaires
       WHEN (SELECT status FROM cycles WHERE id=OLD.cycle_id)!='draft'
       BEGIN SELECT RAISE(ABORT,'cycle questionnaire binding frozen'); END""",
@@ -306,102 +318,86 @@ def _guard(conn: sqlite3.Connection, db_path: Path, *, explicit: bool) -> None:
         raise ValueError("Production/shared database paths are forbidden")
     if GUARD_TABLE not in {row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}:
-        raise ValueError("Database is not a marked synthetic schema-3 copy")
+        raise ValueError("Database is not a marked synthetic schema-5 copy")
     marker = conn.execute(f"SELECT marker FROM {GUARD_TABLE} LIMIT 1").fetchone()
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if not marker or marker[0] != GUARD_VALUE or version != 3:
+    if not marker or marker[0] != GUARD_VALUE or version != PROTOTYPE_SCHEMA_VERSION:
         raise ValueError("Synthetic guard/schema version verification failed")
     core_tables = {"cycles", "cycle_configs", "response_sets", "answers", "access_tokens",
                    "access_token_policies", "audit_events"}
     present = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if not core_tables <= present:
-        raise ValueError("Synthetic schema-3 core tables are incomplete")
-    synthetic_cycle = conn.execute("SELECT id FROM cycles WHERE name='Synthetic schema3 cycle'").fetchone()
+        raise ValueError("Synthetic schema-5 core tables are incomplete")
+    synthetic_cycle = conn.execute("SELECT id FROM cycles WHERE name=?", (SYNTHETIC_CYCLE_NAME,)).fetchone()
     synthetic_audit = conn.execute("SELECT 1 FROM audit_events WHERE action='synthetic.seed'").fetchone()
     if not synthetic_cycle or not synthetic_audit:
-        raise ValueError("Synthetic schema-3 sentinel rows are missing")
+        raise ValueError("Synthetic schema-5 sentinel rows are missing")
 
 
-# Структура INTEGRITY_DB версії 3 (так її створювали моделі до schema 4/5), зафіксована тут:
-# прототип працює саме з копією schema 3, а поточні моделі app.models уже новіші
-# (schema 5: access_tokens.token_hash, audit_events.actor_user_id, instance_meta).
-SCHEMA3_DDL = """
-CREATE TABLE components (id INTEGER NOT NULL, code VARCHAR(10) NOT NULL, name VARCHAR(200) NOT NULL,
-    weight FLOAT NOT NULL, PRIMARY KEY (id), UNIQUE (code));
-CREATE TABLE cycles (id INTEGER NOT NULL, name VARCHAR(50) NOT NULL, start_date DATE NOT NULL,
-    status VARCHAR(20) NOT NULL, min_group_size INTEGER NOT NULL, PRIMARY KEY (id));
-CREATE TABLE units (id INTEGER NOT NULL, name VARCHAR(100) NOT NULL, PRIMARY KEY (id), UNIQUE (name));
-CREATE TABLE questions (id INTEGER NOT NULL, component_id INTEGER NOT NULL, text TEXT NOT NULL,
-    scale_min INTEGER NOT NULL, scale_max INTEGER NOT NULL, kind VARCHAR(20) NOT NULL, PRIMARY KEY (id),
-    FOREIGN KEY(component_id) REFERENCES components (id));
-CREATE TABLE cycle_configs (cycle_id INTEGER NOT NULL, description TEXT NOT NULL, scope VARCHAR(200) NOT NULL,
-    categories_json TEXT NOT NULL, questionnaire_version VARCHAR(50) NOT NULL, end_date DATE,
-    PRIMARY KEY (cycle_id), FOREIGN KEY(cycle_id) REFERENCES cycles (id));
-CREATE TABLE response_sets (id INTEGER NOT NULL, cycle_id INTEGER NOT NULL,
-    respondent_category VARCHAR(30) NOT NULL, unit VARCHAR(100) NOT NULL, PRIMARY KEY (id),
-    FOREIGN KEY(cycle_id) REFERENCES cycles (id), FOREIGN KEY(unit) REFERENCES units (name));
-CREATE TABLE access_tokens (id INTEGER NOT NULL, cycle_id INTEGER NOT NULL, token VARCHAR(64) NOT NULL,
-    used BOOLEAN NOT NULL, PRIMARY KEY (id), FOREIGN KEY(cycle_id) REFERENCES cycles (id), UNIQUE (token));
-CREATE TABLE objective_indicators (id INTEGER NOT NULL, cycle_id INTEGER NOT NULL, component_id INTEGER NOT NULL,
-    name VARCHAR(200) NOT NULL, value FLOAT NOT NULL, entered_by_role VARCHAR(50) NOT NULL,
-    confirmed_by_role VARCHAR(50), confirmed BOOLEAN NOT NULL, PRIMARY KEY (id),
-    FOREIGN KEY(cycle_id) REFERENCES cycles (id), FOREIGN KEY(component_id) REFERENCES components (id));
-CREATE TABLE recommendations (id INTEGER NOT NULL, cycle_id INTEGER NOT NULL, component_id INTEGER NOT NULL,
-    text TEXT NOT NULL, basis TEXT NOT NULL, status VARCHAR(20) NOT NULL, owner_role VARCHAR(100), due_date DATE,
-    PRIMARY KEY (id), FOREIGN KEY(cycle_id) REFERENCES cycles (id),
-    FOREIGN KEY(component_id) REFERENCES components (id));
-CREATE TABLE audit_events (id INTEGER NOT NULL, created_at DATETIME NOT NULL, actor_role VARCHAR(50) NOT NULL,
-    action VARCHAR(50) NOT NULL, assessment_id INTEGER, details TEXT NOT NULL, PRIMARY KEY (id),
-    FOREIGN KEY(assessment_id) REFERENCES cycles (id));
-CREATE TABLE answers (id INTEGER NOT NULL, response_set_id INTEGER NOT NULL, question_id INTEGER NOT NULL,
-    value INTEGER NOT NULL, PRIMARY KEY (id), UNIQUE (response_set_id, question_id),
-    FOREIGN KEY(response_set_id) REFERENCES response_sets (id), FOREIGN KEY(question_id) REFERENCES questions (id));
-CREATE TABLE access_token_policies (token_id INTEGER NOT NULL, category VARCHAR(30) NOT NULL,
-    expires_at DATETIME NOT NULL, PRIMARY KEY (token_id), FOREIGN KEY(token_id) REFERENCES access_tokens (id));
-"""
+def create_synthetic_schema5_source(source_path: Path) -> Path:
+    """Create a schema-5 SQLite DB with deterministic synthetic rows.
 
-
-def create_synthetic_schema3_source(source_path: Path) -> Path:
-    """Create an actual schema-3-shaped SQLite DB with deterministic synthetic rows."""
-    if not source_path.name.endswith(".schema3-synthetic.sqlite"):
-        raise ValueError("Synthetic source filename must end in .schema3-synthetic.sqlite")
+    Таблиці будує сам app.migrations.migrate() на порожньому файлі — тож структура завжди
+    збігається з поточною integrity schema 5 застосунку (access_tokens.token_hash,
+    audit_events.actor_user_id, instance_meta), а не з окремо скопійованим DDL.
+    """
+    if not source_path.name.endswith(SYNTHETIC_SOURCE_SUFFIX):
+        raise ValueError(f"Synthetic source filename must end in {SYNTHETIC_SOURCE_SUFFIX}")
     source_path = _require_test_temp_path(source_path, must_not_exist=True)
     from datetime import datetime, timedelta, timezone
 
+    from sqlalchemy import create_engine
+    from app.migrations import migrate
+
     source_path.parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(f"sqlite:///{source_path.as_posix()}")
+    try:
+        report = migrate(engine)
+    finally:
+        engine.dispose()
+    if report.get("action") != "created":
+        raise RuntimeError("Synthetic source must be created from an empty file")
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     stamp = "%Y-%m-%d %H:%M:%S.%f"          # формат DateTime SQLAlchemy для SQLite
     with closing(sqlite3.connect(source_path)) as con:
         con.execute("PRAGMA foreign_keys=ON")
-        con.executescript(SCHEMA3_DDL)
+        if con.execute("PRAGMA user_version").fetchone()[0] != PROTOTYPE_SCHEMA_VERSION:
+            raise RuntimeError("app.migrations no longer creates the expected schema version")
         with con:
-            con.execute("INSERT INTO cycles VALUES (1, 'Synthetic schema3 cycle', '2026-01-01', 'draft', 5)")
-            con.execute("INSERT INTO components VALUES (1, 'SYN', 'Synthetic', 1.0)")
-            con.execute("INSERT INTO units VALUES (1, 'Synthetic Unit')")
-            con.execute("INSERT INTO questions VALUES (1, 1, 'Synthetic numeric question', 1, 5, 'survey')")
-            con.execute("INSERT INTO cycle_configs VALUES (1, 'synthetic', 'test', '[\"staff\"]', 'demo-v1', NULL)")
-            con.execute("INSERT INTO response_sets VALUES (1, 1, 'staff', 'Synthetic Unit')")
-            con.execute("INSERT INTO answers VALUES (1, 1, 1, 4)")
-            con.execute("INSERT INTO access_tokens VALUES (1, 1, 'synthetic-assessment-code', 0)")
-            con.execute("INSERT INTO access_token_policies VALUES (1, 'staff', ?)",
+            con.execute("INSERT INTO cycles(id,name,start_date,status,min_group_size) "
+                        "VALUES (1,?,'2026-01-01','draft',5)", (SYNTHETIC_CYCLE_NAME,))
+            con.execute("INSERT INTO components(id,code,name,weight) VALUES (1,'SYN','Synthetic',1.0)")
+            con.execute("INSERT INTO units(id,name) VALUES (1,'Synthetic Unit')")
+            con.execute("INSERT INTO questions(id,component_id,text,scale_min,scale_max,kind) "
+                        "VALUES (1,1,'Synthetic numeric question',1,5,'survey')")
+            con.execute("INSERT INTO cycle_configs(cycle_id,description,scope,categories_json,"
+                        "questionnaire_version,end_date) VALUES (1,'synthetic','test',?,'demo-v1',NULL)",
+                        (json.dumps(["staff"]),))
+            con.execute("INSERT INTO response_sets(id,cycle_id,respondent_category,unit) "
+                        "VALUES (1,1,'staff','Synthetic Unit')")
+            con.execute("INSERT INTO answers(id,response_set_id,question_id,value) VALUES (1,1,1,4)")
+            # schema 5: у БД лише SHA-256 коду, відкритий код ніде не зберігається
+            con.execute("INSERT INTO access_tokens(id,cycle_id,token_hash,used) VALUES (1,1,?,0)",
+                        (hash_access_code(SYNTHETIC_CODE),))
+            con.execute("INSERT INTO access_token_policies(token_id,category,expires_at) VALUES (1,'staff',?)",
                         ((now + timedelta(days=2)).strftime(stamp),))
-            con.execute("INSERT INTO audit_events VALUES (1, ?, 'admin', 'synthetic.seed', 1, ?)",
+            con.execute("INSERT INTO audit_events(id,created_at,actor_role,action,assessment_id,details,"
+                        "actor_user_id) VALUES (1,?,'admin','synthetic.seed',1,?,NULL)",
                         (now.strftime(stamp), '{"synthetic":true}'))
-        con.execute("PRAGMA user_version=3")
-        con.commit()
+            con.execute("INSERT INTO instance_meta(key,value) VALUES ('dataset','synthetic')")
     with closing(sqlite3.connect(source_path)) as con:
         con.execute("PRAGMA foreign_keys=ON")
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert not con.execute("PRAGMA foreign_key_check").fetchall()
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert con.execute("PRAGMA user_version").fetchone()[0] == PROTOTYPE_SCHEMA_VERSION
     return source_path
 
 
-def create_synthetic_schema3_copy(source_path: Path, copy_path: Path) -> dict:
-    """Copy a synthetic schema-3 source and mark it as the only migration target."""
-    if not source_path.name.endswith(".schema3-synthetic.sqlite") or \
+def create_synthetic_schema5_copy(source_path: Path, copy_path: Path) -> dict:
+    """Copy a synthetic schema-5 source and mark it as the only migration target."""
+    if not source_path.name.endswith(SYNTHETIC_SOURCE_SUFFIX) or \
             not copy_path.name.endswith(".prototype.sqlite"):
-        raise ValueError("Use a synthetic schema3 source and .prototype.sqlite destination")
+        raise ValueError(f"Use a synthetic {SYNTHETIC_SOURCE_SUFFIX} source and .prototype.sqlite destination")
     source_path = _require_test_temp_path(source_path)
     copy_path = _require_test_temp_path(copy_path, must_not_exist=True)
     if source_path == copy_path:
@@ -410,11 +406,13 @@ def create_synthetic_schema3_copy(source_path: Path, copy_path: Path) -> dict:
         tables = {row[0] for row in check.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         required = {"cycles", "cycle_configs", "response_sets", "answers", "access_tokens",
                     "access_token_policies", "audit_events"}
-        if check.execute("PRAGMA user_version").fetchone()[0] != 3 or not required <= tables:
-            raise ValueError("Source is not the expected schema-3 synthetic database")
-        if not check.execute("SELECT 1 FROM cycles WHERE name='Synthetic schema3 cycle'").fetchone() or \
+        if check.execute("PRAGMA user_version").fetchone()[0] != PROTOTYPE_SCHEMA_VERSION or not required <= tables:
+            raise ValueError("Source is not the expected schema-5 synthetic database")
+        if not check.execute("SELECT 1 FROM cycles WHERE name=?", (SYNTHETIC_CYCLE_NAME,)).fetchone() or \
                 not check.execute("SELECT 1 FROM audit_events WHERE action='synthetic.seed'").fetchone() or \
-                not check.execute("SELECT 1 FROM access_tokens WHERE token='synthetic-assessment-code'").fetchone():
+                not check.execute("SELECT 1 FROM instance_meta WHERE key='dataset' AND value='synthetic'").fetchone() or \
+                not check.execute("SELECT 1 FROM access_tokens WHERE token_hash=?",
+                                  (hash_access_code(SYNTHETIC_CODE),)).fetchone():
             raise ValueError("Source lacks required synthetic sentinel rows")
         if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or \
                 check.execute("PRAGMA foreign_key_check").fetchall():
@@ -465,15 +463,15 @@ def create_verified_backup(db_path: Path, *, allow_test_migration: bool = False)
         if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             target.unlink(missing_ok=True)
             raise RuntimeError("Backup integrity check failed")
-        if check.execute("PRAGMA user_version").fetchone()[0] != 3:
+        if check.execute("PRAGMA user_version").fetchone()[0] != PROTOTYPE_SCHEMA_VERSION:
             target.unlink(missing_ok=True)
-            raise RuntimeError("Backup is not schema 3")
+            raise RuntimeError("Backup is not schema 5")
     return target
 
 
 def apply_questionnaire_migration(db_path: Path, *, allow_test_migration: bool = False,
                                   fail_at: str | None = None) -> dict:
-    """Apply migration 1 after schema 3; never changes PRAGMA user_version."""
+    """Apply migration 1 after schema 5; never changes PRAGMA user_version."""
     with _db(db_path) as con:
         _guard(con, db_path, explicit=allow_test_migration)
         existing = {row[0] for row in con.execute(
@@ -483,7 +481,7 @@ def apply_questionnaire_migration(db_path: Path, *, allow_test_migration: bool =
             meta = con.execute("SELECT version FROM questionnaire_prototype_meta").fetchone() \
                 if "questionnaire_prototype_meta" in migration_tables else None
             if migration_tables == MIGRATION_TABLES and meta and meta[0] == MIGRATION_VERSION:
-                return {"action": "already_applied", "backup": None, "version": 3}
+                return {"action": "already_applied", "backup": None, "version": PROTOTYPE_SCHEMA_VERSION}
             raise RuntimeError("Partial or unknown questionnaire migration found; refusing to continue")
 
     backup = create_verified_backup(db_path, allow_test_migration=allow_test_migration)
@@ -501,9 +499,9 @@ def apply_questionnaire_migration(db_path: Path, *, allow_test_migration: bool =
             if fail_at == "before_meta":
                 raise RuntimeError("Injected migration failure")
             con.execute("INSERT INTO questionnaire_prototype_meta(version,applied_at,migration_name) VALUES (?,?,?)",
-                        (MIGRATION_VERSION, int(time.time()), "official-questionnaire-after-schema3"))
-            if con.execute("PRAGMA user_version").fetchone()[0] != 3:
-                raise RuntimeError("Prototype must preserve schema-3 user_version")
+                        (MIGRATION_VERSION, int(time.time()), "official-questionnaire-after-schema5"))
+            if con.execute("PRAGMA user_version").fetchone()[0] != PROTOTYPE_SCHEMA_VERSION:
+                raise RuntimeError("Prototype must preserve schema-5 user_version")
             if con.execute("PRAGMA foreign_key_check").fetchall():
                 raise RuntimeError("Foreign key check failed")
             if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
@@ -514,8 +512,8 @@ def apply_questionnaire_migration(db_path: Path, *, allow_test_migration: bool =
             raise
     if core_snapshot(db_path) != before:
         restore_synthetic_backup(db_path, backup, allow_test_restore=True)
-        raise RuntimeError("Migration changed schema-3 core data; restored the verified backup")
-    return {"action": "migrated", "backup": str(backup), "version": 3,
+        raise RuntimeError("Migration changed schema-5 core data; restored the verified backup")
+    return {"action": "migrated", "backup": str(backup), "version": PROTOTYPE_SCHEMA_VERSION,
             "prototype_migration": MIGRATION_VERSION, "core_tables_preserved": len(before)}
 
 
@@ -528,7 +526,7 @@ def restore_synthetic_backup(db_path: Path, backup_path: Path, *, allow_test_res
     dst = sqlite3.connect(db_path)
     try:
         if src.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or \
-                src.execute("PRAGMA user_version").fetchone()[0] != 3:
+                src.execute("PRAGMA user_version").fetchone()[0] != PROTOTYPE_SCHEMA_VERSION:
             raise ValueError("Backup failed schema/integrity verification")
         guard = src.execute(f"SELECT marker FROM {GUARD_TABLE} LIMIT 1").fetchone()
         if not guard or guard[0] != GUARD_VALUE:
@@ -654,11 +652,35 @@ class IntegrationStore:
     def bind_cycle(self, cycle_id: int, template_id: str, version: str) -> None:
         with _db(self.db_path) as con:
             self._require_guard(con)
-            cycle = con.execute("SELECT status FROM cycles WHERE id=?", (cycle_id,)).fetchone()
-            if not cycle or cycle[0] != "draft":
-                raise IntegrationError(409, "Questionnaire binding requires a draft cycle")
-            con.execute("INSERT INTO cycle_questionnaires VALUES (?,?,?)", (cycle_id, template_id, version))
-            con.commit()
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                cycle = con.execute("SELECT status FROM cycles WHERE id=?", (cycle_id,)).fetchone()
+                if not cycle or cycle[0] != "draft":
+                    raise IntegrationError(409, "Questionnaire binding requires a draft cycle")
+                con.execute("INSERT INTO cycle_questionnaires VALUES (?,?,?)", (cycle_id, template_id, version))
+                con.commit()
+            except Exception:
+                con.rollback()
+                raise
+
+    def activate_cycle(self, cycle_id: int) -> None:
+        """Test-only serialized activation; requires an immutable binding first."""
+        with _db(self.db_path) as con:
+            self._require_guard(con)
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                cycle = con.execute("SELECT status FROM cycles WHERE id=?", (cycle_id,)).fetchone()
+                binding = con.execute("SELECT 1 FROM cycle_questionnaires WHERE cycle_id=?", (cycle_id,)).fetchone()
+                if not cycle or cycle[0] != "draft" or not binding:
+                    raise IntegrationError(409, "Cycle activation requires a draft cycle and questionnaire binding")
+                changed = con.execute("UPDATE cycles SET status='open' WHERE id=? AND status='draft'",
+                                      (cycle_id,)).rowcount
+                if changed != 1:
+                    raise IntegrationError(409, "Cycle is not draft")
+                con.commit()
+            except Exception:
+                con.rollback()
+                raise
 
     def close_cycle(self, cycle_id: int) -> None:
         with _db(self.db_path) as con:
@@ -703,8 +725,8 @@ class IntegrationStore:
                     raise IntegrationError(403, "Категорія недоступна для циклу")
                 token = con.execute("""SELECT t.id,p.category,p.expires_at FROM access_tokens t
                     JOIN access_token_policies p ON p.token_id=t.id
-                    WHERE t.token=? AND t.cycle_id=? AND t.used=0 AND p.expires_at > datetime('now')""",
-                                    (body.code, cycle_id)).fetchone()
+                    WHERE t.token_hash=? AND t.cycle_id=? AND t.used=0 AND p.expires_at > datetime('now')""",
+                                    (hash_access_code(body.code), cycle_id)).fetchone()
                 if not token or token[1] != body.category:
                     raise IntegrationError(403, "Недійсний або вже використаний код")
                 set_id = secrets.token_hex(16)

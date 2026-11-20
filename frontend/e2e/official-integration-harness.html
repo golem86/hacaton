@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Official questionnaire synthetic E2E harness</title>
+  </head>
+  <body>
+    <main>
+      <h1>Тільки тест: офіційна анкета → синтетичний API</h1>
+      <p>Ця сторінка існує лише для E2E. Вона не є частиною продуктового маршруту.</p>
+      <label for="template">Тестовий шаблон</label>
+      <select id="template"></select>
+      <p id="template-note"></p>
+      <form id="questionnaire"></form>
+      <button id="submit" type="button">Надіслати синтетичне подання</button>
+      <p id="result" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="./official-integration-harness.ts"></script>
+  </body>
+</html>
