@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" role="img" aria-labelledby="sm-emblem-title sm-emblem-desc">
+<title id="sm-emblem-title">Sys&amp;Mints</title>
+<desc id="sm-emblem-desc">Емблема команди Sys&amp;Mints: восьмикутна тактична пластина з листком м'яти, зібраним із друкованих доріжок.</desc>
+<!-- Sys&Mints · original artwork, hand-built vector geometry, no fonts or external references · Building Integrity Hackathon 2026 -->
+<path fill="#3A4535" d="M2 14L14 2H50L62 14V50L50 62H14L2 50Z"/>
+<path fill="#1F2621" d="M4 14.83L14.83 4H49.17L60 14.83V49.17L49.17 60H14.83L4 49.17Z"/>
+<path fill="none" stroke="#29322C" stroke-width="0.5" d="M15.33 7.74V56.26M7.74 15.33H56.26M23.67 7V57M7 23.67H57M32 7V57M7 32H57M40.33 7V57M7 40.33H57M48.67 7.74V56.26M7.74 48.67H56.26"/>
+<path fill="none" stroke="#2D7A57" stroke-width="0.6" d="M7 16.07L16.07 7H47.93L57 16.07V47.93L47.93 57H16.07L7 47.93Z"/>
+<path fill="#3DDC97" d="M20.5 43.5C11.14 31.81 24.38 17.22 49.5 14.5C46.78 39.62 32.19 52.86 20.5 43.5ZM24.96 40.88L26.89 38.95H34.65A1.7 1.7 0 1 0 34.65 37.15H28.69L32.9 32.94H38.61A1.7 1.7 0 1 0 38.61 31.14H34.7L40.6 25.24A1.9 1.9 0 1 0 38.76 23.4L36.04 26.12V23.86A1.7 1.7 0 1 0 34.24 23.86V27.92L30.03 32.13V27.02A1.7 1.7 0 1 0 28.23 27.02V33.93L23.12 39.04ZM20.65 41.52L22.48 43.35L18.27 47.57V48.43H15.67V46.49ZM20.57 51.03A3.6 3.6 0 1 1 13.37 51.03A3.6 3.6 0 1 1 20.57 51.03ZM18.57 51.03A1.6 1.6 0 1 0 15.37 51.03A1.6 1.6 0 1 0 18.57 51.03Z"/>
+</svg>

@@ -100,11 +100,12 @@ function App() {
   const section = route.section
   const title = admin ? adminItems.find(x => x.key === section)?.title ?? 'Огляд' : userItems.find(x => x.key === section)?.title ?? 'Мій кабінет'
   return <div className="v2-app"><div className={`v2-shell v2-shell-${session.role}`}>
-    <aside className="v2-sidebar"><div className="v2-brand"><span className="v2-brand-mark">IM</span><div><strong>Integrity<br/>Management</strong><small>{admin ? 'Адміністративна панель' : 'Особистий простір'}</small></div></div>
+    <aside className="v2-sidebar"><div className="v2-brand"><img className="v2-brand-mark v2-brand-logo" src="/sysmints-emblem.svg" alt="" width={38} height={38} /><div><strong>Integrity<br/>Management</strong><small>{admin ? 'Адміністративна панель' : 'Особистий простір'}</small></div></div>
       <nav className="v2-nav" aria-label={admin ? 'Навігація адміністратора' : 'Навігація користувача'}><span className="v2-nav-label">{admin ? 'Адміністрування' : 'Мій простір'}</span>
         {(admin ? adminItems : userItems).map(item => <button key={item.key} className={section === item.key ? 'is-active' : ''} onClick={() => go(admin ? `/admin/${item.key}` : `/app/${item.key}`)} type="button">{item.title}</button>)}
         {admin && <button type="button" onClick={() => go('/survey')}>Анонімне опитування ↗</button>}
       </nav>
+      <p className="v2-team-credit">Команда Sys&amp;Mints · Building Integrity Hackathon 2026</p>
     </aside>
     <main className="v2-main"><header className="v2-topbar"><div><p className="v2-overline">Integrity Management · {admin ? 'АДМІНІСТРАТОР' : 'КОРИСТУВАЧ'}</p><h1>{title}</h1><p>{admin ? 'Організаційні агрегати з Survey API та Analytics.' : 'Ваші особисті тестування й результати.'}</p></div>
       <div className="v2-account-menu"><span className="v2-account-avatar">{session.name.trim().slice(0, 2).toUpperCase()}</span><div className="v2-account-details"><strong>{session.name}</strong><span>{admin ? 'Адміністратор' : 'Користувач'}</span><small>{session.email}</small></div><button className="v2-logout-button" onClick={() => void signOut()} type="button">Вийти</button></div>
@@ -120,7 +121,7 @@ function AuthPage(props: { page: PublicPage; pendingEmail: string; error: string
   const [name,setName]=useState(''),[email,setEmail]=useState(props.pendingEmail),[password,setPassword]=useState(''),[confirmation,setConfirmation]=useState(''),[code,setCode]=useState(''),[busy,setBusy]=useState(false)
   const submit=async (event:FormEvent)=>{event.preventDefault();setBusy(true);try { if(props.page==='login') await props.onLogin(email,password); else if(props.page==='register') await props.onRegister(name,email,password,confirmation); else if(props.page==='two-factor') await props.onVerify(code); else if(props.page==='reset-request') await props.onResetRequest(email); else await props.onResetConfirm(email,code,password,confirmation) } finally {setBusy(false)} }
   const title:Record<PublicPage,string>={login:'Вхід до системи',register:'Створення облікового запису','two-factor':'Підтвердження входу','reset-request':'Скидання паролю','reset-confirm':'Новий пароль'}
-  return <main className="v2-auth-page"><section className="v2-auth-card"><div className="v2-brand v2-auth-brand"><span className="v2-brand-mark">IM</span><div><strong>Integrity<br/>Management</strong><small>Integrity Dashboard</small></div></div><p className="v2-overline">Захищений доступ</p><h1>{title[props.page]}</h1><p className="v2-muted">{props.page==='two-factor'?`Код підтвердження надіслано на ${props.pendingEmail}.`:props.page==='register'?'Публічна реєстрація створює лише обліковий запис user.':'Увійдіть, щоб відкрити панель відповідно до серверної ролі.'}</p>
+  return <main className="v2-auth-page"><section className="v2-auth-card"><div className="v2-brand v2-auth-brand"><img className="v2-brand-mark v2-brand-logo" src="/sysmints-emblem.svg" alt="" width={38} height={38} /><div><strong>Integrity<br/>Management</strong><small>Команда Sys&amp;Mints</small></div></div><p className="v2-overline">Захищений доступ</p><h1>{title[props.page]}</h1><p className="v2-muted">{props.page==='two-factor'?`Код підтвердження надіслано на ${props.pendingEmail}.`:props.page==='register'?'Публічна реєстрація створює лише обліковий запис user.':'Увійдіть, щоб відкрити панель відповідно до серверної ролі.'}</p>
     {(props.error||props.notice)&&<div className="v2-auth-error" role="status">{props.error||props.notice}</div>}
     <form onSubmit={submit}>{props.page==='register'&&<label>Ім’я<input required minLength={2} value={name} onChange={e=>setName(e.target.value)}/></label>}{props.page!=='two-factor'&&<label>Email<input required type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label>}{(props.page==='two-factor'||props.page==='reset-confirm')&&<label>Код підтвердження<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e=>setCode(e.target.value)}/></label>}{['login','register','reset-confirm'].includes(props.page)&&<label>Пароль<input required minLength={10} type="password" value={password} onChange={e=>setPassword(e.target.value)}/><small>Мінімум 10 символів.</small></label>}{['register','reset-confirm'].includes(props.page)&&<label>Підтвердження пароля<input required minLength={10} type="password" value={confirmation} onChange={e=>setConfirmation(e.target.value)}/></label>}<button className="v2-button v2-button-primary" disabled={busy}>{busy?'Зачекайте…':props.page==='two-factor'?'Підтвердити':props.page==='login'?'Увійти':props.page==='register'?'Зареєструватися':props.page==='reset-request'?'Надіслати код':'Змінити пароль'}</button></form>
     {props.page === 'two-factor' && (
@@ -174,8 +175,8 @@ function PublicSurvey() {
     <div className="survey-app">
       <header className="survey-masthead">
         <a className="survey-brand" href="/" aria-label="Integrity Management — на головну">
-          <span className="survey-brand-mark">IM</span>
-          <span><strong>Integrity<br />Management</strong><small>Building Integrity · 2026</small></span>
+          <img className="survey-brand-mark survey-brand-logo" src="/sysmints-emblem.svg" alt="" width={43} height={43} />
+          <span><strong>Integrity<br />Management</strong><small>Sys&amp;Mints · Building Integrity 2026</small></span>
         </a>
         <a className="survey-admin-link" href="/login">Вхід адміністратора <span aria-hidden="true">↗</span></a>
       </header>
