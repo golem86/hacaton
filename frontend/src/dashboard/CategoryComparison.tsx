@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Chart from 'chart.js/auto'
 import type { ResultCategory, ResultComponent } from './types'
 import { barWidth, categoryName, scoreText } from './format'
+import { describeScore, scoreZone, ZoneBadge, zoneColor, ZoneLegend } from './maturity'
 import './dashboard.css'
 
 interface Props {
@@ -131,13 +132,15 @@ export function CategoryComparison({ categories, components }: Props) {
                     {visibleCategories.map(category => {
                       const cell = component.by_category.find(item => item.category === category.category)
                       const hidden = category.hidden || cell?.hidden === true
+                      // Zones are derived only from visible scores: a colour must not leak a hidden value.
                       return <td key={category.category} className={hidden ? 'dashboard-hidden' : undefined}>
-                        {hidden ? 'Приховано' : cell?.score == null ? 'Немає даних' : <div className="dashboard-category-score"><span className="dashboard-mini-track" aria-hidden="true"><span style={{ width: barWidth(cell.score) }} /></span><span>{scoreText(cell.score)}</span></div>}
+                        {hidden ? 'Приховано' : cell?.score == null ? 'Немає даних' : <div className="dashboard-category-score" title={describeScore(cell.score)}><span className="dashboard-mini-track" aria-hidden="true"><span style={{ width: barWidth(cell.score), background: zoneColor(cell.score) }} /></span><span>{scoreText(cell.score)}</span><ZoneBadge zone={scoreZone(cell.score)} short /></div>}
                       </td>
                     })}
                   </tr>)}</tbody>
                 </table>
               </div>
+              <ZoneLegend note="Зони визначено лише для видимих балів; приховані групи не зафарбовано." />
             </>
           )}
         </>

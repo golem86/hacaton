@@ -10,6 +10,7 @@ import { getAssessmentResults } from './dashboard/results'
 import { CategoryComparison, ComponentScores, DashboardSummary, ObjectiveIndicators, type AssessmentResults } from './dashboard'
 import { AnalyticsModules } from './dashboard/AnalyticsModules'
 import { CycleTrend } from './dashboard/CycleTrend'
+import { ExecutiveOverview } from './dashboard/ExecutiveOverview'
 import { PersonalModule, type PersonalView } from './v2/PersonalModule'
 import ReportsPanel from './v2/ReportsPanel'
 import AuditTrail from './v2/AuditTrail'
@@ -225,7 +226,7 @@ function AdminPanel({section}:{section:AdminSection}) { const [assessments,setAs
   if(section==='audit')return <AuditTrail events={events} error={error} />
   if(section==='expert')return <OfficialAssessment mode="expert" />
   if(section==='testing')return <AssessmentManager />
-  return <>{assessments.length>0&&<label className="cycle-select">Цикл оцінювання<select value={id??''} onChange={e=>setId(Number(e.target.value)||null)}>{assessments.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}{error&&<div role="alert" className="v2-auth-error">{error}</div>}{section==='overview'&&<><h2>Оперативний огляд</h2>{results?<DashboardSummary results={results}/>:<p>{detail?.status==='open'?'Результати стануть доступними після закриття циклу.':loading?'Завантаження…':'Оберіть цикл.'}</p>}</>}{section==='analytics'&&<><h2>Агреговані результати</h2>{results?<><ComponentScores components={results.components}/><CategoryComparison categories={results.categories} components={results.components}/><ObjectiveIndicators components={results.components}/>{detail?.status==='closed'&&id&&<><CycleTrend assessments={assessments} selectedId={id}/><AnalyticsModules id={id} assessments={assessments}/></>}</>:<p>{detail?.status==='open'?'Цикл відкритий: агрегати недоступні до закриття.':loading?'Завантаження…':'Результатів немає.'}</p>}</>}</>
+  return <>{assessments.length>0&&<label className="cycle-select">Цикл оцінювання<select value={id??''} onChange={e=>setId(Number(e.target.value)||null)}>{assessments.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}{error&&<div role="alert" className="v2-auth-error">{error}</div>}{section==='overview'&&<><h2>Оперативний огляд</h2>{results&&results.assessment.id===id?<ExecutiveOverview results={results} assessments={assessments} kpis={<DashboardSummary results={results}/>}/>:<p>{detail?.status==='open'?'Результати стануть доступними після закриття циклу.':detail?.status==='closed'&&!error?'Завантажуємо результати циклу…':loading?'Завантаження…':'Оберіть цикл.'}</p>}</>}{section==='analytics'&&<><h2>Агреговані результати</h2>{results?<><ComponentScores components={results.components}/><CategoryComparison categories={results.categories} components={results.components}/><ObjectiveIndicators components={results.components}/>{detail?.status==='closed'&&id&&<><CycleTrend assessments={assessments} selectedId={id}/><AnalyticsModules id={id} assessments={assessments}/></>}</>:<p>{detail?.status==='open'?'Цикл відкритий: агрегати недоступні до закриття.':loading?'Завантаження…':'Результатів немає.'}</p>}</>}</>
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App/></StrictMode>)
