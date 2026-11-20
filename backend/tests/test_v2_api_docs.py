@@ -41,6 +41,8 @@ EXPECTED_CSRF = {
     ("POST", "/api/assessments/{assessment_id}/submissions"): None,          # публічна анонімна анкета
     ("POST", "/api/assessments/{assessment_id}/tokens"): "session",
     ("POST", "/api/assessments/{assessment_id}/close"): "session",
+    ("POST", "/api/assessments/{assessment_id}/tracker/decisions"): "session",
+    ("POST", "/api/tracker/{action_id}/transition"): "session",
     ("POST", "/v2/auth/register"): "preauth",
     ("POST", "/v2/auth/login"): "preauth",
     ("POST", "/v2/auth/password-reset/request"): "preauth",
@@ -52,7 +54,8 @@ EXPECTED_CSRF = {
     ("PATCH", "/v2/user/attempts/{attempt_id}"): "session",
     ("POST", "/v2/user/attempts/{attempt_id}/complete"): "session",
 }
-PATH_VALUES = {"assessment_id": str(OPEN_ID), "attempt_id": "nonexistent", "version": "team-results-demo-0.1"}
+PATH_VALUES = {"assessment_id": str(OPEN_ID), "attempt_id": "nonexistent", "version": "team-results-demo-0.1",
+               "action_id": "1"}
 
 
 @pytest.fixture(autouse=True)

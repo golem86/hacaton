@@ -7,6 +7,7 @@ from . import api_docs, audit, settings
 from .database import engine
 from .migrations import check_schema, migrate
 from .routes import analytics, assessments, results, v2_admin, v2_auth, v2_user
+from .routes import tracker  # Recommendations Tracker
 from .v2_auth import check_auth_schema, migrate_auth_db
 
 
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     application.include_router(assessments.router)
     application.include_router(results.router)
     application.include_router(analytics.router)
+    application.include_router(tracker.router)  # трекер рекомендацій: рішення, строки, статуси
     application.include_router(v2_auth.router)
     application.include_router(v2_user.router)
     application.include_router(v2_admin.router)
