@@ -2,18 +2,6 @@
 
 Статус: інфраструктура (Docker-сервіс і Windows-служба) та інтеграція в backend/UI (розділ 3). Що й де перевірено:
 
-- **Реальна модель, локально без Docker (21.11.2026, macOS, Apple M1 Pro).** llama.cpp build 12359 (Metal) і
-  Qwen3-8B-Q4_K_M (SHA256 збігається з таблицею нижче), `llama-server` лише на `127.0.0.1:8200`, backend з `main` і
-  синтетичною БД. Резюме — 24 с, рекомендації — 24 с, порівняння — 32 с; у всіх трьох `verified=true`, назв прихованих
-  категорій у текстах немає, у трекер нічого не потрапило. UI «Звіти» показує позначку чернетки; без моделі
-  `lm/status` → `reachable: false`, завдання → `failed` із загальним повідомленням, звіти й Index працюють; журнал — лише
-  `report.narrative` без тексту.
-- **Docker, профіль `lm` (21.11.2026, OrbStack, linux/arm64).** Стек `backend` + `frontend` + `lm` зібрано й запущено,
-  усі три сервіси healthy, модель завантажилась за ≈ 41 с. Через Caddy (`:8080`): резюме — 104 с, рекомендації — 88 с,
-  порівняння — 213 с, усі `verified=true` (лише CPU, 4 потоки). Порт LM на хост не публікується, з контейнера LM
-  інтернету немає (`lm_net` internal), файлова система лише для читання; без LM — та сама коректна відмова.
-  **Увага:** закріпленого в `compose.yaml` образу `ghcr.io/ggml-org/llama.cpp:server-b12180` у реєстрі не існує
-  (`manifest unknown`); перевірку виконано з `LM_IMAGE` (див. розділ 1).
 - **Реальна модель, локально на Windows без Docker (21.11.2026, лише CPU, 6 потоків).** Справжній
   `llama-b12180-bin-win-cpu-x64.zip` і Qwen3-8B-Q4_K_M (SHA256 обох збігаються з таблицею нижче), ті самі параметри,
   що й у службі, лише `127.0.0.1`, ключ API з файлу; backend з `main` (`c718c60`) і синтетична БД з
@@ -25,13 +13,16 @@
 - **Скрипти встановлення служби.** `test-lm-service.ps1` (L0–L13: розбір PowerShell, шаблон, сухі прогони `-Simulate`,
   відкати, невірний SHA, зайнятий порт, слухач поза loopback) — 21 з 21 PASS зі справжньою збіркою
   `llama-server.exe` b12180 (21.11.2026).
+- **Docker, профіль `lm`.** Не перевірено запуском. **Увага:** закріпленого в `compose.yaml` образу
+  `ghcr.io/ggml-org/llama.cpp:server-b12180` у реєстрі немає (перевірено 21.11.2026: HTTP 404), тож без `LM_IMAGE`
+  запуск завершиться помилкою `manifest unknown` (див. розділ 1).
 
 | Що | Значення |
 |---|---|
 | Рушій | llama.cpp `llama-server` (OpenAI-сумісний API: `/v1/chat/completions`, `/v1/models`, `/health`) |
 | Модель | Hugging Face `Qwen/Qwen3-8B-GGUF`, файл `Qwen3-8B-Q4_K_M.gguf` (5,03 ГБ), SHA256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785` |
 | Бінарник (сервер) | `llama-b12180-bin-win-cpu-x64.zip` (24,7 МБ, b12180, commit bcb015287), SHA256 `b272cddf0e9c0692df0587b6f4cb8de4296e2d136b1b5b095ac0fe9807deeb20` |
-| Образ (локально) | у `compose.yaml` закріплено `ghcr.io/ggml-org/llama.cpp:server-b12180`, але такого тегу в реєстрі немає; перевірено з `server-b12182` за digest `sha256:6d581c788abba2dfa23ff78dba37ea0abfc7d838c49bcc98f4be2103df9772b3` (через `LM_IMAGE`) |
+| Образ (локально) | у `compose.yaml` закріплено `ghcr.io/ggml-org/llama.cpp:server-b12180`, але такого тегу в реєстрі немає. У реєстрі є `server-b12182` з digest `sha256:6d581c788abba2dfa23ff78dba37ea0abfc7d838c49bcc98f4be2103df9772b3`; його задають через `LM_IMAGE` |
 | Параметри | контекст 8192, один слот (`--parallel 1`), thinking вимкнено (`--reasoning off`), кеш промптів у RAM вимкнено (`--cache-ram 0`, типово 8192 МіБ), без Web UI (`--no-webui`), без `/slots` (`--no-slots`, там видно вміст промптів), `--jinja` |
 
 ## 1. Docker (локальна робота)
@@ -42,7 +33,7 @@
 # 1) модель у ./models (5 ГБ; SHA256 перевіряється; .partial докачується при повторі; models/ у .gitignore)
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\fetch-lm-model.ps1      # Windows
 sh scripts/fetch-lm-model.sh                                                        # Linux/macOS
-# 2) образ LM: тегу server-b12180 у реєстрі немає — задайте перевірений образ (server-b12182, amd64 і arm64) за digest
+# 2) образ LM: тегу server-b12180 у реєстрі немає — задайте образ server-b12182 за digest
 export LM_IMAGE=ghcr.io/ggml-org/llama.cpp@sha256:6d581c788abba2dfa23ff78dba37ea0abfc7d838c49bcc98f4be2103df9772b3
 #    (PowerShell: $env:LM_IMAGE = "ghcr.io/ggml-org/llama.cpp@sha256:6d581c788abba2dfa23ff78dba37ea0abfc7d838c49bcc98f4be2103df9772b3")
 # 3) запуск усього стеку разом із LM
@@ -59,9 +50,8 @@ docker compose --profile lm up --build
   (типово `8g`), `LM_IMAGE` (тег або `ghcr.io/ggml-org/llama.cpp@sha256:<digest>` після `docker pull`), `V2_LM_URL`.
 - Docker Desktop: віртуальній машині потрібно щонайменше ~8 ГБ RAM, інакше `lm` завершиться через OOM.
 - Без профілю `lm` ім'я `lm` не резолвиться — backend має вважати LM недоступною (без падіння).
-- **Перевірено на образі `server-b12182` (21.11.2026):** entrypoint — `llama-server` (`command:` — лише аргументи), `curl`
-  для healthcheck є, сервер працює з `read_only: true` (лише `/tmp` як tmpfs). Процес у контейнері працює від root (uid 0) —
-  зважаючи на `cap_drop: ALL`, `no-new-privileges`, `read_only` і внутрішню мережу ризик малий, але варто задати `user:`.
+- **Перевірити на образі** (запуском ще не перевірено): що entrypoint образу — `llama-server` (тоді `command:` — лише
+  аргументи), що в образі є `curl` для healthcheck, що сервер працює з `read_only: true` (лише `/tmp` як tmpfs).
 - Ручна перевірка: `docker compose exec backend python -c "import urllib.request;print(urllib.request.urlopen('http://lm:8080/health').status)"`.
 
 ## 2. Сервер (Windows-служба `integrity-v2-lm`)
@@ -191,7 +181,7 @@ L11 порт зайнятий, L12 слухач поза loopback, L13 без `-
   зупиниться на `lm.start`; тоді перевірити вручну іншою кінцевою точкою.
 - `Wait-V2Listener` чекає слухача 8200 до 120 с; `/health` 200 — до `-HealthTimeoutSec` (300 с).
 - `Assert-V2AclMatrix` (лише `clean-install.ps1`) не знає каталогу `lm\` — для чистого встановлення з LM його треба доповнити.
-- Швидкість виміряно на справжній моделі (розділ 3.5): лише CPU — 1,5–4 хв на чернетку, macOS з Metal — 24–32 с.
+- Швидкість виміряно на справжній моделі (розділ 3.5): лише CPU — 1,5–4 хв на чернетку.
   Пам'ять: модель ≈ 5 ГБ + кеш контексту 8192 ≈ 1,2 ГБ.
 
 ## 3. Backend
@@ -246,7 +236,3 @@ URL з обліковими даними, query чи fragment відхиляєт
 | Локально, 20.11 | llama-server b12180, CPU, синтетична БД | 95 с | 97 с | 167 с |
 | Робочий сервер, 20.11 | служба `integrity-v2-lm`, b12180, CPU; демо-цикл 150 анкет | 109 с | 85 с | 169 с |
 | Windows, 21.11 (`main` `c718c60`) | b12180, CPU, 6 потоків; той самий демо-цикл | 111 с | 86 с | 223 с |
-| macOS M1 Pro, 21.11 (`main`) | build 12359, Metal | 24 с | 24 с | 32 с |
-| Docker, профіль `lm`, 21.11 (OrbStack, linux/arm64) | образ `server-b12182`, CPU, 4 потоки | 104 с | 88 с | 213 с |
-
-21.11 також перевірено: коректна відмова без моделі (`lm/status` → `reachable: false`, завдання `failed` із загальним повідомленням, звіти й Index працюють), назв прихованих категорій у текстах немає, у трекер нічого не потрапляє, у журналі лише подія `report.narrative` без тексту.
