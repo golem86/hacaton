@@ -85,16 +85,17 @@ docker compose down --volumes
 
 Мінімальний runtime Caddy подає зібраний Vite frontend і проксує `/api/*`, `/v2/*`, `/docs*` та `/openapi.json` без зняття префікса. За [документацією Caddy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) `reverse_proxy` передає `Host`, формує `X-Forwarded-For/Proto/Host` і за замовчуванням ігнорує підроблені вхідні `X-Forwarded-*`. Backend має `TRUSTED_PROXIES` порожнім: він **не довіряє** довільному forwarded IP. Наслідок — rate limiting може сприймати всіх локальних браузерів за IP Caddy; це залишкове обмеження багатокористувацького демо. Не встановлюйте широкі trusted-proxy CIDR без окремого проєктування.
 
-Локальні базові образи Docker задані тегами, а не незмінними digest; образи та Docker Engine відсутні на машині автора пакета, тому фактичні `docker compose config/build/up`, права запису named volume й проксування в контейнерах **не перевірені**. Перед командним прийняттям пакет слід прогнати на Docker-хості. Не використовуйте його для production.
+Локальні базові образи Docker задані тегами, а не незмінними digest. **Перевірено 21.11.2026** (OrbStack, linux/arm64, `main`): `docker compose --profile lm up --build` збирає й запускає `backend`, `frontend` і `lm`, усі healthy; seed записується в named volume; Caddy на `127.0.0.1:8080` подає frontend і проксує `/api`, `/v2`; вхід адміністратора з 2FA (код через `docker compose exec backend`), звіти й чернетки LM працюють. Не перевірено: linux/amd64 і Docker Desktop на Windows. Закріпленого образу LM `server-b12180` у реєстрі немає — див. Troubleshooting. Не використовуйте пакет для production.
 
 ### Troubleshooting
 
 | Симптом | Що перевірити |
 |---|---|
-| `docker` не знайдено / daemon недоступний | Встановити й запустити Docker Engine/Desktop та Compose plugin; на машині автора Docker не був доступний. |
+| `docker` не знайдено / daemon недоступний | Встановити й запустити Docker Engine/Desktop (або OrbStack на macOS) та Compose plugin. |
+| `docker compose --profile lm up` → `manifest unknown` для `ghcr.io/ggml-org/llama.cpp:server-b12180` | Тегу `server-b12180` у реєстрі немає. Задайте перевірений образ `server-b12182` (amd64 і arm64) за digest: `LM_IMAGE=ghcr.io/ggml-org/llama.cpp@sha256:6d581c788abba2dfa23ff78dba37ea0abfc7d838c49bcc98f4be2103df9772b3` (у shell або в `.env`) і повторіть запуск. |
 | `V2_SECRET_KEY` відсутній | Створити локальний `.env` і випадковий ключ за інструкцією вище. Не вставляти ключ у Compose або Dockerfile. |
 | Порт 8080 зайнятий | Перевірити чужі процеси, не зупиняти їх; змінити `DOCKER_DEMO_PORT` у `.env` і відкрити нову адресу. |
-| Backend unhealthy / немає прав на `/data` | Переглянути `docker compose ps` та локальні logs без копіювання кодів; перевірити власника тільки цього named volume. Без Docker-хоста цю поведінку не було перевірено. |
+| Backend unhealthy / немає прав на `/data` | Переглянути `docker compose ps` та локальні logs без копіювання кодів; перевірити власника тільки цього named volume. |
 | Після restart seed не змінив БД | Очікувано: seed без `--reset` не чіпає непорожню БД. Не застосовувати `--reset` до збереженого volume. |
 | 2FA-пошта не відкривається через браузерний `/v2/auth/dev-mail/latest` | Очікувано: маршрут лише для local peer backend. Використати `docker compose exec backend` як вище. |
 | CSRF/Origin 403 | Використати ту саму локальну адресу для браузера й `FRONTEND_ORIGINS`; перевірити CSRF після входу та не ставити сторонній proxy перед Caddy. Не вимикати CSRF/Origin. |
