@@ -1,5 +1,7 @@
 # Questionnaire integration decisions required from #5
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 This document tracks decisions that block production DDL/API. The implementation in this WIP is a test-only adapter and must remain Draft / DO NOT MERGE.
 
 ## Required decisions

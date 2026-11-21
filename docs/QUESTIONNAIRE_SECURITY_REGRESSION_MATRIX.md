@@ -1,5 +1,7 @@
 # Questionnaire security regression matrix
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Scope:** synthetic test application and `.prototype.sqlite` DB only. All test cases below were executed in the targeted test run on 2026-11-20 unless marked otherwise.
 
 | Test ID | Requirement | Expected behavior | Result | Evidence |

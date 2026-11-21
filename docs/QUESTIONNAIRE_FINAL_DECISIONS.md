@@ -1,5 +1,7 @@
 # Final decisions required from #5
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 This evidence package recommends **CONDITIONAL APPROVAL FOR ISOLATED DEVELOPMENT ONLY**. Keep PR #25 Draft / DO NOT MERGE until the following are approved.
 
 1. **Anonymity threat boundary:** acknowledge that schema-level unlinkability does not protect against a privileged DB/WAL/backup observer correlating code consumption and response insertion in one SQLite transaction. Decide whether to accept this, or require a reviewed unlinkability architecture. Existing schema-3 `access_tokens.token` is plaintext; this WIP does not modify it.

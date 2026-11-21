@@ -1,5 +1,7 @@
 # Questionnaire security findings and threat model
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Scope:** WIP prototype at the current working tree. Synthetic data and temporary SQLite files only. This is not a production security certification.
 
 ## Threat model

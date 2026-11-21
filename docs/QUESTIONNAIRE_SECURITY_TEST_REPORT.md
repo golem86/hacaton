@@ -1,5 +1,7 @@
 # Security review та результати тестів прототипу анкет
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Стан:** ізольований prototype / Draft PR #25 / DO NOT MERGE. Огляд коду та тестові дані — синтетичні. Production schema 3, `backend/app`, авторизація, Analytics та Integrity Index не змінювалися.
 
 ## Анонімні описи

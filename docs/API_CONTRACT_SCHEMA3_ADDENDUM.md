@@ -1,5 +1,7 @@
 # V2 Assessment Manager schema 3 — API contract addendum
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 Status: local integration candidate, 2026-11-20. This documents implemented source behavior; Windows runtime and production acceptance are pending.
 
 ## Authentication and roles

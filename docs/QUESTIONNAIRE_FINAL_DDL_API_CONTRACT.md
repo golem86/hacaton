@@ -1,5 +1,7 @@
 # Proposed final DDL/API contract: official questionnaires and expert assessments
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Status: PROPOSAL — requires approval from #5 and the auth/data owners. Nothing in this document is a production migration or API implementation.**
 
 ## Verified schema-3 baseline

@@ -1,5 +1,7 @@
 # V2 Hardening — спільний контракт змін (auth schema 2, integrity schema 5)
 
+> Контракт написано для integrity schema 5. Далі схема зросла до 6 (Додаток В) і 7 (`user_units` для «Результатів підрозділу»); правила ролей і захисту з цього документа діють і в чинній версії (`6629c74`).
+
 Статус: робочий контракт для паралельних потоків виправлень за аудитом backend 20.11.2026.
 База: `feature/integration` = стан сервера TLSFIX5 + злиття `integration/main-final` (frontend, Recommendations Tracker, звіти PDF/XLSX).
 Після інтеграції зміст переноситься в `docs/API_CONTRACT.md`. Потоки самі `API_CONTRACT.md` не редагують.

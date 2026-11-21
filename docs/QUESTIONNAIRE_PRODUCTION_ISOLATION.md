@@ -1,5 +1,7 @@
 # Production isolation review
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Result: runtime path isolation verified for the prototype; no production integration or migration.** Review performed on the WIP tree after adding path guards.
 
 ## Verified boundaries

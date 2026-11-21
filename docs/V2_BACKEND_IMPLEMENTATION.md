@@ -1,5 +1,7 @@
 # Backend V2 — реалізація за V2 Integration Contract
 
+> **Історичний робочий документ команди (стан на 17.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 | | |
 | --- | --- |
 | Гілка | `feature/v2-backend` від `feature/v2-integration` `4e8b344` |

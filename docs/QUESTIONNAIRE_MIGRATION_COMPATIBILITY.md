@@ -1,5 +1,7 @@
 # Questionnaire migration compatibility evidence
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Status: synthetic migration proof only; production integration BLOCKED.**
 
 ## Verified release schema

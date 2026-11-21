@@ -1,5 +1,7 @@
 # Експертна роль і API: контракт ізольованого прототипу
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Статус: PROTOTYPE CONTRACT / DO NOT MERGE.** Це контракт для окремого тестового застосунку й окремої синтетичної SQLite БД. Він **не** вводить production роль, не змінює `v2_users`, schema 3, `backend/app/main.py`, маршрути `/api/*` або Integrity Index. Майбутні production DDL, авторизація й маршрути потребують технічного затвердження №5.
 
 ## Встановлені межі поточної системи

@@ -1,5 +1,7 @@
 # Retention options for decision #5
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Decision required. These are options for discussion, not legal advice, not production defaults, and not configured by the prototype.** In each option, day zero is the administrative close of a cycle; if the owner prefers report approval, the start point must be changed consistently.
 
 | Option | Raw anonymous responses | Access-code digests/state | Security/audit events | Online backups | Recovery/appeal window | Operational/privacy profile |

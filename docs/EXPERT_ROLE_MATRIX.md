@@ -1,5 +1,7 @@
 # Expert role and permission matrix
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Proposal plus isolated test evidence. No production role or grant table is enabled.** In V2 today, persisted roles are `user` and `admin`; prototype `expert` status is a separate explicit server-side grant plus assignment.
 
 ## Actions

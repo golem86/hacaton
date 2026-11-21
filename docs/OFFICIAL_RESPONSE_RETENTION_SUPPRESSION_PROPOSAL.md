@@ -1,5 +1,7 @@
 # Пропозиція: retention та suppression офіційних анонімних відповідей
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Статус: PROPOSAL ДЛЯ №5 / НЕ production policy.** Цей документ описує цільові правила для окремих `official_response_sets` і `official_answers`. Чинна schema 3 та production API не змінюються. Ізольований test-only прототип не встановлює строки зберігання чи production suppression.
 
 ## Фактичні дані прототипу

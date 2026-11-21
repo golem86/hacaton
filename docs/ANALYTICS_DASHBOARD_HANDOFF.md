@@ -1,5 +1,7 @@
 # Підключення Analytics до Dashboard після Survey
 
+> **Історичний робочий документ команди (стан на 17.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 ## Уже є в коді
 
 - Backend надає `GET /api/index-methodologies/{version}`, `GET /api/assessments/{id}/index?methodology=team-results-demo-0.1`, `GET /api/assessments/{id}/recommendations?methodology=team-results-demo-0.1` і `GET /api/analytics/comparisons?assessment_id={before}&comparison_assessment_id={after}&methodology=team-results-demo-0.1`. Параметр `methodology` обов’язковий для трьох обчислювальних маршрутів. Порівняння другого циклу необов’язкове.

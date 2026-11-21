@@ -1,5 +1,7 @@
 # Анкети й експертне оцінювання — методика та ізольований backend-прототип
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../../README.md), [API_CONTRACT.md](../API_CONTRACT.md) і [integration-map.md](../integration-map.md).
+
 **Гілка:** `feature/assessment-questionnaire-v2`, [Draft PR #25](https://github.com/golem86/hacaton/pull/25). **Статус:** prototype-only / DO NOT MERGE. Production `app.main`, SQLite schema 3, auth, Assessment Manager, Integrity Index, Dashboard і numeric `demo-v1` не змінювалися. Прототип запускається тільки окремою фабрикою тестового застосунку; production routes не зареєстровано.
 
 ## Поточне доповнення за рішенням №5

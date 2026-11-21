@@ -1,5 +1,7 @@
 # Покриття офіційних анкет — Додаток В
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../../README.md), [API_CONTRACT.md](../API_CONTRACT.md) і [integration-map.md](../integration-map.md).
+
 Джерело: [Рекомендації НУОУ, Додаток В, друковані с. 53–66](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf). PDF звірено за нумерацією, розділами, початковими сторінками питань і кількістю варіантів. **Анкета 1: 12/12 питань; Анкета 2: 10/10 питань.** Формулювання `2.0.0` — власні стислі адаптації за змістом, позначені `wording: adapted`; це не дослівний офіційний текст. Джерело має описові варіанти `single_choice`; жодного score або weight в каталозі немає.
 
 | Form | Section | Source page | Question № | Catalog ID | Version | Status |

@@ -1,5 +1,7 @@
 # API proposal: user-scoped unit aggregates
 
+> **Статус (укр.):** реалізовано й злито в `main` (`48256d6`, зафіксований код `6629c74`), integrity schema 7, таблиця `user_units`; працює на робочому сервері. Опис для журі українською — [anonymity.md](anonymity.md), розділ 4.6.
+
 **Status:** implemented and integrated into `feature/integration` (INTEGRITY_DB schema 7, table `user_units`). Decisions taken for the open questions are recorded below in «Implementation decisions»; they still need team (#5/#2) confirmation before release. The sections «Current gap», «Proposed read contract» and «Questions» are the original proposal kept for history; where they differ, «Implementation decisions», `docs/API_CONTRACT.md` and the code win.
 
 ## Implementation decisions (answers to the questions below)

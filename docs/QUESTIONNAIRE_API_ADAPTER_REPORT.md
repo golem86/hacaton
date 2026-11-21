@@ -1,5 +1,7 @@
 # Questionnaire API adapter report
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Status: isolated executable prototype; not mounted in `app.main`, not a production API.** The test app is created only through `create_integration_test_app` and uses a temporary synthetic schema-3 copy.
 
 ## Implemented and tested

@@ -1,5 +1,7 @@
 # Questionnaire integration: schema-3 compatibility review
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 > **Update 2026-11-20 — prototype moved to integrity schema 5.** The isolated prototype
 > (`backend/prototypes/questionnaire_integration.py`) now targets the current integrity schema 5
 > instead of a frozen schema-3 DDL copy. The synthetic source DB is created by `app.migrations.migrate()`

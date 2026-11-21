@@ -1,5 +1,7 @@
 # Інтеграція аналітики №4 — PR-пропозиція
 
+> **Історичний робочий документ команди (стан на 16.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 База: feature/integration, 4fcfeb62885c21eb8ee6b8656206625306a98682 (PR #5).
 Робоча гілка: feature/analytics-api. Жодного merge не виконано.
 

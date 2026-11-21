@@ -1,5 +1,7 @@
 # Questionnaire schema-3 prototype migration report
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Status: synthetic-only test prototype; not a production migration.** Run against the current WIP tree on 2026-11-20. The only migration target used by tests is a newly created `.prototype.sqlite` file copied from a synthetic schema-3 source. Production paths and the release branch are guarded out.
 
 ## Results

@@ -1,5 +1,7 @@
 # V2 Integration Contract
 
+> **Історичний документ (стан на 17.11.2026).** Концепцію V2 реалізовано. Позначки FAIL і NOT VERIFIED нижче закрито потоками виправлень ([V2_HARDENING_CONTRACT.md](V2_HARDENING_CONTRACT.md)). Чинний стан — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 > **Статус: фінальна редакція для затвердження №5.** Концепцію попередньо погоджено №5 (17.11.2026), frontend-план №3 попередньо погоджено №5. Код змінюється **лише після затвердження** цього документа. `main`, `feature/integration` і робочий сервер не змінюються. Deployment — **ON HOLD**.
 
 | | |

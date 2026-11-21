@@ -74,8 +74,8 @@ cd ..
 git diff --check
 ```
 
-Ті самі перевірки автоматично виконує GitHub Actions ([`.github/workflows/v2-ci.yml`](../.github/workflows/v2-ci.yml)):
-- backend — Python 3.13.14 на Windows, повний pytest з контролем кількості тестів;
+Ті самі перевірки автоматично виконує GitHub Actions ([`.github/workflows/v2-ci.yml`](../.github/workflows/v2-ci.yml)). Це єдине джерело правди щодо кількості тестів: зараз очікується **927** backend-тестів і **223** frontend-тести (`EXPECTED_BACKEND_TESTS`, `EXPECTED_FRONTEND_TESTS`). Старі числа в історичних документах описують попередні стани.
+- backend — Python 3.13.14 на Windows, повний pytest з контролем кількості тестів (локально на Windows без прав на символьні посилання один тест пропускається);
 - frontend — pnpm `--frozen-lockfile`, тести, TypeScript і production build;
 - `git diff --check` і перевірка, що в Git немає БД і секретів.
 

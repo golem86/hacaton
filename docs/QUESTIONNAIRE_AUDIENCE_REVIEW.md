@@ -1,5 +1,7 @@
 # Аудиторія офіційних анкет Додатка В — методичний огляд
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 Джерело: [Рекомендації НУОУ](https://nuou.org.ua/assets/documents/recommendations_transform_dobrochesnist.pdf), друковані с. 13, 53, 60, 67. Це огляд джерела, а не рішення про автоматичну маршрутизацію респондентів.
 
 ## Що підтверджено документом

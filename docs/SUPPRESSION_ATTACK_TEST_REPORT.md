@@ -1,5 +1,7 @@
 # Suppression and differencing attack test report
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Scope:** synthetic helper and prototype route inventory only. No aggregate API exists, and no official aggregate was published. Parameter `k` is supplied per test and is not a production default.
 
 ## Results

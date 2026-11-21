@@ -1,5 +1,7 @@
 # Questionnaire prototype compatibility with SQLite schema 3
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Status: review proposal; no production changes.** This review examines release branch `feature/assessment-manager-release-v2` at `db70706f14cbcaba0d137151572aa996b106cd18` and the current test-only questionnaire prototype. It does not certify a production migration. The prototype uses its own SQLite file and is not registered in `backend/app/main.py`.
 
 ## Evidence from the release candidate

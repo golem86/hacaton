@@ -1,5 +1,7 @@
 # Фінальна перевірка backend і безпеки (QA)
 
+> **Історичний робочий документ команди (стан на 17.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 Підсумковий чекліст технічної готовності backend до демонстрації. Подробиці — у `docs/anonymity.md`, `docs/DATABASE_UPGRADE.md`, `docs/API_CONTRACT.md` і в `docs/abuse-analysis.md` та `docs/integration-map.md` (PR #10, ще не злитий на момент перевірки).
 
 | | |

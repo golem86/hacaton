@@ -1,5 +1,7 @@
 # Production DDL/API proposal: official questionnaires
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 **Статус: для рішення №5; не реалізовано.** Поточний isolated prototype лишається у `backend/prototypes/`. Ця пропозиція потребує окремого технічного затвердження, security review і плану deployment. Вона не змінює SQLite schema 3, поточні routes, response tables, авторизацію чи scoring.
 
 ## Цілі та сумісність

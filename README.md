@@ -48,7 +48,7 @@ $k = ([BitConverter]::ToString($b)).Replace('-', '').ToLowerInvariant()
 (Get-Content .env) -replace '^V2_SECRET_KEY=.*$', "V2_SECRET_KEY=$k" | Set-Content .env
 ```
 
-На Linux/macOS замість трьох останніх рядків: `sed -i.bak "s/^V2_SECRET_KEY=.*/V2_SECRET_KEY=$(openssl rand -hex 32)/" .env`.
+У `.env` обов'язкова лише змінна `V2_SECRET_KEY`. Змінні `V2_LM_*` і `LM_*` потрібні тільки для профілю з локальною моделлю. На Linux/macOS замість трьох останніх рядків: `sed -i.bak "s/^V2_SECRET_KEY=.*/V2_SECRET_KEY=$(openssl rand -hex 32)/" .env`.
 
 **2. Зберіть і запустіть.** Перший запуск триває кілька хвилин, backend сам створює синтетичну БД:
 
@@ -101,7 +101,8 @@ docker compose exec backend python -c "from app.v2_auth import latest_dev_mail; 
 
 | Що вимагає завдання | Де |
 |---|---|
-| Демонстрація проходження оцінювання | Відео (розділ «Демонстрація») і [docs/DEMO_DATA.md](docs/DEMO_DATA.md) — синтетичні дані |
+| Робочий MVP | Цей репозиторій: запуск — розділ «Як запустити»; робочий сервер — розділ «Демонстрація» |
+| Демонстрація проходження оцінювання | Відео (розділ «Демонстрація») і покроковий сценарій [docs/demo-scenario.md](docs/demo-scenario.md); синтетичні дані — [docs/DEMO_DATA.md](docs/DEMO_DATA.md) |
 | Приклад розрахунку Integrity Index | [docs/methodology.md](docs/methodology.md), розділ 10 |
 | Приклад Dashboard керівника | [docs/dashboard-example.md](docs/dashboard-example.md) |
 | Приклади рекомендацій | [docs/methodology.md](docs/methodology.md), розділи 7 і 10 |
@@ -121,11 +122,13 @@ docker compose exec backend python -c "from app.v2_auth import latest_dev_mail; 
 - [docs/API_CONTRACT.md](docs/API_CONTRACT.md) і [docs/V2_INTEGRATION_CONTRACT.md](docs/V2_INTEGRATION_CONTRACT.md) — контракти API.
 - [docs/DOCKER_DEMO.md](docs/DOCKER_DEMO.md) — локальна демонстрація в Docker: деталі й усунення проблем.
 - [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) — запуск без Docker і перевірки.
+- [docs/demo-scenario.md](docs/demo-scenario.md) — покроковий сценарій: коди → анкета → закриття циклу → Огляд → трекер → звіт.
 - [docs/ANALYTICS_DEMO.md](docs/ANALYTICS_DEMO.md) — сценарій показу аналітики.
 - [docs/LOCAL_LM.md](docs/LOCAL_LM.md) — встановлення локальної мовної моделі.
 - [docs/TAILSCALE_ACCESS.md](docs/TAILSCALE_ACCESS.md) — як журі підключитися до робочого сервера.
 - [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) — резервні копії й відновлення робочого сервера.
 - [docs/branding](docs/branding/README.md) — логотип команди й правила його використання.
+- [docs/README.md](docs/README.md) — повний перелік документації. Робочі матеріали команди (`QUESTIONNAIRE_*`, `OFFICIAL_*`, `EXPERT_ROLE_*`, `V2_*`, `docs/reports/` тощо) — контракти, звіти й рішення, написані під час роботи; кожен файл має банер з датою стану.
 
 ## Що використали
 
@@ -134,7 +137,7 @@ docker compose exec backend python -c "from app.v2_auth import latest_dev_mail; 
 - **Шрифт PDF-звітів:** DejaVu Sans (`backend/app/static/report-font/`, ліцензія Bitstream Vera / DejaVu).
 - **Swagger UI** 5.17.14 з пакета `swagger-ui-dist`, локально без CDN (`backend/app/static/swagger-ui/`, Apache-2.0).
 - **Інфраструктура:** Caddy (HTTPS reverse proxy), WinSW 2.12.0 (служби Windows), Docker Compose, Tailscale (приватна мережа робочого сервера).
-- **Моделі ШІ в продукті:** llama.cpp `llama-server` b12180 і модель `Qwen3-8B-Q4_K_M.gguf` (Hugging Face `Qwen/Qwen3-8B-GGUF`). Модель працює лише локально на сервері, без хмарних сервісів ([docs/LOCAL_LM.md](docs/LOCAL_LM.md)). Ліцензії llama.cpp і моделі в репозиторії не зберігаються, їх варто звіряти на сторінках джерел.
+- **Моделі ШІ в продукті:** llama.cpp `llama-server` b12180 і модель `Qwen3-8B-Q4_K_M.gguf` (Hugging Face `Qwen/Qwen3-8B-GGUF`). Модель з відкритими вагами працює лише локально на сервері, без хмарних сервісів ([docs/LOCAL_LM.md](docs/LOCAL_LM.md)). Ліцензії: llama.cpp — MIT, Qwen3-8B — Apache-2.0. Тексти ліцензій у репозиторії не зберігаються, вони є на сторінках джерел.
 - **Інструменти ШІ під час розробки:** ChatGPT, Codex, Claude Code. Для чого саме — у [docs/ai.md](docs/ai.md).
 - **Методичні джерела:** Рекомендації НУОУ (2025), додатки Б і В (анкети й чек-лист адаптовано для синтетичної демонстрації).
 

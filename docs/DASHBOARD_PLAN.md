@@ -1,5 +1,7 @@
 # Executive Dashboard (№3)
 
+> **Історичний робочий документ команди (стан на 16.11.2026).** Чинний стан продукту — [README](../README.md), [API_CONTRACT.md](API_CONTRACT.md) і [integration-map.md](integration-map.md).
+
 Dashboard працює в окремому worktree `codex/dashboard` від `feature/integration`. Контрактом для інтеграції є `docs/API_CONTRACT.md` у `origin/feature/integration` після PR #5.
 
 ## Реалізовано

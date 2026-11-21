@@ -1,5 +1,7 @@
 # Офіційні анкети й експертний UI — звіт учасника №1
 
+> **Історичний робочий документ команди (стан на 20.11.2026).** Чинний стан продукту — [README](../../README.md), [API_CONTRACT.md](../API_CONTRACT.md) і [integration-map.md](../integration-map.md).
+
 ## Стан
 
 Гілка `feature/assessment-questionnaire-v2`, [Draft PR #25](https://github.com/golem86/hacaton/pull/25): **повний адаптований каталог і робочий frontend Preview; серверне збереження — BLOCKED; DO NOT MERGE**. [Release PR #24](https://github.com/golem86/hacaton/pull/24), SQLite schema 3, backend API, scoring, Analytics, Dashboard, Docker і `demo-v1` не змінено.
