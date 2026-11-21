@@ -34,7 +34,7 @@
    - у журналах proxy немає IP для `POST …/submissions`.
 4. **Резервні копії** обох баз з тими самими обмеженнями доступу ([abuse-analysis.md](abuse-analysis.md), розділ 8).
 
-Без Docker backend і frontend запускаються за `README.md` («Запуск на Windows без Docker»). Інсталяційний пакет для Windows розробляється в окремій гілці `wip/v2-windows-installer` і ще не злитий.
+Без Docker backend і frontend запускаються за [LOCAL_DEV.md](LOCAL_DEV.md). Інсталяційний пакет для Windows розробляється в окремій гілці `wip/v2-windows-installer` і ще не злитий.
 
 ## 2. API як точка інтеграції
 
