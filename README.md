@@ -29,7 +29,7 @@
 
 ## Демонстрація
 
-Відео до 3 хвилин: https://www.youtube.com/watch?v=9d-uWlc9ZXU
+Відео до 3 хвилин: https://youtu.be/2qqYt_XbQeE
 
 Крім локального Docker-стека, у команди є робочий сервер із синтетичними даними. Він доступний лише в приватній мережі Tailscale, з інтернету його не видно, тому адресу й запрошення ми навмисно не публікуємо. Щоб отримати доступ, зв'яжіться з **капітаном команди** через канал зв'язку, який надали організатори. Капітан надішле одноразове запрошення й адресу, а після перевірки, що ви член журі, призначить роль `admin` або `data_officer`. Як підключитися — у [docs/TAILSCALE_ACCESS.md](docs/TAILSCALE_ACCESS.md).
 
@@ -102,7 +102,7 @@ docker compose exec backend python -c "from app.v2_auth import latest_dev_mail; 
 | Що вимагає завдання | Де |
 |---|---|
 | Робочий MVP | Цей репозиторій: запуск — розділ «Як запустити»; робочий сервер — розділ «Демонстрація» |
-| Демонстрація проходження оцінювання | [Відео](https://www.youtube.com/watch?v=9d-uWlc9ZXU) і покроковий сценарій [docs/demo-scenario.md](docs/demo-scenario.md); синтетичні дані — [docs/DEMO_DATA.md](docs/DEMO_DATA.md) |
+| Демонстрація проходження оцінювання | [Відео](https://youtu.be/2qqYt_XbQeE) і покроковий сценарій [docs/demo-scenario.md](docs/demo-scenario.md); синтетичні дані — [docs/DEMO_DATA.md](docs/DEMO_DATA.md) |
 | Приклад розрахунку Integrity Index | [docs/methodology.md](docs/methodology.md), розділ 10 |
 | Приклад Dashboard керівника | [docs/dashboard-example.md](docs/dashboard-example.md) |
 | Приклади рекомендацій | [docs/methodology.md](docs/methodology.md), розділи 7 і 10 |

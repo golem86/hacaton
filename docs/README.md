@@ -9,7 +9,7 @@
 | № | Що вимагає завдання | Документ |
 |---|---|---|
 | 1 | Робочий MVP | [README](../README.md): «Як запустити» і «Демонстрація» |
-| 2 | Демонстрація проходження оцінювання | [відео](https://www.youtube.com/watch?v=9d-uWlc9ZXU), [demo-scenario.md](demo-scenario.md) |
+| 2 | Демонстрація проходження оцінювання | [відео](https://youtu.be/2qqYt_XbQeE), [demo-scenario.md](demo-scenario.md) |
 | 3 | Приклад розрахунку Integrity Index | [methodology.md](methodology.md), розділ 10 |
 | 4 | Приклад Dashboard керівника | [dashboard-example.md](dashboard-example.md) |
 | 5 | Приклади рекомендацій | [methodology.md](methodology.md), розділи 7 і 10 |
